@@ -15,7 +15,7 @@ import {
   isFeishuGroupAllowed,
 } from "./policy.js";
 import { createFeishuReplyDispatcher } from "./reply-dispatcher.js";
-import { getMessageFeishu } from "./send.js";
+import { getMessageFeishu, listMessagesFeishu, type FeishuHistoryMessage } from "./send.js";
 
 export type FeishuMessageEvent = {
   sender: {
@@ -86,6 +86,117 @@ function stripBotMention(text: string, mentions?: FeishuMessageEvent["message"][
     result = result.replace(new RegExp(mention.key, "g"), "").trim();
   }
   return result;
+}
+
+/**
+ * History request detection patterns
+ */
+const HISTORY_REQUEST_PATTERNS = [
+  /读取.*历史/i,
+  /获取.*历史/i,
+  /查看.*历史/i,
+  /聊天记录/i,
+  /历史消息/i,
+  /历史记录/i,
+  /chat\s*history/i,
+  /message\s*history/i,
+  /fetch.*history/i,
+  /get.*history/i,
+  /总结.*聊天/i,
+  /聊天.*总结/i,
+  /summarize.*chat/i,
+  /chat.*summary/i,
+];
+
+/**
+ * Check if user message is requesting chat history
+ */
+export function isHistoryRequest(content: string): boolean {
+  const normalizedContent = content.toLowerCase().trim();
+  return HISTORY_REQUEST_PATTERNS.some((pattern) => pattern.test(normalizedContent));
+}
+
+/**
+ * Extract requested message count from user message
+ * Returns default of 200 if not specified
+ */
+function extractHistoryCount(content: string): number {
+  // Match patterns like "最近100条", "last 50 messages", "200条消息"
+  const patterns = [
+    /最近\s*(\d+)\s*条/,
+    /(\d+)\s*条消息/,
+    /(\d+)\s*条记录/,
+    /last\s*(\d+)/i,
+    /(\d+)\s*messages/i,
+    /获取\s*(\d+)/,
+    /读取\s*(\d+)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = content.match(pattern);
+    if (match && match[1]) {
+      const num = parseInt(match[1], 10);
+      if (num > 0 && num <= 1000) {
+        return num;
+      }
+    }
+  }
+
+  return 200; // Default
+}
+
+export type ChatHistoryResult = {
+  messages: FeishuHistoryMessage[];
+  total: number;
+  formatted: string;
+};
+
+/**
+ * Fetch chat history and format it for agent context
+ */
+export async function fetchChatHistoryForAgent(params: {
+  cfg: ClawdbotConfig;
+  chatId: string;
+  requestContent: string;
+  runtime?: RuntimeEnv;
+}): Promise<ChatHistoryResult> {
+  const { cfg, chatId, requestContent, runtime } = params;
+  const log = runtime?.log ?? console.log;
+
+  const count = extractHistoryCount(requestContent);
+  log(`feishu: fetching ${count} messages from chat ${chatId}`);
+
+  const result = await listMessagesFeishu({
+    cfg,
+    chatId,
+    count,
+    sortType: "ByCreateTimeDesc",
+  });
+
+  // Format messages for agent (reverse to chronological order)
+  const chronologicalMessages = [...result.messages].reverse();
+
+  const formatted = chronologicalMessages
+    .filter((msg) => !msg.deleted && msg.content.trim())
+    .map((msg) => {
+      const time = new Date(msg.createTime).toLocaleString("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const sender = msg.senderType === "app" ? "[Bot]" : msg.senderId;
+      return `[${time}] ${sender}: ${msg.content}`;
+    })
+    .join("\n");
+
+  log(`feishu: fetched ${result.total} messages, formatted ${chronologicalMessages.length} for agent`);
+
+  return {
+    messages: result.messages,
+    total: result.total,
+    formatted,
+  };
 }
 
 export function parseFeishuMessageEvent(
@@ -249,6 +360,33 @@ export async function handleFeishuMessage(params: {
     let messageBody = ctx.content;
     if (quotedContent) {
       messageBody = `[Replying to: "${quotedContent}"]\n\n${ctx.content}`;
+    }
+
+    // Check if user is requesting chat history
+    let historyContext = "";
+    if (isGroup && isHistoryRequest(ctx.content)) {
+      try {
+        log(`feishu: detected history request in message`);
+        const historyResult = await fetchChatHistoryForAgent({
+          cfg,
+          chatId: ctx.chatId,
+          requestContent: ctx.content,
+          runtime,
+        });
+
+        if (historyResult.formatted) {
+          historyContext = `\n\n--- 群聊历史记录 (最近 ${historyResult.total} 条消息) ---\n${historyResult.formatted}\n--- 历史记录结束 ---\n\n`;
+          log(`feishu: included ${historyResult.total} history messages in context`);
+        }
+      } catch (err) {
+        error(`feishu: failed to fetch chat history: ${String(err)}`);
+        // Continue without history, don't block the message
+      }
+    }
+
+    // Prepend history context if available
+    if (historyContext) {
+      messageBody = historyContext + messageBody;
     }
 
     const body = core.channel.reply.formatAgentEnvelope({
