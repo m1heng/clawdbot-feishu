@@ -238,10 +238,6 @@ export async function updateCardFeishu(params: {
   }
 }
 
-/**
- * Edit an existing text message.
- * Note: Feishu only allows editing messages within 24 hours.
- */
 export async function editMessageFeishu(params: {
   cfg: ClawdbotConfig;
   messageId: string;
@@ -272,4 +268,22 @@ export async function editMessageFeishu(params: {
   if (response.code !== 0) {
     throw new Error(`Feishu message edit failed: ${response.msg || `code ${response.code}`}`);
   }
+}
+
+export function createSimpleTextCard(content: string, streaming = false): Record<string, unknown> {
+  return {
+    schema: "2.0",
+    config: {
+      streaming_mode: streaming,
+    },
+    body: {
+      direction: "horizontal",
+      elements: [
+        {
+          tag: "markdown",
+          content: content || "...", // Fallback for empty initially
+        }
+      ],
+    },
+  };
 }
