@@ -24,11 +24,14 @@ const DmConfigSchema = z
 
 const MarkdownConfigSchema = z
   .object({
-    mode: z.enum(["native", "escape", "strip"]).optional(),
+    mode: z.enum(["native", "escape", "strip", "raw", "card"]).optional(),
     tableMode: z.enum(["native", "ascii", "simple"]).optional(),
   })
   .strict()
   .optional();
+
+// Message render mode: raw = plain text, card = interactive card with markdown
+const MessageRenderModeSchema = z.enum(["raw", "card"]).optional();
 
 const BlockStreamingCoalesceSchema = z
   .object({
@@ -86,6 +89,8 @@ export const FeishuConfigSchema = z
     blockStreamingCoalesce: BlockStreamingCoalesceSchema,
     mediaMaxMb: z.number().positive().optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
+    downloadDir: z.string().optional(), // Directory for downloaded media files
+    renderMode: MessageRenderModeSchema, // raw = plain text, card = interactive card with markdown
   })
   .strict()
   .superRefine((value, ctx) => {

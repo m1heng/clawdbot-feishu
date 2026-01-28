@@ -273,3 +273,36 @@ export async function editMessageFeishu(params: {
     throw new Error(`Feishu message edit failed: ${response.msg || `code ${response.code}`}`);
   }
 }
+
+/**
+ * Build a Feishu interactive card from markdown text.
+ * The card will render markdown properly.
+ */
+export function buildMarkdownCard(text: string): Record<string, unknown> {
+  return {
+    config: {
+      wide_screen_mode: true,
+    },
+    elements: [
+      {
+        tag: "markdown",
+        content: text,
+      },
+    ],
+  };
+}
+
+/**
+ * Send a message as a markdown card (interactive message).
+ * This renders markdown properly in Feishu.
+ */
+export async function sendMarkdownCardFeishu(params: {
+  cfg: ClawdbotConfig;
+  to: string;
+  text: string;
+  replyToMessageId?: string;
+}): Promise<FeishuSendResult> {
+  const { cfg, to, text, replyToMessageId } = params;
+  const card = buildMarkdownCard(text);
+  return sendCardFeishu({ cfg, to, card, replyToMessageId });
+}

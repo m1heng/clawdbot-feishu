@@ -16,6 +16,7 @@ import {
 } from "./policy.js";
 import { createFeishuReplyDispatcher } from "./reply-dispatcher.js";
 import { getMessageFeishu } from "./send.js";
+import { downloadImageFeishu, downloadFileFeishu, downloadAudioFeishu, downloadMessageResourceFeishu } from "./media.js";
 
 export type FeishuMessageEvent = {
   sender: {
@@ -65,7 +66,177 @@ function parseMessageContent(content: string, messageType: string): string {
     if (messageType === "text") {
       return parsed.text || "";
     }
+    // Return raw JSON for non-text messages (will be processed by parseMessageContentAsync)
     return content;
+  } catch {
+    return content;
+  }
+}
+
+/**
+ * Parse message content with async media download support.
+ * Downloads images/files and returns local file paths for AI to process.
+ */
+async function parseMessageContentAsync(params: {
+  cfg: ClawdbotConfig;
+  content: string;
+  messageType: string;
+  messageId: string;
+  log?: (msg: string) => void;
+}): Promise<string> {
+  const { cfg, content, messageType, messageId, log } = params;
+  const logFn = log ?? console.log;
+  
+  try {
+    const parsed = JSON.parse(content);
+    
+    switch (messageType) {
+      case "text":
+        return parsed.text || "";
+        
+      case "image": {
+        const imageKey = parsed.image_key;
+        if (!imageKey) {
+          return "[图片: 无法获取 image_key]";
+        }
+        try {
+          logFn(`feishu: downloading image ${imageKey}`);
+          const result = await downloadImageFeishu({ cfg, imageKey });
+          logFn(`feishu: image saved to ${result.filePath} (${result.size} bytes)`);
+          return `[用户发送了图片: ${result.filePath}]`;
+        } catch (err) {
+          logFn(`feishu: failed to download image: ${String(err)}`);
+          return `[图片下载失败: ${imageKey}]`;
+        }
+      }
+      
+      case "file": {
+        const fileKey = parsed.file_key;
+        const fileName = parsed.file_name;
+        if (!fileKey) {
+          return "[文件: 无法获取 file_key]";
+        }
+        try {
+          logFn(`feishu: downloading file ${fileName || fileKey}`);
+          const result = await downloadFileFeishu({ 
+            cfg, 
+            messageId, 
+            fileKey, 
+            fileName,
+          });
+          logFn(`feishu: file saved to ${result.filePath} (${result.size} bytes)`);
+          return `[用户发送了文件: ${result.filePath}]`;
+        } catch (err) {
+          logFn(`feishu: failed to download file: ${String(err)}`);
+          return `[文件下载失败: ${fileName || fileKey}]`;
+        }
+      }
+      
+      case "audio": {
+        const fileKey = parsed.file_key;
+        if (!fileKey) {
+          return "[语音: 无法获取 file_key]";
+        }
+        try {
+          logFn(`feishu: downloading audio ${fileKey}`);
+          const result = await downloadAudioFeishu({ cfg, messageId, fileKey });
+          logFn(`feishu: audio saved to ${result.filePath} (${result.size} bytes)`);
+          return `[用户发送了语音消息: ${result.filePath}]`;
+        } catch (err) {
+          logFn(`feishu: failed to download audio: ${String(err)}`);
+          return `[语音下载失败: ${fileKey}]`;
+        }
+      }
+      
+      case "media": {
+        // Media type contains both image and file info
+        const imageKey = parsed.image_key;
+        const fileKey = parsed.file_key;
+        const fileName = parsed.file_name;
+        
+        if (imageKey) {
+          try {
+            const result = await downloadImageFeishu({ cfg, imageKey });
+            return `[用户发送了媒体文件: ${result.filePath}]`;
+          } catch (err) {
+            logFn(`feishu: failed to download media image: ${String(err)}`);
+          }
+        }
+        
+        if (fileKey) {
+          try {
+            const result = await downloadFileFeishu({ cfg, messageId, fileKey, fileName });
+            return `[用户发送了媒体文件: ${result.filePath}]`;
+          } catch (err) {
+            logFn(`feishu: failed to download media file: ${String(err)}`);
+          }
+        }
+        
+        return `[媒体消息: ${content}]`;
+      }
+      
+      case "sticker":
+        return `[表情包: ${parsed.file_key || "unknown"}]`;
+        
+      case "share_chat":
+        return `[分享群聊: ${parsed.chat_id || "unknown"}]`;
+        
+      case "share_user":
+        return `[分享用户: ${parsed.user_id || "unknown"}]`;
+        
+      case "post":
+        // Rich text post - extract text content and download embedded images
+        try {
+          const title = parsed.title || "";
+          const contentBlocks = parsed.content || [];
+          let textContent = title ? `${title}\n\n` : "";
+          const downloadedImages: string[] = [];
+          
+          for (const paragraph of contentBlocks) {
+            if (Array.isArray(paragraph)) {
+              for (const element of paragraph) {
+                if (element.tag === "text") {
+                  textContent += element.text || "";
+                } else if (element.tag === "a") {
+                  textContent += element.text || element.href || "";
+                } else if (element.tag === "at") {
+                  textContent += `@${element.user_name || element.user_id || ""}`;
+                } else if (element.tag === "img" && element.image_key) {
+                  // Download embedded image using message resource API
+                  try {
+                    logFn(`feishu: downloading embedded image ${element.image_key} from message ${messageId}`);
+                    const result = await downloadMessageResourceFeishu({ 
+                      cfg, 
+                      messageId, 
+                      fileKey: element.image_key,
+                      resourceType: "image",
+                    });
+                    downloadedImages.push(result.filePath);
+                    logFn(`feishu: embedded image saved to ${result.filePath}`);
+                  } catch (err) {
+                    logFn(`feishu: failed to download embedded image: ${String(err)}`);
+                    textContent += `[图片下载失败: ${element.image_key}]`;
+                  }
+                }
+              }
+              textContent += "\n";
+            }
+          }
+          
+          // Combine text content with downloaded image paths
+          let result = textContent.trim() || "[富文本消息]";
+          if (downloadedImages.length > 0) {
+            result += "\n\n[用户发送的图片:\n" + downloadedImages.map(p => `  - ${p}`).join("\n") + "\n]";
+          }
+          
+          return result;
+        } catch {
+          return "[富文本消息]";
+        }
+        
+      default:
+        return `[${messageType}消息: ${content}]`;
+    }
   } catch {
     return content;
   }
@@ -230,10 +401,26 @@ export async function handleFeishuMessage(params: {
 
     const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
 
-    // Build message body with quoted content if available
-    let messageBody = ctx.content;
+    // Parse message content with async media download support
+    // For non-text messages, this will download files and return local paths
+    let messageBody: string;
+    if (ctx.contentType !== "text") {
+      messageBody = await parseMessageContentAsync({
+        cfg,
+        content: event.message.content,
+        messageType: ctx.contentType,
+        messageId: ctx.messageId,
+        log,
+      });
+      // Strip bot mention from parsed content if needed
+      messageBody = stripBotMention(messageBody, event.message.mentions);
+    } else {
+      messageBody = ctx.content;
+    }
+
+    // Add quoted content if available
     if (quotedContent) {
-      messageBody = `[Replying to: "${quotedContent}"]\n\n${ctx.content}`;
+      messageBody = `[Replying to: "${quotedContent}"]\n\n${messageBody}`;
     }
 
     const body = core.channel.reply.formatAgentEnvelope({

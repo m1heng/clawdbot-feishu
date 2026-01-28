@@ -7,7 +7,8 @@ import {
   type ReplyPayload,
 } from "clawdbot/plugin-sdk";
 import { getFeishuRuntime } from "./runtime.js";
-import { sendMessageFeishu } from "./send.js";
+import { sendMessageFeishu, sendMarkdownCardFeishu } from "./send.js";
+import type { FeishuConfig } from "./types.js";
 import {
   addTypingIndicator,
   removeTypingIndicator,
@@ -90,17 +91,35 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
           return;
         }
 
-        const converted = core.channel.text.convertMarkdownTables(text, tableMode);
-        const chunks = core.channel.text.chunkTextWithMode(converted, textChunkLimit, chunkMode);
+        // Check render mode: card or raw (default)
+        const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+        const renderMode = feishuCfg?.renderMode ?? "raw";
 
-        params.runtime.log?.(`feishu deliver: sending ${chunks.length} chunks to ${chatId}`);
-        for (const chunk of chunks) {
-          await sendMessageFeishu({
-            cfg,
-            to: chatId,
-            text: chunk,
-            replyToMessageId,
-          });
+        if (renderMode === "card") {
+          // Send as interactive card with markdown rendering
+          const chunks = core.channel.text.chunkTextWithMode(text, textChunkLimit, chunkMode);
+          params.runtime.log?.(`feishu deliver: sending ${chunks.length} card chunks to ${chatId}`);
+          for (const chunk of chunks) {
+            await sendMarkdownCardFeishu({
+              cfg,
+              to: chatId,
+              text: chunk,
+              replyToMessageId,
+            });
+          }
+        } else {
+          // Send as plain text (raw mode)
+          const converted = core.channel.text.convertMarkdownTables(text, tableMode);
+          const chunks = core.channel.text.chunkTextWithMode(converted, textChunkLimit, chunkMode);
+          params.runtime.log?.(`feishu deliver: sending ${chunks.length} text chunks to ${chatId}`);
+          for (const chunk of chunks) {
+            await sendMessageFeishu({
+              cfg,
+              to: chatId,
+              text: chunk,
+              replyToMessageId,
+            });
+          }
         }
       },
       onError: (err, info) => {

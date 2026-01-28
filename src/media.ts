@@ -5,6 +5,7 @@ import { resolveReceiveIdType, normalizeFeishuTarget } from "./targets.js";
 import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
+import os from "os";
 
 export type UploadImageResult = {
   imageKey: string;
@@ -18,6 +19,253 @@ export type SendMediaResult = {
   messageId: string;
   chatId: string;
 };
+
+export type DownloadResult = {
+  filePath: string;
+  fileName: string;
+  size: number;
+};
+
+/**
+ * Get the download directory for Feishu media files.
+ * Creates the directory if it doesn't exist.
+ */
+export function getFeishuDownloadDir(cfg?: ClawdbotConfig): string {
+  const feishuCfg = cfg?.channels?.feishu as FeishuConfig | undefined;
+  const baseDir = feishuCfg?.downloadDir || process.env.CLAWD_WORKSPACE || os.homedir();
+  const downloadDir = path.join(baseDir, "downloads", "feishu");
+  
+  if (!fs.existsSync(downloadDir)) {
+    fs.mkdirSync(downloadDir, { recursive: true });
+  }
+  
+  return downloadDir;
+}
+
+/**
+ * Download an image from Feishu and save to local file.
+ * Returns the absolute file path for AI to read.
+ * 
+ * Note: This is for standalone image messages (message_type=image).
+ * For images embedded in rich text (post), use downloadMessageResourceFeishu instead.
+ */
+export async function downloadImageFeishu(params: {
+  cfg: ClawdbotConfig;
+  imageKey: string;
+}): Promise<DownloadResult> {
+  const { cfg, imageKey } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+  
+  const response = await client.im.image.get({
+    path: { image_key: imageKey },
+  });
+
+  // Response is a readable stream
+  const chunks: Buffer[] = [];
+  const stream = response as unknown as Readable;
+  
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk));
+  }
+  
+  const buffer = Buffer.concat(chunks);
+  const downloadDir = getFeishuDownloadDir(cfg);
+  const fileName = `${Date.now()}_${imageKey}.png`;
+  const filePath = path.join(downloadDir, fileName);
+  
+  await fs.promises.writeFile(filePath, buffer);
+  
+  return {
+    filePath,
+    fileName,
+    size: buffer.length,
+  };
+}
+
+/**
+ * Download a resource (image/file) embedded in a message.
+ * This is used for images in rich text (post) messages.
+ * Uses the message resource API: GET /im/v1/messages/{message_id}/resources/{file_key}
+ */
+export async function downloadMessageResourceFeishu(params: {
+  cfg: ClawdbotConfig;
+  messageId: string;
+  fileKey: string;
+  resourceType?: "image" | "file";
+}): Promise<DownloadResult> {
+  const { cfg, messageId, fileKey, resourceType = "image" } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+  
+  const response = await client.im.messageResource.get({
+    path: { 
+      message_id: messageId, 
+      file_key: fileKey,
+    },
+    params: { type: resourceType },
+  });
+
+  // SDK response has writeFile and getReadableStream methods
+  const responseAny = response as any;
+  const downloadDir = getFeishuDownloadDir(cfg);
+  const ext = resourceType === "image" ? "png" : "bin";
+  const fileName = `${Date.now()}_${fileKey}.${ext}`;
+  const filePath = path.join(downloadDir, fileName);
+  
+  if (typeof responseAny.writeFile === "function") {
+    // Use SDK's writeFile method directly
+    await responseAny.writeFile(filePath);
+    const stats = await fs.promises.stat(filePath);
+    return {
+      filePath,
+      fileName,
+      size: stats.size,
+    };
+  } else if (typeof responseAny.getReadableStream === "function") {
+    // Use getReadableStream and pipe to file
+    const stream = responseAny.getReadableStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.from(chunk));
+    }
+    const buffer = Buffer.concat(chunks);
+    await fs.promises.writeFile(filePath, buffer);
+    return {
+      filePath,
+      fileName,
+      size: buffer.length,
+    };
+  } else {
+    throw new Error("Unexpected response format from Feishu API");
+  }
+}
+
+/**
+ * Download a file from Feishu message and save to local file.
+ * Returns the absolute file path for AI to read.
+ */
+export async function downloadFileFeishu(params: {
+  cfg: ClawdbotConfig;
+  messageId: string;
+  fileKey: string;
+  fileName?: string;
+}): Promise<DownloadResult> {
+  const { cfg, messageId, fileKey, fileName: originalName } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+  
+  const response = await client.im.messageResource.get({
+    path: { 
+      message_id: messageId, 
+      file_key: fileKey,
+    },
+    params: { type: "file" },
+  });
+
+  // SDK response has writeFile and getReadableStream methods
+  const responseAny = response as any;
+  const downloadDir = getFeishuDownloadDir(cfg);
+  const fileName = originalName 
+    ? `${Date.now()}_${originalName}` 
+    : `${Date.now()}_${fileKey}`;
+  const filePath = path.join(downloadDir, fileName);
+  
+  if (typeof responseAny.writeFile === "function") {
+    // Use SDK's writeFile method directly
+    await responseAny.writeFile(filePath);
+    const stats = await fs.promises.stat(filePath);
+    return {
+      filePath,
+      fileName,
+      size: stats.size,
+    };
+  } else if (typeof responseAny.getReadableStream === "function") {
+    // Use getReadableStream and pipe to file
+    const stream = responseAny.getReadableStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.from(chunk));
+    }
+    const buffer = Buffer.concat(chunks);
+    await fs.promises.writeFile(filePath, buffer);
+    return {
+      filePath,
+      fileName,
+      size: buffer.length,
+    };
+  } else {
+    throw new Error("Unexpected response format from Feishu API");
+  }
+}
+
+/**
+ * Download audio from Feishu message and save to local file.
+ */
+export async function downloadAudioFeishu(params: {
+  cfg: ClawdbotConfig;
+  messageId: string;
+  fileKey: string;
+}): Promise<DownloadResult> {
+  const { cfg, messageId, fileKey } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+  
+  const response = await client.im.messageResource.get({
+    path: { 
+      message_id: messageId, 
+      file_key: fileKey,
+    },
+    params: { type: "file" },
+  });
+
+  // SDK response has writeFile and getReadableStream methods
+  const responseAny = response as any;
+  const downloadDir = getFeishuDownloadDir(cfg);
+  const fileName = `${Date.now()}_${fileKey}.opus`;
+  const filePath = path.join(downloadDir, fileName);
+  
+  if (typeof responseAny.writeFile === "function") {
+    await responseAny.writeFile(filePath);
+    const stats = await fs.promises.stat(filePath);
+    return {
+      filePath,
+      fileName,
+      size: stats.size,
+    };
+  } else if (typeof responseAny.getReadableStream === "function") {
+    const stream = responseAny.getReadableStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.from(chunk));
+    }
+    const buffer = Buffer.concat(chunks);
+    await fs.promises.writeFile(filePath, buffer);
+    return {
+      filePath,
+      fileName,
+      size: buffer.length,
+    };
+  } else {
+    throw new Error("Unexpected response format from Feishu API");
+  }
+}
 
 /**
  * Upload an image to Feishu and get an image_key for sending.
