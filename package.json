@@ -1,6 +1,6 @@
 {
   "name": "@m1heng-clawd/feishu",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Clawdbot Feishu/Lark channel plugin",
   "license": "MIT",
