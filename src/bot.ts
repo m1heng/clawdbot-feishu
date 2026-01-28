@@ -16,6 +16,7 @@ import {
 } from "./policy.js";
 import { createFeishuReplyDispatcher } from "./reply-dispatcher.js";
 import { getMessageFeishu } from "./send.js";
+import { downloadInboundImageFromFeishuMessage } from "./inbound-media.js";
 
 export type FeishuMessageEvent = {
   sender: {
@@ -127,6 +128,26 @@ export async function handleFeishuMessage(params: {
 
   log(`feishu: received message from ${ctx.senderOpenId} in ${ctx.chatId} (${ctx.chatType})`);
 
+  // Pre-download inbound images so they can be referenced in group history even when not @mentioned.
+  // This enables workflows like: someone posts a snack-table photo, then later @mentions the bot to ask for inventory update.
+  const feishuCfgForMedia = feishuCfg;
+  let inboundImagePath: string | undefined;
+  let inboundImageType: string | undefined;
+  if (feishuCfgForMedia && ctx.contentType === "image") {
+    const downloaded = await downloadInboundImageFromFeishuMessage({
+      cfg,
+      feishuCfg: feishuCfgForMedia,
+      messageId: ctx.messageId,
+      messageContent: event.message.content,
+      runtime,
+      // "No limit" per requirement: we use a very large cap in the helper.
+    });
+    if (downloaded) {
+      inboundImagePath = downloaded.path;
+      inboundImageType = downloaded.contentType;
+    }
+  }
+
   const historyLimit = Math.max(
     0,
     feishuCfg?.historyLimit ?? cfg.messages?.groupChat?.historyLimit ?? DEFAULT_GROUP_HISTORY_LIMIT,
@@ -159,13 +180,18 @@ export async function handleFeishuMessage(params: {
     if (requireMention && !ctx.mentionedBot) {
       log(`feishu: message in group ${ctx.chatId} did not mention bot, recording to history`);
       if (chatHistories) {
+        const parts: string[] = [];
+        if (inboundImagePath) parts.push(`[image: ${inboundImagePath}]`);
+        if (ctx.content?.trim()) parts.push(ctx.content.trim());
+        const body = parts.join("\n").trim() || ctx.content;
+
         recordPendingHistoryEntryIfEnabled({
           historyMap: chatHistories,
           historyKey: ctx.chatId,
           limit: historyLimit,
           entry: {
             sender: ctx.senderOpenId,
-            body: ctx.content,
+            body,
             timestamp: Date.now(),
             messageId: ctx.messageId,
           },
@@ -268,6 +294,12 @@ export async function handleFeishuMessage(params: {
       Body: combinedBody,
       RawBody: ctx.content,
       CommandBody: ctx.content,
+      ...(inboundImagePath
+        ? {
+            MediaPath: inboundImagePath,
+            MediaType: inboundImageType,
+          }
+        : {}),
       From: feishuFrom,
       To: feishuTo,
       SessionKey: route.sessionKey,
