@@ -85,6 +85,12 @@ export const FeishuConfigSchema = z
     chunkMode: z.enum(["length", "newline"]).optional(),
     blockStreamingCoalesce: BlockStreamingCoalesceSchema,
     mediaMaxMb: z.number().positive().optional(),
+
+    // When enabled, download inbound image/file payloads to local disk and pass
+    // them to Clawdbot as MediaPath/MediaType for media understanding.
+    downloadInboundMedia: z.boolean().optional().default(false),
+    inboundMediaDir: z.string().optional().default("/home/ubuntu/.clawdbot/cache/feishu-media"),
+
     heartbeat: ChannelHeartbeatVisibilitySchema,
   })
   .strict()

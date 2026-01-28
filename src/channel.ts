@@ -85,6 +85,8 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
         textChunkLimit: { type: "integer", minimum: 1 },
         chunkMode: { type: "string", enum: ["length", "newline"] },
         mediaMaxMb: { type: "number", minimum: 0 },
+        downloadInboundMedia: { type: "boolean" },
+        inboundMediaDir: { type: "string" },
       },
     },
   },

@@ -6,6 +6,22 @@ import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
 
+function extFromContentType(contentType?: string): string {
+  if (!contentType) return "bin";
+  const ct = contentType.toLowerCase();
+  if (ct.includes("image/jpeg")) return "jpg";
+  if (ct.includes("image/png")) return "png";
+  if (ct.includes("image/webp")) return "webp";
+  if (ct.includes("image/gif")) return "gif";
+  if (ct.includes("image/bmp")) return "bmp";
+  if (ct.includes("image/tiff")) return "tiff";
+  return "bin";
+}
+
+function safeBasename(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]+/g, "_");
+}
+
 export type UploadImageResult = {
   imageKey: string;
 };
@@ -18,6 +34,52 @@ export type SendMediaResult = {
   messageId: string;
   chatId: string;
 };
+
+export type DownloadResourceResult = {
+  path: string;
+  contentType?: string;
+};
+
+/**
+ * Download an inbound message resource (image/file) to local disk.
+ * For user-sent images, Feishu requires the message.resource.get API.
+ */
+export async function downloadMessageResourceFeishu(params: {
+  cfg: ClawdbotConfig;
+  messageId: string;
+  fileKey: string; // For images, this is typically image_key
+  type?: "image" | "file" | "video" | "audio";
+  fileNameHint?: string;
+}): Promise<DownloadResourceResult> {
+  const { cfg, messageId, fileKey, fileNameHint, type = "image" } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+
+  const baseDir = feishuCfg.inboundMediaDir || "/home/ubuntu/.clawdbot/cache/feishu-media";
+  fs.mkdirSync(baseDir, { recursive: true, mode: 0o700 });
+
+  // Attempt download stream and write to a temp file.
+  const res = await client.im.messageResource.get({
+    params: { type },
+    path: { message_id: messageId, file_key: fileKey },
+  });
+
+  const headers = (res as any)?.headers as Record<string, string | string[] | undefined> | undefined;
+  const contentTypeRaw = headers?.["content-type"];
+  const contentType = Array.isArray(contentTypeRaw) ? contentTypeRaw[0] : contentTypeRaw;
+  const ext = extFromContentType(contentType);
+
+  const baseName = safeBasename(fileNameHint || `${messageId}_${fileKey}.${ext}`);
+  const outPath = path.join(baseDir, baseName);
+
+  await (res as any).writeFile(outPath);
+
+  return { path: outPath, contentType };
+}
 
 /**
  * Upload an image to Feishu and get an image_key for sending.

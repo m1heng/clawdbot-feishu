@@ -8,6 +8,7 @@ import {
 } from "clawdbot/plugin-sdk";
 import type { FeishuConfig, FeishuMessageContext } from "./types.js";
 import { getFeishuRuntime } from "./runtime.js";
+import { downloadMessageResourceFeishu } from "./media.js";
 import {
   resolveFeishuGroupConfig,
   resolveFeishuReplyPolicy,
@@ -65,9 +66,18 @@ function parseMessageContent(content: string, messageType: string): string {
     if (messageType === "text") {
       return parsed.text || "";
     }
+    // For media messages, keep the JSON so we can extract keys later.
     return content;
   } catch {
     return content;
+  }
+}
+
+function tryParseJson(content: string): any | null {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return null;
   }
 }
 
@@ -124,6 +134,83 @@ export async function handleFeishuMessage(params: {
 
   const ctx = parseFeishuMessageEvent(event, botOpenId);
   const isGroup = ctx.chatType === "group";
+
+  // Optionally hydrate inbound media (images/files) from Feishu.
+  // This converts Feishu's {image_key: ...} into a local MediaPath for Clawdbot.
+  let inboundMediaPath: string | undefined;
+  let inboundMediaType: string | undefined;
+
+  if (feishuCfg?.downloadInboundMedia) {
+    // Feishu images can arrive as msg_type="image" or embedded in msg_type="post".
+    // post content example: { title: "", content: [[{tag:"img", image_key:"..."}], [{tag:"text", text:"..."}]] }
+    log(`feishu: inbound media hydrate enabled; msg_type=${ctx.contentType} preview=${String(ctx.content).slice(0, 160)}`);
+    const parsed = tryParseJson(ctx.content);
+
+    let imageKeys: string[] = [];
+    let extractedText: string | undefined;
+
+    if (ctx.contentType === "image") {
+      const imageKey = parsed?.image_key as string | undefined;
+      if (imageKey) imageKeys = [imageKey];
+    } else if (ctx.contentType === "file") {
+      // File messages carry file_key + file_name. Some users send images as files.
+      const fileKey = parsed?.file_key as string | undefined;
+      const fileName = parsed?.file_name as string | undefined;
+      if (fileKey) {
+        imageKeys = [fileKey];
+      }
+      if (fileName) {
+        extractedText = fileName;
+      }
+    } else if (ctx.contentType === "post") {
+      const contentBlocks = parsed?.content;
+      if (Array.isArray(contentBlocks)) {
+        for (const row of contentBlocks) {
+          if (!Array.isArray(row)) continue;
+          for (const cell of row) {
+            if (!cell || typeof cell !== "object") continue;
+            if (cell.tag === "img" && typeof cell.image_key === "string") {
+              imageKeys.push(cell.image_key);
+            }
+            if (cell.tag === "text" && typeof cell.text === "string") {
+              extractedText = (extractedText ? `${extractedText}\n${cell.text}` : cell.text);
+            }
+          }
+        }
+      }
+    }
+
+    log(`feishu: extracted imageKeys=${imageKeys.length} textLen=${extractedText?.length ?? 0}`);
+
+    const imageKey = imageKeys[0];
+    if (imageKey) {
+      try {
+        const isFileMessage = ctx.contentType === "file";
+        const note = extractedText?.trim() ? extractedText.trim() : "";
+
+        const downloaded = await downloadMessageResourceFeishu({
+          cfg,
+          messageId: ctx.messageId,
+          fileKey: imageKey,
+          type: isFileMessage ? "file" : "image",
+          fileNameHint: note ? `${ctx.messageId}_${note}` : `${ctx.messageId}_${imageKey}`,
+        });
+        inboundMediaPath = downloaded.path;
+        inboundMediaType = downloaded.contentType;
+
+        const looksLikeImage =
+          (downloaded.contentType ? downloaded.contentType.startsWith("image/") : false) ||
+          (note ? /\.(png|jpe?g|gif|webp|bmp|tiff)$/i.test(note) : false);
+
+        ctx.content = `${note ? note + "\n" : ""}<media:${looksLikeImage ? "image" : "attachment"}>`;
+        if (imageKeys.length > 1) {
+          ctx.content += `\n(附：本条消息包含 ${imageKeys.length} 个媒体资源，目前只取第 1 个)`;
+        }
+      } catch (err) {
+        log(`feishu: failed to download inbound media (${imageKey}): ${String(err)}`);
+      }
+    }
+  }
 
   log(`feishu: received message from ${ctx.senderOpenId} in ${ctx.chatId} (${ctx.chatType})`);
 
@@ -284,6 +371,14 @@ export async function handleFeishuMessage(params: {
       CommandAuthorized: true,
       OriginatingChannel: "feishu" as const,
       OriginatingTo: feishuTo,
+
+      ...(inboundMediaPath
+        ? {
+            MediaPath: inboundMediaPath,
+            MediaType: inboundMediaType,
+            MediaUrl: inboundMediaPath,
+          }
+        : {}),
     });
 
     const { dispatcher, replyOptions, markDispatchIdle } = createFeishuReplyDispatcher({
