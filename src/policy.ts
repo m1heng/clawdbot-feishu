@@ -9,10 +9,10 @@ export type FeishuAllowlistMatch = {
 
 export function resolveFeishuAllowlistMatch(params: {
   allowFrom: Array<string | number>;
-  senderId: string;
+  senderId?: string | null;
   senderName?: string | null;
 }): FeishuAllowlistMatch {
-  const allowFrom = params.allowFrom
+  const allowFrom = (params.allowFrom || [])
     .map((entry) => String(entry).trim().toLowerCase())
     .filter(Boolean);
 
@@ -21,8 +21,8 @@ export function resolveFeishuAllowlistMatch(params: {
     return { allowed: true, matchKey: "*", matchSource: "wildcard" };
   }
 
-  const senderId = params.senderId.toLowerCase();
-  if (allowFrom.includes(senderId)) {
+  const senderId = params.senderId?.toLowerCase();
+  if (senderId && allowFrom.includes(senderId)) {
     return { allowed: true, matchKey: senderId, matchSource: "id" };
   }
 

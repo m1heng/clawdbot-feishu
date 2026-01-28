@@ -30,9 +30,6 @@ const MarkdownConfigSchema = z
   .strict()
   .optional();
 
-// Message render mode: auto (default) = detect markdown, raw = plain text, card = always card
-const RenderModeSchema = z.enum(["auto", "raw", "card"]).optional();
-
 const BlockStreamingCoalesceSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -61,6 +58,25 @@ export const FeishuGroupSchema = z
   })
   .strict();
 
+const CardHeaderSchema = z
+  .object({
+    title: z.object({
+      tag: z.literal("plain_text"),
+      content: z.string(),
+    }),
+    template: z.string().optional(),
+  })
+  .strict()
+  .optional();
+
+const FeishuCapabilitiesSchema = z
+  .object({
+    interactiveCards: z.boolean().optional(),
+    inlineButtons: z.boolean().optional(),
+  })
+  .strict()
+  .optional();
+
 export const FeishuConfigSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -72,8 +88,9 @@ export const FeishuConfigSchema = z
     connectionMode: FeishuConnectionModeSchema.optional().default("websocket"),
     webhookPath: z.string().optional().default("/feishu/events"),
     webhookPort: z.number().int().positive().optional(),
-    capabilities: z.array(z.string()).optional(),
-    markdown: MarkdownConfigSchema,
+    capabilities: z.union([z.array(z.string()), FeishuCapabilitiesSchema]).optional(),
+    card: z.object({ header: CardHeaderSchema }).optional(),
+    markdown: MarkdownConfigSchema.optional(),
     configWrites: z.boolean().optional(),
     dmPolicy: DmPolicySchema.optional().default("pairing"),
     allowFrom: z.array(z.union([z.string(), z.number()])).optional(),
@@ -86,10 +103,9 @@ export const FeishuConfigSchema = z
     dms: z.record(z.string(), DmConfigSchema).optional(),
     textChunkLimit: z.number().int().positive().optional(),
     chunkMode: z.enum(["length", "newline"]).optional(),
-    blockStreamingCoalesce: BlockStreamingCoalesceSchema,
+    blockStreamingCoalesce: BlockStreamingCoalesceSchema.optional(),
     mediaMaxMb: z.number().positive().optional(),
-    heartbeat: ChannelHeartbeatVisibilitySchema,
-    renderMode: RenderModeSchema, // raw = plain text (default), card = interactive card with markdown
+    heartbeat: ChannelHeartbeatVisibilitySchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
