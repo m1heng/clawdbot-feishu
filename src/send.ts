@@ -86,6 +86,128 @@ export async function getMessageFeishu(params: {
   }
 }
 
+export type FeishuHistoryMessage = {
+  messageId: string;
+  senderId: string;
+  senderType: string;
+  content: string;
+  contentType: string;
+  createTime: number;
+  deleted?: boolean;
+};
+
+export type ListMessagesResult = {
+  messages: FeishuHistoryMessage[];
+  hasMore: boolean;
+  pageToken?: string;
+  total: number;
+};
+
+/**
+ * List messages from a chat (group or p2p).
+ * Supports pagination - page_size max is 50 per API call.
+ * Use `count` parameter to fetch more messages (will auto-paginate).
+ *
+ * Note: Requires "获取群组中所有消息" permission for group chats.
+ */
+export async function listMessagesFeishu(params: {
+  cfg: ClawdbotConfig;
+  chatId: string;
+  count?: number;
+  startTime?: string;
+  endTime?: string;
+  pageToken?: string;
+  sortType?: "ByCreateTimeAsc" | "ByCreateTimeDesc";
+}): Promise<ListMessagesResult> {
+  const { cfg, chatId, count = 200, startTime, endTime, pageToken, sortType = "ByCreateTimeDesc" } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+  const messages: FeishuHistoryMessage[] = [];
+  let currentPageToken = pageToken;
+  let hasMore = true;
+
+  // API max page_size is 50
+  const pageSize = Math.min(50, count);
+
+  while (hasMore && messages.length < count) {
+    const response = await client.im.message.list({
+      params: {
+        container_id_type: "chat",
+        container_id: chatId,
+        page_size: pageSize,
+        page_token: currentPageToken,
+        start_time: startTime,
+        end_time: endTime,
+        sort_type: sortType,
+      },
+    });
+
+    if (response.code !== 0) {
+      throw new Error(`Feishu list messages failed: ${response.msg || `code ${response.code}`}`);
+    }
+
+    const items = response.data?.items ?? [];
+    for (const item of items) {
+      if (messages.length >= count) break;
+
+      // Parse content based on message type
+      let content = item.body?.content ?? "";
+      try {
+        const parsed = JSON.parse(content);
+        if (item.msg_type === "text" && parsed.text) {
+          content = parsed.text;
+        } else if (item.msg_type === "image") {
+          content = "[图片]";
+        } else if (item.msg_type === "file") {
+          content = "[文件]";
+        } else if (item.msg_type === "audio") {
+          content = "[语音]";
+        } else if (item.msg_type === "video") {
+          content = "[视频]";
+        } else if (item.msg_type === "sticker") {
+          content = "[表情]";
+        } else if (item.msg_type === "interactive") {
+          content = "[卡片消息]";
+        } else if (item.msg_type === "share_chat") {
+          content = "[分享群聊]";
+        } else if (item.msg_type === "share_user") {
+          content = "[分享用户]";
+        }
+      } catch {
+        // Keep raw content if parsing fails
+      }
+
+      messages.push({
+        messageId: item.message_id ?? "",
+        senderId: item.sender?.id ?? "",
+        senderType: item.sender?.sender_type ?? "",
+        content,
+        contentType: item.msg_type ?? "text",
+        createTime: item.create_time ? parseInt(item.create_time, 10) : 0,
+        deleted: item.deleted,
+      });
+    }
+
+    hasMore = response.data?.has_more ?? false;
+    currentPageToken = response.data?.page_token;
+
+    if (!currentPageToken) {
+      hasMore = false;
+    }
+  }
+
+  return {
+    messages,
+    hasMore,
+    pageToken: currentPageToken,
+    total: messages.length,
+  };
+}
+
 export type SendFeishuMessageParams = {
   cfg: ClawdbotConfig;
   to: string;

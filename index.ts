@@ -10,7 +10,12 @@ export {
   updateCardFeishu,
   editMessageFeishu,
   getMessageFeishu,
+  listMessagesFeishu,
 } from "./src/send.js";
+export {
+  isHistoryRequest,
+  fetchChatHistoryForAgent,
+} from "./src/bot.js";
 export {
   uploadImageFeishu,
   uploadFileFeishu,
