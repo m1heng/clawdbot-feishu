@@ -48,15 +48,17 @@ export function createFeishuWSClient(cfg: FeishuConfig): Lark.WSClient {
     appId: creds.appId,
     appSecret: creds.appSecret,
     domain: resolveDomain(creds.domain),
-    loggerLevel: Lark.LoggerLevel.info,
+    loggerLevel: Lark.LoggerLevel.debug,
   });
 }
 
 export function createEventDispatcher(cfg: FeishuConfig): Lark.EventDispatcher {
   const creds = resolveFeishuCredentials(cfg);
+  console.log("Feishu credentials:", creds);
   return new Lark.EventDispatcher({
     encryptKey: creds?.encryptKey,
     verificationToken: creds?.verificationToken,
+    loggerLevel: Lark.LoggerLevel.debug,
   });
 }
 
