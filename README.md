@@ -32,7 +32,7 @@ npm install @m1heng-clawd/feishu
 
 | Permission | Scope | Description |
 |------------|-------|-------------|
-| `contact:user.base:readonly` | User info | Get basic user information |
+| `contact:user.base:readonly` | User info | Get basic user info (required to resolve sender display names for speaker attribution) |
 | `im:message` | Messaging | Send and receive messages |
 | `im:message.p2p_msg:readonly` | DM | Read direct messages to bot |
 | `im:message.group_at_msg:readonly` | Group | Receive @mention messages in groups |
@@ -185,7 +185,7 @@ npm install @m1heng-clawd/feishu
 
 | 权限 | 范围 | 说明 |
 |------|------|------|
-| `contact:user.base:readonly` | 用户信息 | 获取用户基本信息 |
+| `contact:user.base:readonly` | 用户信息 | 获取用户基本信息（用于解析发送者姓名，避免群聊/私聊把不同人当成同一说话者） |
 | `im:message` | 消息 | 发送和接收消息 |
 | `im:message.p2p_msg:readonly` | 私聊 | 读取发给机器人的私聊消息 |
 | `im:message.group_at_msg:readonly` | 群聊 | 接收群内 @机器人 的消息 |
