@@ -448,7 +448,9 @@ export async function handleFeishuMessage(params: {
   try {
     const core = getFeishuRuntime();
 
-    const feishuFrom = isGroup ? `feishu:group:${ctx.chatId}` : `feishu:${ctx.senderOpenId}`;
+    // In group chats, the session is scoped to the group, but the *speaker* is the sender.
+    // Using a group-scoped From causes the agent to treat different users as the same person.
+    const feishuFrom = `feishu:${ctx.senderOpenId}`;
     const feishuTo = isGroup ? `chat:${ctx.chatId}` : `user:${ctx.senderOpenId}`;
 
     const route = core.channel.routing.resolveAgentRoute({
@@ -504,9 +506,11 @@ export async function handleFeishuMessage(params: {
       messageBody = `[Replying to: "${quotedContent}"]\n\n${ctx.content}`;
     }
 
+    const envelopeFrom = isGroup ? `${ctx.chatId}:${ctx.senderOpenId}` : ctx.senderOpenId;
+
     const body = core.channel.reply.formatAgentEnvelope({
       channel: "Feishu",
-      from: isGroup ? ctx.chatId : ctx.senderOpenId,
+      from: envelopeFrom,
       timestamp: new Date(),
       envelope: envelopeOptions,
       body: messageBody,
@@ -524,7 +528,8 @@ export async function handleFeishuMessage(params: {
         formatEntry: (entry) =>
           core.channel.reply.formatAgentEnvelope({
             channel: "Feishu",
-            from: ctx.chatId,
+            // Preserve speaker identity in group history as well.
+            from: `${ctx.chatId}:${entry.sender}`,
             timestamp: entry.timestamp,
             body: `${entry.sender}: ${entry.body}`,
             envelope: envelopeOptions,
@@ -542,7 +547,7 @@ export async function handleFeishuMessage(params: {
       AccountId: route.accountId,
       ChatType: isGroup ? "group" : "direct",
       GroupSubject: isGroup ? ctx.chatId : undefined,
-      SenderName: ctx.senderOpenId,
+      SenderName: ctx.senderName ?? ctx.senderOpenId,
       SenderId: ctx.senderOpenId,
       Provider: "feishu" as const,
       Surface: "feishu" as const,
