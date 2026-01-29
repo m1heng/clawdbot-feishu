@@ -12,7 +12,6 @@ export {
   getMessageFeishu,
   sendMarkdownCardFeishu,
   buildInteractiveCard,
-  createSimpleTextCard,
 } from "./src/send.js";
 export {
   uploadImageFeishu,
