@@ -8,6 +8,7 @@ import {
 } from "clawdbot/plugin-sdk";
 import type { FeishuConfig, FeishuMessageContext, FeishuMediaInfo } from "./types.js";
 import { getFeishuRuntime } from "./runtime.js";
+import { createFeishuClient } from "./client.js";
 import {
   resolveFeishuGroupConfig,
   resolveFeishuReplyPolicy,
@@ -17,6 +18,52 @@ import {
 import { createFeishuReplyDispatcher } from "./reply-dispatcher.js";
 import { getMessageFeishu } from "./send.js";
 import { downloadImageFeishu, downloadMessageResourceFeishu } from "./media.js";
+
+// --- Sender name resolution (so the agent can distinguish who is speaking in group chats) ---
+// Cache display names by open_id to avoid an API call on every message.
+const SENDER_NAME_TTL_MS = 10 * 60 * 1000;
+const senderNameCache = new Map<string, { name: string; expireAt: number }>();
+
+async function resolveFeishuSenderName(params: {
+  feishuCfg?: FeishuConfig;
+  senderOpenId: string;
+  log: (...args: any[]) => void;
+}): Promise<string | undefined> {
+  const { feishuCfg, senderOpenId, log } = params;
+  if (!feishuCfg) return undefined;
+  if (!senderOpenId) return undefined;
+
+  const cached = senderNameCache.get(senderOpenId);
+  const now = Date.now();
+  if (cached && cached.expireAt > now) return cached.name;
+
+  try {
+    const client = createFeishuClient(feishuCfg);
+
+    // contact/v3/users/:user_id?user_id_type=open_id
+    const res: any = await client.contact.user.get({
+      path: { user_id: senderOpenId },
+      params: { user_id_type: "open_id" },
+    });
+
+    const name: string | undefined =
+      res?.data?.user?.name ||
+      res?.data?.user?.display_name ||
+      res?.data?.user?.nickname ||
+      res?.data?.user?.en_name;
+
+    if (name && typeof name === "string") {
+      senderNameCache.set(senderOpenId, { name, expireAt: now + SENDER_NAME_TTL_MS });
+      return name;
+    }
+
+    return undefined;
+  } catch (err) {
+    // Best-effort. Don't fail message handling if name lookup fails.
+    log(`feishu: failed to resolve sender name for ${senderOpenId}: ${String(err)}`);
+    return undefined;
+  }
+}
 
 export type FeishuMessageEvent = {
   sender: {
@@ -378,8 +425,16 @@ export async function handleFeishuMessage(params: {
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
 
-  const ctx = parseFeishuMessageEvent(event, botOpenId);
+  let ctx = parseFeishuMessageEvent(event, botOpenId);
   const isGroup = ctx.chatType === "group";
+
+  // Resolve sender display name (best-effort) so the agent can attribute messages correctly.
+  const senderName = await resolveFeishuSenderName({
+    feishuCfg,
+    senderOpenId: ctx.senderOpenId,
+    log,
+  });
+  if (senderName) ctx = { ...ctx, senderName };
 
   log(`feishu: received message from ${ctx.senderOpenId} in ${ctx.chatId} (${ctx.chatType})`);
 
@@ -421,7 +476,7 @@ export async function handleFeishuMessage(params: {
           limit: historyLimit,
           entry: {
             sender: ctx.senderOpenId,
-            body: ctx.content,
+            body: `${ctx.senderName ?? ctx.senderOpenId}: ${ctx.content}`,
             timestamp: Date.now(),
             messageId: ctx.messageId,
           },
@@ -506,6 +561,12 @@ export async function handleFeishuMessage(params: {
       messageBody = `[Replying to: "${quotedContent}"]\n\n${ctx.content}`;
     }
 
+    // In groups, include a readable speaker label so the model can attribute instructions.
+    if (isGroup) {
+      const speaker = ctx.senderName ?? ctx.senderOpenId;
+      messageBody = `${speaker}: ${messageBody}`;
+    }
+
     const envelopeFrom = isGroup ? `${ctx.chatId}:${ctx.senderOpenId}` : ctx.senderOpenId;
 
     const body = core.channel.reply.formatAgentEnvelope({
@@ -531,7 +592,7 @@ export async function handleFeishuMessage(params: {
             // Preserve speaker identity in group history as well.
             from: `${ctx.chatId}:${entry.sender}`,
             timestamp: entry.timestamp,
-            body: `${entry.sender}: ${entry.body}`,
+            body: entry.body,
             envelope: envelopeOptions,
           }),
       });
