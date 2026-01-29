@@ -7,12 +7,25 @@ import {
   type ReplyPayload,
 } from "clawdbot/plugin-sdk";
 import { getFeishuRuntime } from "./runtime.js";
-import { sendMessageFeishu } from "./send.js";
+import { sendMessageFeishu, sendMarkdownCardFeishu } from "./send.js";
+import type { FeishuConfig } from "./types.js";
 import {
   addTypingIndicator,
   removeTypingIndicator,
   type TypingIndicatorState,
 } from "./typing.js";
+
+/**
+ * Detect if text contains markdown elements that benefit from card rendering.
+ * Used by auto render mode.
+ */
+function shouldUseCard(text: string): boolean {
+  // Code blocks (fenced)
+  if (/```[\s\S]*?```/.test(text)) return true;
+  // Tables (at least header + separator row with |)
+  if (/\|.+\|[\r\n]+\|[-:| ]+\|/.test(text)) return true;
+  return false;
+}
 
 export type CreateFeishuReplyDispatcherParams = {
   cfg: ClawdbotConfig;
@@ -90,17 +103,39 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
           return;
         }
 
-        const converted = core.channel.text.convertMarkdownTables(text, tableMode);
-        const chunks = core.channel.text.chunkTextWithMode(converted, textChunkLimit, chunkMode);
+        // Check render mode: auto (default), raw, or card
+        const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+        const renderMode = feishuCfg?.renderMode ?? "auto";
 
-        params.runtime.log?.(`feishu deliver: sending ${chunks.length} chunks to ${chatId}`);
-        for (const chunk of chunks) {
-          await sendMessageFeishu({
-            cfg,
-            to: chatId,
-            text: chunk,
-            replyToMessageId,
-          });
+        // Determine if we should use card for this message
+        const useCard =
+          renderMode === "card" || (renderMode === "auto" && shouldUseCard(text));
+
+        if (useCard) {
+          // Card mode: send as interactive card with markdown rendering
+          const chunks = core.channel.text.chunkTextWithMode(text, textChunkLimit, chunkMode);
+          params.runtime.log?.(`feishu deliver: sending ${chunks.length} card chunks to ${chatId}`);
+          for (const chunk of chunks) {
+            await sendMarkdownCardFeishu({
+              cfg,
+              to: chatId,
+              text: chunk,
+              replyToMessageId,
+            });
+          }
+        } else {
+          // Raw mode: send as plain text with table conversion
+          const converted = core.channel.text.convertMarkdownTables(text, tableMode);
+          const chunks = core.channel.text.chunkTextWithMode(converted, textChunkLimit, chunkMode);
+          params.runtime.log?.(`feishu deliver: sending ${chunks.length} text chunks to ${chatId}`);
+          for (const chunk of chunks) {
+            await sendMessageFeishu({
+              cfg,
+              to: chatId,
+              text: chunk,
+              replyToMessageId,
+            });
+          }
         }
       },
       onError: (err, info) => {

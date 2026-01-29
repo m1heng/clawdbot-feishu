@@ -4,7 +4,176 @@ import { createFeishuClient } from "./client.js";
 import { resolveReceiveIdType, normalizeFeishuTarget } from "./targets.js";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { Readable } from "stream";
+
+export type DownloadImageResult = {
+  buffer: Buffer;
+  contentType?: string;
+};
+
+export type DownloadMessageResourceResult = {
+  buffer: Buffer;
+  contentType?: string;
+  fileName?: string;
+};
+
+/**
+ * Download an image from Feishu using image_key.
+ * Used for downloading images sent in messages.
+ */
+export async function downloadImageFeishu(params: {
+  cfg: ClawdbotConfig;
+  imageKey: string;
+}): Promise<DownloadImageResult> {
+  const { cfg, imageKey } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+
+  const response = await client.im.image.get({
+    path: { image_key: imageKey },
+  });
+
+  const responseAny = response as any;
+  if (responseAny.code !== undefined && responseAny.code !== 0) {
+    throw new Error(`Feishu image download failed: ${responseAny.msg || `code ${responseAny.code}`}`);
+  }
+
+  // Handle various response formats from Feishu SDK
+  let buffer: Buffer;
+
+  if (Buffer.isBuffer(response)) {
+    buffer = response;
+  } else if (response instanceof ArrayBuffer) {
+    buffer = Buffer.from(response);
+  } else if (responseAny.data && Buffer.isBuffer(responseAny.data)) {
+    buffer = responseAny.data;
+  } else if (responseAny.data instanceof ArrayBuffer) {
+    buffer = Buffer.from(responseAny.data);
+  } else if (typeof responseAny.getReadableStream === "function") {
+    // SDK provides getReadableStream method
+    const stream = responseAny.getReadableStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    buffer = Buffer.concat(chunks);
+  } else if (typeof responseAny.writeFile === "function") {
+    // SDK provides writeFile method - use a temp file
+    const tmpPath = path.join(os.tmpdir(), `feishu_img_${Date.now()}_${imageKey}`);
+    await responseAny.writeFile(tmpPath);
+    buffer = await fs.promises.readFile(tmpPath);
+    await fs.promises.unlink(tmpPath).catch(() => {}); // cleanup
+  } else if (typeof responseAny[Symbol.asyncIterator] === "function") {
+    // Response is an async iterable
+    const chunks: Buffer[] = [];
+    for await (const chunk of responseAny) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    buffer = Buffer.concat(chunks);
+  } else if (typeof responseAny.read === "function") {
+    // Response is a Readable stream
+    const chunks: Buffer[] = [];
+    for await (const chunk of responseAny as Readable) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    buffer = Buffer.concat(chunks);
+  } else {
+    // Debug: log what we actually received
+    const keys = Object.keys(responseAny);
+    const types = keys.map(k => `${k}: ${typeof responseAny[k]}`).join(", ");
+    throw new Error(
+      `Feishu image download failed: unexpected response format. Keys: [${types}]`,
+    );
+  }
+
+  return { buffer };
+}
+
+/**
+ * Download a message resource (file/image/audio/video) from Feishu.
+ * Used for downloading files, audio, and video from messages.
+ */
+export async function downloadMessageResourceFeishu(params: {
+  cfg: ClawdbotConfig;
+  messageId: string;
+  fileKey: string;
+  type: "image" | "file";
+}): Promise<DownloadMessageResourceResult> {
+  const { cfg, messageId, fileKey, type } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+
+  const response = await client.im.messageResource.get({
+    path: { message_id: messageId, file_key: fileKey },
+    params: { type },
+  });
+
+  const responseAny = response as any;
+  if (responseAny.code !== undefined && responseAny.code !== 0) {
+    throw new Error(
+      `Feishu message resource download failed: ${responseAny.msg || `code ${responseAny.code}`}`,
+    );
+  }
+
+  // Handle various response formats from Feishu SDK
+  let buffer: Buffer;
+
+  if (Buffer.isBuffer(response)) {
+    buffer = response;
+  } else if (response instanceof ArrayBuffer) {
+    buffer = Buffer.from(response);
+  } else if (responseAny.data && Buffer.isBuffer(responseAny.data)) {
+    buffer = responseAny.data;
+  } else if (responseAny.data instanceof ArrayBuffer) {
+    buffer = Buffer.from(responseAny.data);
+  } else if (typeof responseAny.getReadableStream === "function") {
+    // SDK provides getReadableStream method
+    const stream = responseAny.getReadableStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    buffer = Buffer.concat(chunks);
+  } else if (typeof responseAny.writeFile === "function") {
+    // SDK provides writeFile method - use a temp file
+    const tmpPath = path.join(os.tmpdir(), `feishu_${Date.now()}_${fileKey}`);
+    await responseAny.writeFile(tmpPath);
+    buffer = await fs.promises.readFile(tmpPath);
+    await fs.promises.unlink(tmpPath).catch(() => {}); // cleanup
+  } else if (typeof responseAny[Symbol.asyncIterator] === "function") {
+    // Response is an async iterable
+    const chunks: Buffer[] = [];
+    for await (const chunk of responseAny) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    buffer = Buffer.concat(chunks);
+  } else if (typeof responseAny.read === "function") {
+    // Response is a Readable stream
+    const chunks: Buffer[] = [];
+    for await (const chunk of responseAny as Readable) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    buffer = Buffer.concat(chunks);
+  } else {
+    // Debug: log what we actually received
+    const keys = Object.keys(responseAny);
+    const types = keys.map(k => `${k}: ${typeof responseAny[k]}`).join(", ");
+    throw new Error(
+      `Feishu message resource download failed: unexpected response format. Keys: [${types}]`,
+    );
+  }
+
+  return { buffer };
+}
 
 export type UploadImageResult = {
   imageKey: string;

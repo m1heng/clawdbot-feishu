@@ -6,7 +6,7 @@ import {
   DEFAULT_GROUP_HISTORY_LIMIT,
   type HistoryEntry,
 } from "clawdbot/plugin-sdk";
-import type { FeishuConfig, FeishuMessageContext } from "./types.js";
+import type { FeishuConfig, FeishuMessageContext, FeishuMediaInfo } from "./types.js";
 import { getFeishuRuntime } from "./runtime.js";
 import {
   resolveFeishuGroupConfig,
@@ -16,6 +16,7 @@ import {
 } from "./policy.js";
 import { createFeishuReplyDispatcher } from "./reply-dispatcher.js";
 import { getMessageFeishu } from "./send.js";
+import { downloadImageFeishu, downloadMessageResourceFeishu } from "./media.js";
 
 export type FeishuMessageEvent = {
   sender: {
@@ -65,6 +66,11 @@ function parseMessageContent(content: string, messageType: string): string {
     if (messageType === "text") {
       return parsed.text || "";
     }
+    if (messageType === "post") {
+      // Extract text content from rich text post
+      const { textContent } = parsePostContent(content);
+      return textContent;
+    }
     return content;
   } catch {
     return content;
@@ -86,6 +92,256 @@ function stripBotMention(text: string, mentions?: FeishuMessageEvent["message"][
     result = result.replace(new RegExp(mention.key, "g"), "").trim();
   }
   return result;
+}
+
+/**
+ * Parse media keys from message content based on message type.
+ */
+function parseMediaKeys(
+  content: string,
+  messageType: string,
+): {
+  imageKey?: string;
+  fileKey?: string;
+  fileName?: string;
+} {
+  try {
+    const parsed = JSON.parse(content);
+    switch (messageType) {
+      case "image":
+        return { imageKey: parsed.image_key };
+      case "file":
+        return { fileKey: parsed.file_key, fileName: parsed.file_name };
+      case "audio":
+        return { fileKey: parsed.file_key };
+      case "video":
+        // Video has both file_key (video) and image_key (thumbnail)
+        return { fileKey: parsed.file_key, imageKey: parsed.image_key };
+      case "sticker":
+        return { fileKey: parsed.file_key };
+      default:
+        return {};
+    }
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Parse post (rich text) content and extract embedded image keys.
+ * Post structure: { title?: string, content: [[{ tag, text?, image_key?, ... }]] }
+ */
+function parsePostContent(content: string): {
+  textContent: string;
+  imageKeys: string[];
+} {
+  try {
+    const parsed = JSON.parse(content);
+    const title = parsed.title || "";
+    const contentBlocks = parsed.content || [];
+    let textContent = title ? `${title}\n\n` : "";
+    const imageKeys: string[] = [];
+
+    for (const paragraph of contentBlocks) {
+      if (Array.isArray(paragraph)) {
+        for (const element of paragraph) {
+          if (element.tag === "text") {
+            textContent += element.text || "";
+          } else if (element.tag === "a") {
+            // Link: show text or href
+            textContent += element.text || element.href || "";
+          } else if (element.tag === "at") {
+            // Mention: @username
+            textContent += `@${element.user_name || element.user_id || ""}`;
+          } else if (element.tag === "img" && element.image_key) {
+            // Embedded image
+            imageKeys.push(element.image_key);
+          }
+        }
+        textContent += "\n";
+      }
+    }
+
+    return {
+      textContent: textContent.trim() || "[富文本消息]",
+      imageKeys,
+    };
+  } catch {
+    return { textContent: "[富文本消息]", imageKeys: [] };
+  }
+}
+
+/**
+ * Infer placeholder text based on message type.
+ */
+function inferPlaceholder(messageType: string): string {
+  switch (messageType) {
+    case "image":
+      return "<media:image>";
+    case "file":
+      return "<media:document>";
+    case "audio":
+      return "<media:audio>";
+    case "video":
+      return "<media:video>";
+    case "sticker":
+      return "<media:sticker>";
+    default:
+      return "<media:document>";
+  }
+}
+
+/**
+ * Resolve media from a Feishu message, downloading and saving to disk.
+ * Similar to Discord's resolveMediaList().
+ */
+async function resolveFeishuMediaList(params: {
+  cfg: ClawdbotConfig;
+  messageId: string;
+  messageType: string;
+  content: string;
+  maxBytes: number;
+  log?: (msg: string) => void;
+}): Promise<FeishuMediaInfo[]> {
+  const { cfg, messageId, messageType, content, maxBytes, log } = params;
+
+  // Only process media message types (including post for embedded images)
+  const mediaTypes = ["image", "file", "audio", "video", "sticker", "post"];
+  if (!mediaTypes.includes(messageType)) {
+    return [];
+  }
+
+  const out: FeishuMediaInfo[] = [];
+  const core = getFeishuRuntime();
+
+  // Handle post (rich text) messages with embedded images
+  if (messageType === "post") {
+    const { imageKeys } = parsePostContent(content);
+    if (imageKeys.length === 0) {
+      return [];
+    }
+
+    log?.(`feishu: post message contains ${imageKeys.length} embedded image(s)`);
+
+    for (const imageKey of imageKeys) {
+      try {
+        // Embedded images in post use messageResource API with image_key as file_key
+        const result = await downloadMessageResourceFeishu({
+          cfg,
+          messageId,
+          fileKey: imageKey,
+          type: "image",
+        });
+
+        let contentType = result.contentType;
+        if (!contentType) {
+          contentType = await core.media.detectMime({ buffer: result.buffer });
+        }
+
+        const saved = await core.channel.media.saveMediaBuffer(
+          result.buffer,
+          contentType,
+          "inbound",
+          maxBytes,
+        );
+
+        out.push({
+          path: saved.path,
+          contentType: saved.contentType,
+          placeholder: "<media:image>",
+        });
+
+        log?.(`feishu: downloaded embedded image ${imageKey}, saved to ${saved.path}`);
+      } catch (err) {
+        log?.(`feishu: failed to download embedded image ${imageKey}: ${String(err)}`);
+      }
+    }
+
+    return out;
+  }
+
+  // Handle other media types
+  const mediaKeys = parseMediaKeys(content, messageType);
+  if (!mediaKeys.imageKey && !mediaKeys.fileKey) {
+    return [];
+  }
+
+  try {
+    let buffer: Buffer;
+    let contentType: string | undefined;
+    let fileName: string | undefined;
+
+    // For message media, always use messageResource API
+    // The image.get API is only for images uploaded via im/v1/images, not for message attachments
+    const fileKey = mediaKeys.imageKey || mediaKeys.fileKey;
+    if (!fileKey) {
+      return [];
+    }
+
+    const resourceType = messageType === "image" ? "image" : "file";
+    const result = await downloadMessageResourceFeishu({
+      cfg,
+      messageId,
+      fileKey,
+      type: resourceType,
+    });
+    buffer = result.buffer;
+    contentType = result.contentType;
+    fileName = result.fileName || mediaKeys.fileName;
+
+    // Detect mime type if not provided
+    if (!contentType) {
+      contentType = await core.media.detectMime({ buffer });
+    }
+
+    // Save to disk using core's saveMediaBuffer
+    const saved = await core.channel.media.saveMediaBuffer(
+      buffer,
+      contentType,
+      "inbound",
+      maxBytes,
+      fileName,
+    );
+
+    out.push({
+      path: saved.path,
+      contentType: saved.contentType,
+      placeholder: inferPlaceholder(messageType),
+    });
+
+    log?.(`feishu: downloaded ${messageType} media, saved to ${saved.path}`);
+  } catch (err) {
+    log?.(`feishu: failed to download ${messageType} media: ${String(err)}`);
+  }
+
+  return out;
+}
+
+/**
+ * Build media payload for inbound context.
+ * Similar to Discord's buildDiscordMediaPayload().
+ */
+function buildFeishuMediaPayload(
+  mediaList: FeishuMediaInfo[],
+): {
+  MediaPath?: string;
+  MediaType?: string;
+  MediaUrl?: string;
+  MediaPaths?: string[];
+  MediaUrls?: string[];
+  MediaTypes?: string[];
+} {
+  const first = mediaList[0];
+  const mediaPaths = mediaList.map((media) => media.path);
+  const mediaTypes = mediaList.map((media) => media.contentType).filter(Boolean) as string[];
+  return {
+    MediaPath: first?.path,
+    MediaType: first?.contentType,
+    MediaUrl: first?.path,
+    MediaPaths: mediaPaths.length > 0 ? mediaPaths : undefined,
+    MediaUrls: mediaPaths.length > 0 ? mediaPaths : undefined,
+    MediaTypes: mediaTypes.length > 0 ? mediaTypes : undefined,
+  };
 }
 
 export function parseFeishuMessageEvent(
@@ -214,6 +470,18 @@ export async function handleFeishuMessage(params: {
       contextKey: `feishu:message:${ctx.chatId}:${ctx.messageId}`,
     });
 
+    // Resolve media from message
+    const mediaMaxBytes = (feishuCfg?.mediaMaxMb ?? 30) * 1024 * 1024; // 30MB default
+    const mediaList = await resolveFeishuMediaList({
+      cfg,
+      messageId: ctx.messageId,
+      messageType: event.message.message_type,
+      content: event.message.content,
+      maxBytes: mediaMaxBytes,
+      log,
+    });
+    const mediaPayload = buildFeishuMediaPayload(mediaList);
+
     // Fetch quoted/replied message content if parentId exists
     let quotedContent: string | undefined;
     if (ctx.parentId) {
@@ -284,6 +552,7 @@ export async function handleFeishuMessage(params: {
       CommandAuthorized: true,
       OriginatingChannel: "feishu" as const,
       OriginatingTo: feishuTo,
+      ...mediaPayload,
     });
 
     const { dispatcher, replyOptions, markDispatchIdle } = createFeishuReplyDispatcher({

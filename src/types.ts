@@ -42,3 +42,9 @@ export type FeishuProbeResult = {
   botName?: string;
   botOpenId?: string;
 };
+
+export type FeishuMediaInfo = {
+  path: string;
+  contentType?: string;
+  placeholder: string;
+};

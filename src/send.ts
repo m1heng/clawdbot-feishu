@@ -239,6 +239,39 @@ export async function updateCardFeishu(params: {
 }
 
 /**
+ * Build a Feishu interactive card with markdown content.
+ * Cards render markdown properly (code blocks, tables, links, etc.)
+ */
+export function buildMarkdownCard(text: string): Record<string, unknown> {
+  return {
+    config: {
+      wide_screen_mode: true,
+    },
+    elements: [
+      {
+        tag: "markdown",
+        content: text,
+      },
+    ],
+  };
+}
+
+/**
+ * Send a message as a markdown card (interactive message).
+ * This renders markdown properly in Feishu (code blocks, tables, bold/italic, etc.)
+ */
+export async function sendMarkdownCardFeishu(params: {
+  cfg: ClawdbotConfig;
+  to: string;
+  text: string;
+  replyToMessageId?: string;
+}): Promise<FeishuSendResult> {
+  const { cfg, to, text, replyToMessageId } = params;
+  const card = buildMarkdownCard(text);
+  return sendCardFeishu({ cfg, to, card, replyToMessageId });
+}
+
+/**
  * Edit an existing text message.
  * Note: Feishu only allows editing messages within 24 hours.
  */
