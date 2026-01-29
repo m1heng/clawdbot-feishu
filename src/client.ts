@@ -48,7 +48,7 @@ export function createFeishuWSClient(cfg: FeishuConfig): Lark.WSClient {
     appId: creds.appId,
     appSecret: creds.appSecret,
     domain: resolveDomain(creds.domain),
-    loggerLevel: Lark.LoggerLevel.debug,
+    loggerLevel: Lark.LoggerLevel.info,
   });
 }
 
