@@ -4,6 +4,105 @@
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "properties": {}
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "description": "Enable or disable the Feishu channel"
+      },
+      "appId": {
+        "type": "string",
+        "description": "Feishu/Lark App ID"
+      },
+      "appSecret": {
+        "type": "string",
+        "description": "Feishu/Lark App Secret"
+      },
+      "encryptKey": {
+        "type": "string",
+        "description": "Event subscription encryption key"
+      },
+      "verificationToken": {
+        "type": "string",
+        "description": "Event subscription verification token"
+      },
+      "domain": {
+        "type": "string",
+        "enum": ["feishu", "lark"],
+        "default": "feishu",
+        "description": "Domain to use (feishu or lark)"
+      },
+      "connectionMode": {
+        "type": "string",
+        "enum": ["websocket", "webhook"],
+        "default": "websocket",
+        "description": "Connection mode for receiving events"
+      },
+      "webhookPath": {
+        "type": "string",
+        "default": "/feishu/events",
+        "description": "Path for webhook events (webhook mode only)"
+      },
+      "webhookPort": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Port for webhook server (webhook mode only)"
+      },
+      "dmPolicy": {
+        "type": "string",
+        "enum": ["open", "pairing", "allowlist"],
+        "default": "pairing",
+        "description": "Direct message access policy"
+      },
+      "allowFrom": {
+        "type": "array",
+        "items": {
+          "type": ["string", "integer"]
+        },
+        "description": "List of allowed user IDs or names for DMs"
+      },
+      "groupPolicy": {
+        "type": "string",
+        "enum": ["open", "allowlist", "disabled"],
+        "default": "allowlist",
+        "description": "Group chat access policy"
+      },
+      "groupAllowFrom": {
+        "type": "array",
+        "items": {
+          "type": ["string", "integer"]
+        },
+        "description": "List of allowed user IDs or names for groups"
+      },
+      "requireMention": {
+        "type": "boolean",
+        "default": true,
+        "description": "Require bot mention to respond in groups"
+      },
+      "historyLimit": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Number of history messages to include in context"
+      },
+      "dmHistoryLimit": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Number of history messages to include in DM context"
+      },
+      "textChunkLimit": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Max characters per message chunk"
+      },
+      "chunkMode": {
+        "type": "string",
+        "enum": ["length", "newline"],
+        "description": "Text chunking strategy"
+      },
+      "renderMode": {
+        "type": "string",
+        "enum": ["auto", "raw", "card"],
+        "description": "Message rendering mode"
+      }
+    }
   }
 }
