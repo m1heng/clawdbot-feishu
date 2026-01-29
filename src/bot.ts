@@ -561,11 +561,10 @@ export async function handleFeishuMessage(params: {
       messageBody = `[Replying to: "${quotedContent}"]\n\n${ctx.content}`;
     }
 
-    // In groups, include a readable speaker label so the model can attribute instructions.
-    if (isGroup) {
-      const speaker = ctx.senderName ?? ctx.senderOpenId;
-      messageBody = `${speaker}: ${messageBody}`;
-    }
+    // Include a readable speaker label so the model can attribute instructions.
+    // (DMs already have per-sender sessions, but the prefix is still useful for clarity.)
+    const speaker = ctx.senderName ?? ctx.senderOpenId;
+    messageBody = `${speaker}: ${messageBody}`;
 
     const envelopeFrom = isGroup ? `${ctx.chatId}:${ctx.senderOpenId}` : ctx.senderOpenId;
 
