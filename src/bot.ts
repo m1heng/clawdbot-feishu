@@ -681,8 +681,37 @@ export async function handleFeishuMessage(params: {
 
     const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
 
+    // Handle image messages - download and prepare for agent
+    let downloadedMedia: DownloadedMedia | undefined;
+    let mediaPlaceholder = "";
+    if (ctx.contentType === "image") {
+      try {
+        log(`feishu: detected image message, attempting to download`);
+
+        // Parse the image_key from image message content
+        const imageContent = JSON.parse(event.message.content);
+        const imageKey = imageContent.image_key;
+
+        if (imageKey) {
+          log(`feishu: downloading image: ${imageKey}`);
+          downloadedMedia = await downloadFeishuImage({
+            cfg,
+            messageId: ctx.messageId,
+            imageKey,
+          });
+          mediaPlaceholder = "<media:image>";
+          log(`feishu: image downloaded to ${downloadedMedia.path}`);
+        } else {
+          log(`feishu: no image_key found in image message`);
+        }
+      } catch (err) {
+        log(`feishu: failed to download image: ${String(err)}`);
+        // Continue without image
+      }
+    }
+
     // Build message body with quoted content if available
-    let messageBody = ctx.content;
+    let messageBody = ctx.content || mediaPlaceholder;
     if (quotedContent) {
       messageBody = `[Replying to: "${quotedContent}"]\n\n${ctx.content}`;
     }
@@ -752,8 +781,8 @@ export async function handleFeishuMessage(params: {
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       Body: combinedBody,
-      RawBody: ctx.content,
-      CommandBody: ctx.content,
+      RawBody: ctx.content || mediaPlaceholder,
+      CommandBody: ctx.content || mediaPlaceholder,
       From: feishuFrom,
       To: feishuTo,
       SessionKey: route.sessionKey,

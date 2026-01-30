@@ -513,3 +513,95 @@ export async function sendMediaFeishu(params: {
     return sendFileFeishu({ cfg, to, fileKey, replyToMessageId });
   }
 }
+
+/**
+ * Download a media file from Feishu message using message_id and file_key
+ * Returns the file content as a Buffer
+ */
+export async function downloadFeishuFile(params: {
+  cfg: ClawdbotConfig;
+  messageId: string;
+  fileKey: string;
+  fileType?: "image" | "audio" | "video" | "file";
+}): Promise<Buffer> {
+  const { cfg, messageId, fileKey, fileType = "file" } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+
+  // Use messageResource.get to download the file from a message
+  const response = await client.im.messageResource.get({
+    params: {
+      type: fileType,
+    },
+    path: {
+      message_id: messageId,
+      file_key: fileKey,
+    },
+  });
+
+  const responseAny = response as any;
+  if (responseAny.code !== undefined && responseAny.code !== 0) {
+    throw new Error(`Feishu download failed: ${responseAny.msg || `code ${responseAny.code}`}`);
+  }
+
+  // Get readable stream and convert to buffer
+  const stream = responseAny.getReadableStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+}
+
+export type DownloadedMedia = {
+  path: string;
+  contentType: string;
+};
+
+/**
+ * Download an image from Feishu message and save to local temp directory
+ */
+export async function downloadFeishuImage(params: {
+  cfg: ClawdbotConfig;
+  messageId: string;
+  imageKey: string;
+}): Promise<DownloadedMedia> {
+  const { cfg, messageId, imageKey } = params;
+
+  const buffer = await downloadFeishuFile({
+    cfg,
+    messageId,
+    fileKey: imageKey,
+    fileType: "image",
+  });
+
+  // Create temp directory for media
+  const mediaDir = path.join(os.tmpdir(), "clawdbot-feishu-media");
+  if (!fs.existsSync(mediaDir)) {
+    fs.mkdirSync(mediaDir, { recursive: true });
+  }
+
+  // Detect image type from buffer magic bytes
+  let ext = ".jpg";
+  let contentType = "image/jpeg";
+  if (buffer[0] === 0x89 && buffer[1] === 0x50) {
+    ext = ".png";
+    contentType = "image/png";
+  } else if (buffer[0] === 0x47 && buffer[1] === 0x49) {
+    ext = ".gif";
+    contentType = "image/gif";
+  } else if (buffer[0] === 0x52 && buffer[1] === 0x49) {
+    ext = ".webp";
+    contentType = "image/webp";
+  }
+
+  const filePath = path.join(mediaDir, `${imageKey}${ext}`);
+  fs.writeFileSync(filePath, buffer);
+
+  return { path: filePath, contentType };
+}
