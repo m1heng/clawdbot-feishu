@@ -93,6 +93,28 @@ export type SendFeishuMessageParams = {
   replyToMessageId?: string;
 };
 
+function buildFeishuPostMessagePayload(params: { feishuCfg: FeishuConfig; messageText: string }): {
+  content: string;
+  msgType: string;
+} {
+  const { messageText } = params;
+  return {
+    content: JSON.stringify({
+      zh_cn: {
+        content: [
+          [
+            {
+              tag: "md",
+              text: messageText,
+            },
+          ],
+        ],
+      },
+    }),
+    msgType: "post",
+  };
+}
+
 export async function sendMessageFeishu(params: SendFeishuMessageParams): Promise<FeishuSendResult> {
   const { cfg, to, text, replyToMessageId } = params;
   const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
@@ -113,14 +135,17 @@ export async function sendMessageFeishu(params: SendFeishuMessageParams): Promis
   });
   const messageText = getFeishuRuntime().channel.text.convertMarkdownTables(text ?? "", tableMode);
 
-  const content = JSON.stringify({ text: messageText });
+  const { content, msgType } = buildFeishuPostMessagePayload({
+    feishuCfg,
+    messageText,
+  });
 
   if (replyToMessageId) {
     const response = await client.im.message.reply({
       path: { message_id: replyToMessageId },
       data: {
         content,
-        msg_type: "text",
+        msg_type: msgType,
       },
     });
 
@@ -139,7 +164,7 @@ export async function sendMessageFeishu(params: SendFeishuMessageParams): Promis
     data: {
       receive_id: receiveId,
       content,
-      msg_type: "text",
+      msg_type: msgType,
     },
   });
 
@@ -292,12 +317,16 @@ export async function editMessageFeishu(params: {
     channel: "feishu",
   });
   const messageText = getFeishuRuntime().channel.text.convertMarkdownTables(text ?? "", tableMode);
-  const content = JSON.stringify({ text: messageText });
+
+  const { content, msgType } = buildFeishuPostMessagePayload({
+    feishuCfg,
+    messageText,
+  });
 
   const response = await client.im.message.update({
     path: { message_id: messageId },
     data: {
-      msg_type: "text",
+      msg_type: msgType,
       content,
     },
   });
