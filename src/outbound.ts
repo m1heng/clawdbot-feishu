@@ -1,4 +1,4 @@
-import type { ChannelOutboundAdapter } from "clawdbot/plugin-sdk";
+import type { ChannelOutboundAdapter } from "openclaw/plugin-sdk";
 import { getFeishuRuntime } from "./runtime.js";
 import { sendMessageFeishu } from "./send.js";
 import { sendMediaFeishu } from "./media.js";

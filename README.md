@@ -1,6 +1,6 @@
 # clawd-feishu
 
-Feishu/Lark (飞书) channel plugin for [Clawdbot](https://github.com/clawdbot/clawdbot).
+Feishu/Lark (飞书) channel plugin for [OpenClaw](https://github.com/openclaw/openclaw).
 
 [English](#english) | [中文](#中文)
 
@@ -11,7 +11,7 @@ Feishu/Lark (飞书) channel plugin for [Clawdbot](https://github.com/clawdbot/c
 ### Installation
 
 ```bash
-clawdbot plugins install @m1heng-clawd/feishu
+openclaw plugins install @m1heng-clawd/feishu
 ```
 
 Or install via npm:
@@ -68,9 +68,9 @@ In the Feishu Open Platform console, go to **Events & Callbacks**:
 3. Ensure the event permissions are approved
 
 ```bash
-clawdbot config set channels.feishu.appId "cli_xxxxx"
-clawdbot config set channels.feishu.appSecret "your_app_secret"
-clawdbot config set channels.feishu.enabled true
+openclaw config set channels.feishu.appId "cli_xxxxx"
+openclaw config set channels.feishu.appSecret "your_app_secret"
+openclaw config set channels.feishu.enabled true
 ```
 
 ### Configuration Options
@@ -141,14 +141,14 @@ Feishu API has rate limits. Streaming updates can easily trigger throttling. We 
 
 #### Windows install error `spawn npm ENOENT`
 
-If `clawdbot plugins install` fails, install manually:
+If `openclaw plugins install` fails, install manually:
 
 ```bash
 # 1. Download the package
 curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.1.tgz
 
 # 2. Install from local file
-clawdbot plugins install ./feishu-0.1.1.tgz
+openclaw plugins install ./feishu-0.1.1.tgz
 ```
 
 #### Cannot find the bot in Feishu
@@ -164,7 +164,7 @@ clawdbot plugins install ./feishu-0.1.1.tgz
 ### 安装
 
 ```bash
-clawdbot plugins install @m1heng-clawd/feishu
+openclaw plugins install @m1heng-clawd/feishu
 ```
 
 或通过 npm 安装：
@@ -221,9 +221,9 @@ npm install @m1heng-clawd/feishu
 3. 确保事件订阅的权限已申请并通过审核
 
 ```bash
-clawdbot config set channels.feishu.appId "cli_xxxxx"
-clawdbot config set channels.feishu.appSecret "your_app_secret"
-clawdbot config set channels.feishu.enabled true
+openclaw config set channels.feishu.appId "cli_xxxxx"
+openclaw config set channels.feishu.appSecret "your_app_secret"
+openclaw config set channels.feishu.enabled true
 ```
 
 ### 配置选项
@@ -294,14 +294,14 @@ channels:
 
 #### Windows 安装报错 `spawn npm ENOENT`
 
-如果 `clawdbot plugins install` 失败，可以手动安装：
+如果 `openclaw plugins install` 失败，可以手动安装：
 
 ```bash
 # 1. 下载插件包
 curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.1.tgz
 
 # 2. 从本地安装
-clawdbot plugins install ./feishu-0.1.1.tgz
+openclaw plugins install ./feishu-0.1.1.tgz
 ```
 
 #### 在飞书里找不到机器人

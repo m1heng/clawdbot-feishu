@@ -5,7 +5,7 @@ import {
   type ClawdbotConfig,
   type RuntimeEnv,
   type ReplyPayload,
-} from "clawdbot/plugin-sdk";
+} from "openclaw/plugin-sdk";
 import { getFeishuRuntime } from "./runtime.js";
 import { sendMessageFeishu, sendMarkdownCardFeishu } from "./send.js";
 import type { FeishuConfig } from "./types.js";
