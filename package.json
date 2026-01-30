@@ -22,7 +22,7 @@
     "ai",
     "claude"
   ],
-  "clawdbot": {
+  "openclaw": {
     "extensions": [
       "./index.ts"
     ],
