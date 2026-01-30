@@ -44,6 +44,28 @@
       "defaultChoice": "npm"
     }
   },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "feishu",
+      "label": "Feishu",
+      "selectionLabel": "Feishu/Lark (飞书)",
+      "docsPath": "/channels/feishu",
+      "docsLabel": "feishu",
+      "blurb": "飞书/Lark enterprise messaging.",
+      "aliases": [
+        "lark"
+      ],
+      "order": 70
+    },
+    "install": {
+      "npmSpec": "@m1heng-clawd/feishu",
+      "localPath": ".",
+      "defaultChoice": "npm"
+    }
+  },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.30.0",
     "zod": "^4.3.6"
