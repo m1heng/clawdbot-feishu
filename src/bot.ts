@@ -399,6 +399,17 @@ export function parseFeishuMessageEvent(
   const mentionedBot = checkBotMentioned(event, botOpenId);
   const content = stripBotMention(rawContent, event.message.mentions);
 
+  // Extract image_key if this is an image message
+  let imageKey: string | undefined;
+  if (event.message.message_type === "image") {
+    try {
+      const parsed = JSON.parse(event.message.content);
+      imageKey = parsed.image_key;
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
   return {
     chatId: event.message.chat_id,
     messageId: event.message.message_id,
@@ -410,6 +421,7 @@ export function parseFeishuMessageEvent(
     parentId: event.message.parent_id || undefined,
     content,
     contentType: event.message.message_type,
+    imageKey,
   };
 }
 
@@ -541,15 +553,83 @@ export async function handleFeishuMessage(params: {
 
     // Fetch quoted/replied message content if parentId exists
     let quotedContent: string | undefined;
+    let quotedImageKey: string | undefined;
     if (ctx.parentId) {
       try {
         const quotedMsg = await getMessageFeishu({ cfg, messageId: ctx.parentId });
         if (quotedMsg) {
           quotedContent = quotedMsg.content;
           log(`feishu: fetched quoted message: ${quotedContent?.slice(0, 100)}`);
+
+          // Extract image_key from quoted message if it's an image
+          if (quotedMsg.contentType === "image") {
+            try {
+              const parsed = JSON.parse(quotedMsg.content);
+              quotedImageKey = parsed.image_key;
+            } catch {
+              // Ignore parse errors
+            }
+          }
         }
       } catch (err) {
         log(`feishu: failed to fetch quoted message: ${String(err)}`);
+      }
+    }
+
+    // Download images for AI vision support
+    const attachments: Array<{ type: "image"; data: Buffer; mimeType: string }> = [];
+
+    // Download current message image if present
+    if (ctx.imageKey) {
+      try {
+        const result = await downloadMessageResourceFeishu({
+          cfg,
+          messageId: ctx.messageId,
+          fileKey: ctx.imageKey,
+          type: "image",
+        });
+
+        let mimeType = result.contentType || "image/jpeg";
+        if (!result.contentType) {
+          mimeType = await core.media.detectMime({ buffer: result.buffer });
+        }
+
+        attachments.push({
+          type: "image",
+          data: result.buffer,
+          mimeType,
+        });
+
+        log(`feishu: downloaded image for AI: ${ctx.imageKey}, size: ${result.buffer.length} bytes, mimeType: ${mimeType}`);
+      } catch (err: any) {
+        log(`feishu: failed to download image for AI: ${err.message || String(err)}`);
+      }
+    }
+
+    // Download quoted message image if present
+    if (quotedImageKey && ctx.parentId) {
+      try {
+        const result = await downloadMessageResourceFeishu({
+          cfg,
+          messageId: ctx.parentId,
+          fileKey: quotedImageKey,
+          type: "image",
+        });
+
+        let mimeType = result.contentType || "image/jpeg";
+        if (!result.contentType) {
+          mimeType = await core.media.detectMime({ buffer: result.buffer });
+        }
+
+        attachments.push({
+          type: "image",
+          data: result.buffer,
+          mimeType,
+        });
+
+        log(`feishu: downloaded quoted image for AI: ${quotedImageKey}, size: ${result.buffer.length} bytes, mimeType: ${mimeType}`);
+      } catch (err: any) {
+        log(`feishu: failed to download quoted image for AI: ${err.message || String(err)}`);
       }
     }
 
@@ -618,7 +698,16 @@ export async function handleFeishuMessage(params: {
       OriginatingChannel: "feishu" as const,
       OriginatingTo: feishuTo,
       ...mediaPayload,
-    });
+      Attachments: attachments.length > 0 ? attachments : undefined,
+    } as any);
+
+    // Debug: log attachment info
+    if (attachments.length > 0) {
+      log(`feishu: passing ${attachments.length} attachment(s) to agent for AI vision`);
+      attachments.forEach((att, idx) => {
+        log(`feishu: attachment ${idx}: type=${att.type}, size=${att.data.length} bytes, mimeType=${att.mimeType}`);
+      });
+    }
 
     const { dispatcher, replyOptions, markDispatchIdle } = createFeishuReplyDispatcher({
       cfg,
