@@ -1,6 +1,6 @@
-# clawd-feishu
+# openclaw-feishu
 
-Feishu/Lark (飞书) channel plugin for [Clawdbot](https://github.com/clawdbot/clawdbot).
+Feishu/Lark (飞书) channel plugin for [Clawdbot](https://github.com/openclaw/openclaw).
 
 [English](#english) | [中文](#中文)
 
@@ -11,7 +11,7 @@ Feishu/Lark (飞书) channel plugin for [Clawdbot](https://github.com/clawdbot/c
 ### Installation
 
 ```bash
-clawdbot plugins install @m1heng-clawd/feishu
+openclaw plugins install @m1heng-clawd/feishu
 ```
 
 Or install via npm:
