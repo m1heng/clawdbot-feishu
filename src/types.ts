@@ -28,6 +28,7 @@ export type FeishuMessageContext = {
   parentId?: string;
   content: string;
   contentType: string;
+  imageKey?: string;
 };
 
 export type FeishuSendResult = {
