@@ -344,13 +344,15 @@ export async function sendImageFeishu(params: {
 /**
  * Send a file message using a file_key
  */
-export async function sendFileFeishu(params: {
+async function sendUploadedFileLikeMessageFeishu(params: {
   cfg: ClawdbotConfig;
   to: string;
   fileKey: string;
+  msgType: "file" | "audio" | "media";
   replyToMessageId?: string;
 }): Promise<SendMediaResult> {
-  const { cfg, to, fileKey, replyToMessageId } = params;
+  const { cfg, to, fileKey, msgType, replyToMessageId } = params;
+
   const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
   if (!feishuCfg) {
     throw new Error("Feishu channel not configured");
@@ -370,12 +372,14 @@ export async function sendFileFeishu(params: {
       path: { message_id: replyToMessageId },
       data: {
         content,
-        msg_type: "file",
+        msg_type: msgType,
       },
     });
 
     if (response.code !== 0) {
-      throw new Error(`Feishu file reply failed: ${response.msg || `code ${response.code}`}`);
+      throw new Error(
+        `Feishu ${msgType} reply failed: ${response.msg || `code ${response.code}`}`,
+      );
     }
 
     return {
@@ -389,18 +393,77 @@ export async function sendFileFeishu(params: {
     data: {
       receive_id: receiveId,
       content,
-      msg_type: "file",
+      msg_type: msgType,
     },
   });
 
   if (response.code !== 0) {
-    throw new Error(`Feishu file send failed: ${response.msg || `code ${response.code}`}`);
+    throw new Error(
+      `Feishu ${msgType} send failed: ${response.msg || `code ${response.code}`}`,
+    );
   }
 
   return {
     messageId: response.data?.message_id ?? "unknown",
     chatId: receiveId,
   };
+}
+
+/**
+ * Send a file message using a file_key
+ */
+export async function sendFileFeishu(params: {
+  cfg: ClawdbotConfig;
+  to: string;
+  fileKey: string;
+  replyToMessageId?: string;
+}): Promise<SendMediaResult> {
+  const { cfg, to, fileKey, replyToMessageId } = params;
+  return sendUploadedFileLikeMessageFeishu({
+    cfg,
+    to,
+    fileKey,
+    msgType: "file",
+    replyToMessageId,
+  });
+}
+
+/**
+ * Send an audio message using a file_key (uploaded with file_type=opus)
+ */
+export async function sendAudioFeishu(params: {
+  cfg: ClawdbotConfig;
+  to: string;
+  fileKey: string;
+  replyToMessageId?: string;
+}): Promise<SendMediaResult> {
+  const { cfg, to, fileKey, replyToMessageId } = params;
+  return sendUploadedFileLikeMessageFeishu({
+    cfg,
+    to,
+    fileKey,
+    msgType: "audio",
+    replyToMessageId,
+  });
+}
+
+/**
+ * Send a media (video) message using a file_key (uploaded with file_type=mp4)
+ */
+export async function sendVideoFeishu(params: {
+  cfg: ClawdbotConfig;
+  to: string;
+  fileKey: string;
+  replyToMessageId?: string;
+}): Promise<SendMediaResult> {
+  const { cfg, to, fileKey, replyToMessageId } = params;
+  return sendUploadedFileLikeMessageFeishu({
+    cfg,
+    to,
+    fileKey,
+    msgType: "media",
+    replyToMessageId,
+  });
 }
 
 /**
@@ -502,14 +565,27 @@ export async function sendMediaFeishu(params: {
   if (isImage) {
     const { imageKey } = await uploadImageFeishu({ cfg, image: buffer });
     return sendImageFeishu({ cfg, to, imageKey, replyToMessageId });
-  } else {
-    const fileType = detectFileType(name);
-    const { fileKey } = await uploadFileFeishu({
-      cfg,
-      file: buffer,
-      fileName: name,
-      fileType,
-    });
-    return sendFileFeishu({ cfg, to, fileKey, replyToMessageId });
   }
+
+  const fileType = detectFileType(name);
+  const { fileKey } = await uploadFileFeishu({
+    cfg,
+    file: buffer,
+    fileName: name,
+    fileType,
+  });
+
+  // Feishu requires msg_type to match the upload file_type.
+  // - file_type=mp4  -> msg_type=media
+  // - file_type=opus -> msg_type=audio
+  // - other          -> msg_type=file
+  if (fileType === "mp4") {
+    return sendVideoFeishu({ cfg, to, fileKey, replyToMessageId });
+  }
+  if (fileType === "opus") {
+    return sendAudioFeishu({ cfg, to, fileKey, replyToMessageId });
+  }
+
+  return sendFileFeishu({ cfg, to, fileKey, replyToMessageId });
 }
+
