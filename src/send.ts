@@ -1,5 +1,5 @@
 import type { ClawdbotConfig } from "openclaw/plugin-sdk";
-import type { FeishuConfig, FeishuSendResult } from "./types.js";
+import type { FeishuConfig, FeishuSendResult, FeishuHistoryMessage, ListMessagesResult } from "./types.js";
 import { createFeishuClient } from "./client.js";
 import { resolveReceiveIdType, normalizeFeishuTarget } from "./targets.js";
 import { getFeishuRuntime } from "./runtime.js";
@@ -305,4 +305,114 @@ export async function editMessageFeishu(params: {
   if (response.code !== 0) {
     throw new Error(`Feishu message edit failed: ${response.msg || `code ${response.code}`}`);
   }
+}
+
+/**
+ * List messages from a chat with pagination support.
+ * Useful for fetching chat history for summarization.
+ */
+export async function listMessagesFeishu(params: {
+  cfg: ClawdbotConfig;
+  chatId: string;
+  count?: number;
+  startTime?: string;
+  endTime?: string;
+  pageToken?: string;
+  sortType?: "ByCreateTimeAsc" | "ByCreateTimeDesc";
+}): Promise<ListMessagesResult> {
+  const {
+    cfg,
+    chatId,
+    count = 200,
+    startTime,
+    endTime,
+    pageToken,
+    sortType = "ByCreateTimeDesc",
+  } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+  const messages: FeishuHistoryMessage[] = [];
+  let currentPageToken = pageToken;
+  let hasMore = true;
+
+  // API max page_size is 50
+  const pageSize = Math.min(50, count);
+
+  while (hasMore && messages.length < count) {
+    const response = await client.im.message.list({
+      params: {
+        container_id_type: "chat",
+        container_id: chatId,
+        page_size: pageSize,
+        page_token: currentPageToken,
+        start_time: startTime,
+        end_time: endTime,
+        sort_type: sortType,
+      },
+    });
+
+    if (response.code !== 0) {
+      throw new Error(`Feishu list messages failed: ${response.msg || `code ${response.code}`}`);
+    }
+
+    const items = (response.data as any)?.items ?? [];
+    for (const item of items) {
+      if (messages.length >= count) break;
+
+      // Parse content based on message type
+      let content = item.body?.content ?? "";
+      try {
+        const parsed = JSON.parse(content);
+        if (item.msg_type === "text" && parsed.text) {
+          content = parsed.text;
+        } else if (item.msg_type === "image") {
+          content = "[图片]";
+        } else if (item.msg_type === "file") {
+          content = "[文件]";
+        } else if (item.msg_type === "audio") {
+          content = "[语音]";
+        } else if (item.msg_type === "video") {
+          content = "[视频]";
+        } else if (item.msg_type === "sticker") {
+          content = "[表情]";
+        } else if (item.msg_type === "interactive") {
+          content = "[卡片消息]";
+        } else if (item.msg_type === "share_chat") {
+          content = "[分享群聊]";
+        } else if (item.msg_type === "share_user") {
+          content = "[分享用户]";
+        }
+      } catch {
+        // Keep raw content if parsing fails
+      }
+
+      messages.push({
+        messageId: item.message_id ?? "",
+        senderId: item.sender?.id ?? "",
+        senderType: item.sender?.sender_type ?? "",
+        content,
+        contentType: item.msg_type ?? "text",
+        createTime: item.create_time ? parseInt(item.create_time, 10) : 0,
+        deleted: item.deleted,
+      });
+    }
+
+    hasMore = (response.data as any)?.has_more ?? false;
+    currentPageToken = (response.data as any)?.page_token;
+
+    if (!currentPageToken) {
+      hasMore = false;
+    }
+  }
+
+  return {
+    messages,
+    hasMore,
+    pageToken: currentPageToken,
+    total: messages.length,
+  };
 }
