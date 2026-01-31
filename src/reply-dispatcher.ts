@@ -131,16 +131,23 @@ class FeishuStream {
       this.pendingUpdate = null;
     }
 
+    // Use the more complete content: prefer lastContent if content is empty or shorter
+    const finalContent =
+      content && content.length >= this.lastContent.length
+        ? content
+        : this.lastContent;
+
     // Use streaming_mode: false to signal completion
-    if (this.messageId) {
+    if (this.messageId && finalContent) {
       try {
-        const card = createSimpleTextCard(content, false /* streaming=false means done */);
+        const card = createSimpleTextCard(finalContent, false /* streaming=false means done */);
         await updateCardFeishu({
           cfg: this.ctx.cfg,
           messageId: this.messageId,
           card,
         });
         this.isFinalized = true;
+        this.ctx.runtime.log?.(`feishu stream: finalized with ${finalContent.length} chars`);
       } catch (err) {
         this.ctx.runtime.error?.(`feishu stream finalize failed: ${String(err)}`);
       }
