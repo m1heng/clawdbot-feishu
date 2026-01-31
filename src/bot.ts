@@ -752,8 +752,8 @@ export async function handleFeishuMessage(params: {
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       Body: combinedBody,
-      RawBody: textContent || mediaPlaceholder,
-      CommandBody: textContent || mediaPlaceholder,
+      RawBody: ctx.content,
+      CommandBody: ctx.content,
       From: feishuFrom,
       To: feishuTo,
       SessionKey: route.sessionKey,

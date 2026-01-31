@@ -36,6 +36,7 @@ class FeishuStream {
   private lastContent = "";
   private lastUpdateTime = 0;
   private pendingUpdate: NodeJS.Timeout | null = null;
+  private pendingContent: string | null = null;
   private isFinalized = false;
   private initializationPromise: Promise<void> | null = null;
 
@@ -50,7 +51,7 @@ class FeishuStream {
 
   async update(content: string, isFinal = false): Promise<void> {
     if (this.isFinalized) return;
-    if (content === this.lastContent) return;
+    if (content === this.lastContent && !isFinal) return;
 
     // If we haven't sent the first message yet, send it immediately
     if (!this.messageId) {
@@ -97,12 +98,26 @@ class FeishuStream {
     const timeSinceLast = now - this.lastUpdateTime;
 
     if (isFinal || timeSinceLast >= STREAM_UPDATE_INTERVAL_MS) {
+      // Clear any pending update since we're updating now
+      if (this.pendingUpdate) {
+        clearTimeout(this.pendingUpdate);
+        this.pendingUpdate = null;
+      }
+      this.pendingContent = null;
       await this.performUpdate(content);
     } else if (!this.pendingUpdate) {
+      // Schedule a throttled update
+      this.pendingContent = content;
       this.pendingUpdate = setTimeout(() => {
         this.pendingUpdate = null;
-        this.performUpdate(content).catch(() => {});
+        const nextContent = this.pendingContent;
+        this.pendingContent = null;
+        if (!nextContent || nextContent === this.lastContent) return;
+        this.performUpdate(nextContent).catch(() => {});
       }, STREAM_UPDATE_INTERVAL_MS - timeSinceLast);
+    } else {
+      // Update pending content to the latest value
+      this.pendingContent = content;
     }
   }
 
@@ -126,16 +141,26 @@ class FeishuStream {
   async finalize(content: string) {
     if (this.isFinalized) return;
 
+    // Wait for initialization if still in progress
+    if (this.initializationPromise) {
+      await this.initializationPromise;
+    }
+
     if (this.pendingUpdate) {
       clearTimeout(this.pendingUpdate);
       this.pendingUpdate = null;
     }
 
-    // Use the more complete content: prefer lastContent if content is empty or shorter
-    const finalContent =
-      content && content.length >= this.lastContent.length
-        ? content
-        : this.lastContent;
+    // Choose the longest content from all available sources
+    const finalContent = [content, this.pendingContent, this.lastContent].reduce(
+      (best, current) => {
+        if (!current) return best;
+        if (!best) return current;
+        return current.length >= best.length ? current : best;
+      },
+      "",
+    );
+    this.pendingContent = null;
 
     // Use streaming_mode: false to signal completion
     if (this.messageId && finalContent) {
