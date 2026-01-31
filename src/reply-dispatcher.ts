@@ -19,13 +19,38 @@ import {
 /**
  * Detect if text contains markdown elements that benefit from card rendering.
  * Used by auto render mode.
+ * Use card if text contains any of the supported markdown elements.
  */
 function shouldUseCard(text: string): boolean {
-  // Code blocks (fenced)
-  if (/```[\s\S]*?```/.test(text)) return true;
-  // Tables (at least header + separator row with |)
-  if (/\|.+\|[\r\n]+\|[-:| ]+\|/.test(text)) return true;
-  return false;
+  const trimmedText = text.trim();
+  if (!trimmedText) return false;
+  
+  // All detection patterns - return true if any pattern matches
+  const patterns = [
+    // Code blocks
+    /```[\s\S]*?```/,                    // Fenced code blocks
+    /^\s{4,}|\t/,                        // Indented code blocks
+    
+    // Tables
+    /\|[^\n]*\|[^\n]*[\r\n]+\|[-:| \t]+\|/,
+    
+    // Color tags (any paired <font> tags)
+    /<font[^>]*>[\s\S]*?<\/font>/i,
+    
+    // Horizontal rules
+    /^---*$|^___*$|^\*\*\**$/m,
+    
+    // Lists
+    /^[\-\*\+]\s+.+/m,                    // Unordered lists
+    /^\d+\.\s+.+/m,                       // Ordered lists
+    
+    // Text formatting
+    /\*\*[^*]+\*\*/,                      // Bold
+    /\*[^*]+\*/,                          // Italic
+    /~~[^~]+~~/,                          // Strikethrough
+  ];
+  
+  return patterns.some(pattern => pattern.test(trimmedText));
 }
 
 export type CreateFeishuReplyDispatcherParams = {
