@@ -35,6 +35,8 @@ const MarkdownConfigSchema = z
 
 // Message render mode: auto (default) = detect markdown, raw = plain text, card = always card
 const RenderModeSchema = z.enum(["auto", "raw", "card"]).optional();
+// Render engine: simple = existing text/card delivery, agent-card = streaming card renderer
+const RenderEngineSchema = z.enum(["simple", "agent-card"]).optional();
 
 const BlockStreamingCoalesceSchema = z
   .object({
@@ -165,6 +167,7 @@ export const FeishuConfigSchema = z
     mediaMaxMb: z.number().positive().optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
     renderMode: RenderModeSchema, // raw = plain text (default), card = interactive card with markdown
+    renderEngine: RenderEngineSchema,
     tools: FeishuToolsConfigSchema,
     // Dynamic agent creation for DM users
     dynamicAgentCreation: DynamicAgentCreationSchema,
