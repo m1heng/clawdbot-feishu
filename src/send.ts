@@ -395,3 +395,25 @@ export async function editMessageFeishu(params: {
     throw new Error(`Feishu message edit failed: ${response.msg || `code ${response.code}`}`);
   }
 }
+
+/**
+ * Create a simple card with markdown content.
+ * Used for streaming responses.
+ */
+export function createSimpleTextCard(content: string, streaming = false): Record<string, unknown> {
+  return {
+    schema: "2.0",
+    config: {
+      streaming_mode: streaming,
+    },
+    body: {
+      direction: "vertical",
+      elements: [
+        {
+          tag: "markdown",
+          content: content || "...",
+        },
+      ],
+    },
+  };
+}
