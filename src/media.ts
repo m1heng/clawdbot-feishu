@@ -236,6 +236,139 @@ export async function sendFileFeishu(params: {
 }
 
 /**
+ * Send an audio message using a file_key
+ * Audio files must be in opus format and uploaded with file_type="opus"
+ */
+export async function sendAudioFeishu(params: {
+  cfg: ClawdbotConfig;
+  to: string;
+  fileKey: string;
+  replyToMessageId?: string;
+}): Promise<SendMediaResult> {
+  const { cfg, to, fileKey, replyToMessageId } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+  const receiveId = normalizeFeishuTarget(to);
+  if (!receiveId) {
+    throw new Error(`Invalid Feishu target: ${to}`);
+  }
+
+  const receiveIdType = resolveReceiveIdType(receiveId);
+  const content = JSON.stringify({ file_key: fileKey });
+
+  if (replyToMessageId) {
+    const response = await client.im.message.reply({
+      path: { message_id: replyToMessageId },
+      data: {
+        content,
+        msg_type: "audio",
+      },
+    });
+
+    if (response.code !== 0) {
+      throw new Error(`Feishu audio reply failed: ${response.msg || `code ${response.code}`}`);
+    }
+
+    return {
+      messageId: response.data?.message_id ?? "unknown",
+      chatId: receiveId,
+    };
+  }
+
+  const response = await client.im.message.create({
+    params: { receive_id_type: receiveIdType },
+    data: {
+      receive_id: receiveId,
+      content,
+      msg_type: "audio",
+    },
+  });
+
+  if (response.code !== 0) {
+    throw new Error(`Feishu audio send failed: ${response.msg || `code ${response.code}`}`);
+  }
+
+  return {
+    messageId: response.data?.message_id ?? "unknown",
+    chatId: receiveId,
+  };
+}
+
+/**
+ * Send a video message using a file_key
+ * Video files must be in mp4 format and uploaded with file_type="mp4"
+ * Note: Feishu uses msg_type="media" for video messages
+ */
+export async function sendVideoFeishu(params: {
+  cfg: ClawdbotConfig;
+  to: string;
+  fileKey: string;
+  imageKey?: string; // Optional thumbnail image_key
+  replyToMessageId?: string;
+}): Promise<SendMediaResult> {
+  const { cfg, to, fileKey, imageKey, replyToMessageId } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+  const receiveId = normalizeFeishuTarget(to);
+  if (!receiveId) {
+    throw new Error(`Invalid Feishu target: ${to}`);
+  }
+
+  const receiveIdType = resolveReceiveIdType(receiveId);
+  // Video messages use file_key for the video and optionally image_key for thumbnail
+  const contentObj: { file_key: string; image_key?: string } = { file_key: fileKey };
+  if (imageKey) {
+    contentObj.image_key = imageKey;
+  }
+  const content = JSON.stringify(contentObj);
+
+  if (replyToMessageId) {
+    const response = await client.im.message.reply({
+      path: { message_id: replyToMessageId },
+      data: {
+        content,
+        msg_type: "media",
+      },
+    });
+
+    if (response.code !== 0) {
+      throw new Error(`Feishu video reply failed: ${response.msg || `code ${response.code}`}`);
+    }
+
+    return {
+      messageId: response.data?.message_id ?? "unknown",
+      chatId: receiveId,
+    };
+  }
+
+  const response = await client.im.message.create({
+    params: { receive_id_type: receiveIdType },
+    data: {
+      receive_id: receiveId,
+      content,
+      msg_type: "media",
+    },
+  });
+
+  if (response.code !== 0) {
+    throw new Error(`Feishu video send failed: ${response.msg || `code ${response.code}`}`);
+  }
+
+  return {
+    messageId: response.data?.message_id ?? "unknown",
+    chatId: receiveId,
+  };
+}
+
+/**
  * Helper to detect file type from extension
  */
 export function detectFileType(
@@ -342,7 +475,15 @@ export async function sendMediaFeishu(params: {
       fileName: name,
       fileType,
     });
-    return sendFileFeishu({ cfg, to, fileKey, replyToMessageId });
+
+    // Route based on file type to use correct msg_type
+    if (fileType === "opus") {
+      return sendAudioFeishu({ cfg, to, fileKey, replyToMessageId });
+    } else if (fileType === "mp4") {
+      return sendVideoFeishu({ cfg, to, fileKey, replyToMessageId });
+    } else {
+      return sendFileFeishu({ cfg, to, fileKey, replyToMessageId });
+    }
   }
 }
 
@@ -433,6 +574,51 @@ export async function downloadFeishuImage(params: {
   }
 
   const filePath = path.join(mediaDir, `${imageKey}${ext}`);
+  fs.writeFileSync(filePath, buffer);
+
+  return { path: filePath, contentType };
+}
+
+/**
+ * Download a video/media file from Feishu message and save to local temp directory
+ */
+export async function downloadFeishuVideo(params: {
+  cfg: ClawdbotConfig;
+  messageId: string;
+  fileKey: string;
+}): Promise<DownloadedMedia> {
+  const { cfg, messageId, fileKey } = params;
+
+  const buffer = await downloadFeishuFile({
+    cfg,
+    messageId,
+    fileKey,
+    fileType: "video",
+  });
+
+  // Create temp directory for media
+  const mediaDir = path.join(os.tmpdir(), "clawdbot-feishu-media");
+  if (!fs.existsSync(mediaDir)) {
+    fs.mkdirSync(mediaDir, { recursive: true });
+  }
+
+  // Detect video type from buffer magic bytes
+  let ext = ".mp4";
+  let contentType = "video/mp4";
+  // Check for common video formats
+  // MP4: starts with ftyp at offset 4
+  if (buffer.length >= 8 && buffer.toString("ascii", 4, 8) === "ftyp") {
+    ext = ".mp4";
+    contentType = "video/mp4";
+  }
+  // MOV: also starts with ftyp but subtype is qt
+  // WebM: starts with 0x1A 0x45 0xDF 0xA3
+  else if (buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) {
+    ext = ".webm";
+    contentType = "video/webm";
+  }
+
+  const filePath = path.join(mediaDir, `${fileKey}${ext}`);
   fs.writeFileSync(filePath, buffer);
 
   return { path: filePath, contentType };

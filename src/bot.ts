@@ -16,7 +16,7 @@ import {
 } from "./policy.js";
 import { createFeishuReplyDispatcher } from "./reply-dispatcher.js";
 import { getMessageFeishu, listMessagesFeishu, type FeishuHistoryMessage } from "./send.js";
-import { downloadFeishuImage, type DownloadedMedia } from "./media.js";
+import { downloadFeishuImage, downloadFeishuVideo, type DownloadedMedia } from "./media.js";
 
 export type FeishuMessageEvent = {
   sender: {
@@ -357,13 +357,15 @@ export async function handleFeishuMessage(params: {
 
     const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
 
-    // Handle image messages - download and prepare for agent
-    // Feishu sends images in two formats:
+    // Handle media messages - download and prepare for agent
+    // Feishu sends media in various formats:
     // 1. Pure image: contentType="image", content={"image_key":"..."}
     // 2. Rich text with image: contentType="post", content={"content":[[{"tag":"img","image_key":"..."}]]}
+    // 3. Video/media: contentType="video" or "media", content={"file_key":"...", "image_key":"..."}
     let downloadedMedia: DownloadedMedia | undefined;
     let mediaPlaceholder = "";
     let extractedImageKey: string | undefined;
+    let extractedFileKey: string | undefined;
     let extractedText = "";
 
     try {
@@ -372,6 +374,10 @@ export async function handleFeishuMessage(params: {
       if (ctx.contentType === "image") {
         // Pure image message
         extractedImageKey = parsedContent.image_key;
+      } else if (ctx.contentType === "video" || ctx.contentType === "media") {
+        // Video/media message: file_key is the video, image_key is the thumbnail
+        extractedFileKey = parsedContent.file_key;
+        extractedImageKey = parsedContent.image_key; // thumbnail
       } else if (ctx.contentType === "post") {
         // Rich text message - look for img tags
         const contentArray = parsedContent.content;
@@ -390,7 +396,19 @@ export async function handleFeishuMessage(params: {
         }
       }
 
-      if (extractedImageKey) {
+      // Download video if present
+      if (extractedFileKey) {
+        log(`feishu: detected video message, attempting to download: ${extractedFileKey}`);
+        downloadedMedia = await downloadFeishuVideo({
+          cfg,
+          messageId: ctx.messageId,
+          fileKey: extractedFileKey,
+        });
+        mediaPlaceholder = "<media:video>";
+        log(`feishu: video downloaded to ${downloadedMedia.path}`);
+      }
+      // Download image if present (and no video was downloaded)
+      else if (extractedImageKey) {
         log(`feishu: detected image message, attempting to download: ${extractedImageKey}`);
         downloadedMedia = await downloadFeishuImage({
           cfg,
@@ -401,8 +419,8 @@ export async function handleFeishuMessage(params: {
         log(`feishu: image downloaded to ${downloadedMedia.path}`);
       }
     } catch (err) {
-      log(`feishu: failed to process/download image: ${String(err)}`);
-      // Continue without image
+      log(`feishu: failed to process/download media: ${String(err)}`);
+      // Continue without media
     }
 
     // Use extracted text if available (from post messages)
