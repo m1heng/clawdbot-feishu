@@ -130,6 +130,7 @@ channels:
 - **Card render mode**: Optional markdown rendering with syntax highlighting
 - **Document tools**: Read, create, and write Feishu documents with markdown (tables not supported due to API limitations)
 - **@mention forwarding**: When you @mention someone in your message, the bot's reply will automatically @mention them too
+- **Permission error notification**: When the bot encounters a Feishu API permission error, it automatically notifies the user with the permission grant URL
 
 #### @Mention Forwarding
 
@@ -306,6 +307,7 @@ channels:
 - **卡片渲染模式**：支持语法高亮的 Markdown 渲染
 - **文档工具**：读取、创建、用 Markdown 写入飞书文档（表格因 API 限制不支持）
 - **@ 转发功能**：在消息中 @ 某人，机器人的回复会自动 @ 该用户
+- **权限错误提示**：当机器人遇到飞书 API 权限错误时，会自动通知用户并提供权限授权链接
 
 #### @ 转发功能
 
