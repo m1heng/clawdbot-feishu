@@ -590,6 +590,12 @@ export async function handleFeishuMessage(params: {
     const speaker = ctx.senderName ?? ctx.senderOpenId;
     messageBody = `${speaker}: ${messageBody}`;
 
+    // If there are mention targets, inform the agent that replies will auto-mention them
+    if (ctx.mentionTargets && ctx.mentionTargets.length > 0) {
+      const targetNames = ctx.mentionTargets.map((t) => t.name).join(", ");
+      messageBody += `\n\n[System: Your reply will automatically @mention: ${targetNames}. Do not write @xxx yourself.]`;
+    }
+
     const envelopeFrom = isGroup ? `${ctx.chatId}:${ctx.senderOpenId}` : ctx.senderOpenId;
 
     const body = core.channel.reply.formatAgentEnvelope({
