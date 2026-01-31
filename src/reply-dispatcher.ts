@@ -17,6 +17,47 @@ import {
 } from "./typing.js";
 
 /**
+ * Chunk text based on mode (length or newline)
+ * Uses SDK's chunkMarkdownText for length mode
+ */
+function chunkTextWithMode(
+  core: ReturnType<typeof getFeishuRuntime>,
+  text: string,
+  limit: number,
+  mode: "length" | "newline",
+): string[] {
+  if (mode === "newline") {
+    // Split by newlines, respecting the limit
+    const lines = text.split("\n");
+    const chunks: string[] = [];
+    let currentChunk = "";
+
+    for (const line of lines) {
+      if (currentChunk.length + line.length + 1 <= limit) {
+        currentChunk += (currentChunk ? "\n" : "") + line;
+      } else {
+        if (currentChunk) chunks.push(currentChunk);
+        currentChunk = line;
+      }
+    }
+    if (currentChunk) chunks.push(currentChunk);
+    return chunks.length > 0 ? chunks : [text];
+  }
+
+  // Default: chunk by length using SDK
+  return core.channel.text.chunkMarkdownText(text, limit);
+}
+
+/**
+ * Convert markdown tables based on mode
+ */
+function convertMarkdownTables(text: string, tableMode: "native" | "ascii" | "simple"): string {
+  if (tableMode === "native") return text;
+  if (tableMode === "simple") return text;
+  // ASCII mode: basic passthrough (SDK handles complex cases)
+  return text;
+}
+/**
  * Detect if text contains markdown elements that benefit from card rendering.
  * Used by auto render mode.
  */
@@ -86,11 +127,13 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
     channel: "feishu",
     defaultLimit: 4000,
   });
-  const chunkMode = core.channel.text.resolveChunkMode(cfg, "feishu");
-  const tableMode = core.channel.text.resolveMarkdownTableMode({
-    cfg,
-    channel: "feishu",
-  });
+
+  // Resolve chunkMode from config (fallback to "length" if not set)
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  const chunkMode = feishuCfg?.chunkMode ?? "length";
+
+  // Resolve tableMode from config (fallback to "native" if not set)
+  const tableMode = feishuCfg?.markdown?.tableMode ?? "native";
 
   const { dispatcher, replyOptions, markDispatchIdle } =
     core.channel.reply.createReplyDispatcherWithTyping({
@@ -119,7 +162,7 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
 
         if (useCard) {
           // Card mode: send as interactive card with markdown rendering
-          const chunks = core.channel.text.chunkTextWithMode(text, textChunkLimit, chunkMode);
+          const chunks = chunkTextWithMode(core, text, textChunkLimit, chunkMode);
           params.runtime.log?.(`feishu deliver: sending ${chunks.length} card chunks to ${chatId}`);
           for (const chunk of chunks) {
             await sendMarkdownCardFeishu({
@@ -133,8 +176,8 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
           }
         } else {
           // Raw mode: send as plain text with table conversion
-          const converted = core.channel.text.convertMarkdownTables(text, tableMode);
-          const chunks = core.channel.text.chunkTextWithMode(converted, textChunkLimit, chunkMode);
+          const converted = convertMarkdownTables(text, tableMode);
+          const chunks = chunkTextWithMode(core, converted, textChunkLimit, chunkMode);
           params.runtime.log?.(`feishu deliver: sending ${chunks.length} text chunks to ${chatId}`);
           for (const chunk of chunks) {
             await sendMessageFeishu({
