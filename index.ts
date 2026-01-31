@@ -25,6 +25,18 @@ export {
   listReactionsFeishu,
   FeishuEmoji,
 } from "./src/reactions.js";
+export {
+  extractMentionTargets,
+  extractMessageBody,
+  isMentionForwardRequest,
+  formatMentionForText,
+  formatMentionForCard,
+  formatMentionAllForText,
+  formatMentionAllForCard,
+  buildMentionedMessage,
+  buildMentionedCardContent,
+  type MentionTarget,
+} from "./src/mention.js";
 export { feishuPlugin } from "./src/channel.js";
 
 const plugin = {

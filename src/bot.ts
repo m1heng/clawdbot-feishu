@@ -18,6 +18,11 @@ import {
 import { createFeishuReplyDispatcher } from "./reply-dispatcher.js";
 import { getMessageFeishu } from "./send.js";
 import { downloadImageFeishu, downloadMessageResourceFeishu } from "./media.js";
+import {
+  extractMentionTargets,
+  extractMessageBody,
+  isMentionForwardRequest,
+} from "./mention.js";
 
 // --- Sender name resolution (so the agent can distinguish who is speaking in group chats) ---
 // Cache display names by open_id to avoid an API call on every message.
@@ -399,7 +404,7 @@ export function parseFeishuMessageEvent(
   const mentionedBot = checkBotMentioned(event, botOpenId);
   const content = stripBotMention(rawContent, event.message.mentions);
 
-  return {
+  const ctx: FeishuMessageContext = {
     chatId: event.message.chat_id,
     messageId: event.message.message_id,
     senderId: event.sender.sender_id.user_id || event.sender.sender_id.open_id || "",
@@ -411,6 +416,19 @@ export function parseFeishuMessageEvent(
     content,
     contentType: event.message.message_type,
   };
+
+  // 检测 @ 转发请求：消息中 @ 了机器人 + 至少还 @ 了其他人
+  if (isMentionForwardRequest(event, botOpenId)) {
+    const mentionTargets = extractMentionTargets(event, botOpenId);
+    if (mentionTargets.length > 0) {
+      ctx.mentionTargets = mentionTargets;
+      // 提取消息正文（移除所有 @ 占位符）
+      const allMentionKeys = (event.message.mentions ?? []).map((m) => m.key);
+      ctx.mentionMessageBody = extractMessageBody(content, allMentionKeys);
+    }
+  }
+
+  return ctx;
 }
 
 export async function handleFeishuMessage(params: {
@@ -437,6 +455,12 @@ export async function handleFeishuMessage(params: {
   if (senderName) ctx = { ...ctx, senderName };
 
   log(`feishu: received message from ${ctx.senderOpenId} in ${ctx.chatId} (${ctx.chatType})`);
+
+  // Log mention targets if detected
+  if (ctx.mentionTargets && ctx.mentionTargets.length > 0) {
+    const names = ctx.mentionTargets.map((t) => t.name).join(", ");
+    log(`feishu: detected @ forward request, targets: [${names}]`);
+  }
 
   const historyLimit = Math.max(
     0,
@@ -626,6 +650,7 @@ export async function handleFeishuMessage(params: {
       runtime: runtime as RuntimeEnv,
       chatId: ctx.chatId,
       replyToMessageId: ctx.messageId,
+      mentionTargets: ctx.mentionTargets,
     });
 
     log(`feishu: dispatching to agent (session=${route.sessionKey})`);

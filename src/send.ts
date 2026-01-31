@@ -1,5 +1,7 @@
 import type { ClawdbotConfig } from "openclaw/plugin-sdk";
 import type { FeishuConfig, FeishuSendResult } from "./types.js";
+import type { MentionTarget } from "./mention.js";
+import { buildMentionedMessage, buildMentionedCardContent } from "./mention.js";
 import { createFeishuClient } from "./client.js";
 import { resolveReceiveIdType, normalizeFeishuTarget } from "./targets.js";
 import { getFeishuRuntime } from "./runtime.js";
@@ -91,10 +93,12 @@ export type SendFeishuMessageParams = {
   to: string;
   text: string;
   replyToMessageId?: string;
+  /** @ 目标用户列表 */
+  mentions?: MentionTarget[];
 };
 
 export async function sendMessageFeishu(params: SendFeishuMessageParams): Promise<FeishuSendResult> {
-  const { cfg, to, text, replyToMessageId } = params;
+  const { cfg, to, text, replyToMessageId, mentions } = params;
   const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
   if (!feishuCfg) {
     throw new Error("Feishu channel not configured");
@@ -111,7 +115,13 @@ export async function sendMessageFeishu(params: SendFeishuMessageParams): Promis
     cfg,
     channel: "feishu",
   });
-  const messageText = getFeishuRuntime().channel.text.convertMarkdownTables(text ?? "", tableMode);
+
+  // 构建消息内容（支持 @）
+  let rawText = text ?? "";
+  if (mentions && mentions.length > 0) {
+    rawText = buildMentionedMessage(mentions, rawText);
+  }
+  const messageText = getFeishuRuntime().channel.text.convertMarkdownTables(rawText, tableMode);
 
   const content = JSON.stringify({ text: messageText });
 
@@ -265,9 +275,16 @@ export async function sendMarkdownCardFeishu(params: {
   to: string;
   text: string;
   replyToMessageId?: string;
+  /** @ 目标用户列表 */
+  mentions?: MentionTarget[];
 }): Promise<FeishuSendResult> {
-  const { cfg, to, text, replyToMessageId } = params;
-  const card = buildMarkdownCard(text);
+  const { cfg, to, text, replyToMessageId, mentions } = params;
+  // 构建消息内容（支持 @）
+  let cardText = text;
+  if (mentions && mentions.length > 0) {
+    cardText = buildMentionedCardContent(mentions, text);
+  }
+  const card = buildMarkdownCard(cardText);
   return sendCardFeishu({ cfg, to, card, replyToMessageId });
 }
 

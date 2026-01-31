@@ -1,4 +1,5 @@
 import type { FeishuConfigSchema, FeishuGroupSchema, z } from "./config-schema.js";
+import type { MentionTarget } from "./mention.js";
 
 export type FeishuConfig = z.infer<typeof FeishuConfigSchema>;
 export type FeishuGroupConfig = z.infer<typeof FeishuGroupSchema>;
@@ -28,6 +29,10 @@ export type FeishuMessageContext = {
   parentId?: string;
   content: string;
   contentType: string;
+  /** @ 转发目标用户列表（不含机器人自己） */
+  mentionTargets?: MentionTarget[];
+  /** 提取的消息正文（移除 @ 占位符后） */
+  mentionMessageBody?: string;
 };
 
 export type FeishuSendResult = {
