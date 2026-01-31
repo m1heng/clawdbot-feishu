@@ -405,6 +405,7 @@ export function createSimpleTextCard(content: string, streaming = false): Record
     schema: "2.0",
     config: {
       streaming_mode: streaming,
+      wide_screen_mode: true,
     },
     body: {
       direction: "vertical",
