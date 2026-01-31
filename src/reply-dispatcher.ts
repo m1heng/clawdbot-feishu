@@ -162,6 +162,8 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
 
   // Track active stream for the current block
   let currentStream: FeishuStream | null = null;
+  // Prevent duplicate delivery (deliver may be called multiple times)
+  let hasDelivered = false;
 
   const typingCallbacks = createTypingCallbacks({
     start: async () => {
@@ -221,6 +223,13 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
         if (!text.trim()) {
           return;
         }
+
+        // Prevent duplicate delivery
+        if (hasDelivered) {
+          params.runtime.log?.(`feishu deliver: already delivered, skipping`);
+          return;
+        }
+        hasDelivered = true;
 
         // If we have an active stream, finalize it with the content
         if (currentStream) {
