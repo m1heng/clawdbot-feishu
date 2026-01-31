@@ -1,6 +1,6 @@
 import type { ChannelOutboundAdapter } from "openclaw/plugin-sdk";
 import { getFeishuRuntime } from "./runtime.js";
-import { sendMessageFeishu } from "./send.js";
+import { sendMessageFeishu, sendCardFeishu, sendMarkdownCardFeishu } from "./send.js";
 import { sendMediaFeishu } from "./media.js";
 
 export const feishuOutbound: ChannelOutboundAdapter = {
@@ -10,6 +10,14 @@ export const feishuOutbound: ChannelOutboundAdapter = {
   textChunkLimit: 4000,
   sendText: async ({ cfg, to, text }) => {
     const result = await sendMessageFeishu({ cfg, to, text });
+    return { channel: "feishu", ...result };
+  },
+  sendCard: async ({ cfg, to, card }) => {
+    const result = await sendCardFeishu({ cfg, to, card });
+    return { channel: "feishu", ...result };
+  },
+  sendMarkdown: async ({ cfg, to, text }) => {
+    const result = await sendMarkdownCardFeishu({ cfg, to, text });
     return { channel: "feishu", ...result };
   },
   sendMedia: async ({ cfg, to, text, mediaUrl }) => {
