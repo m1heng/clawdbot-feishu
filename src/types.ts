@@ -29,9 +29,9 @@ export type FeishuMessageContext = {
   parentId?: string;
   content: string;
   contentType: string;
-  /** @ 转发目标用户列表（不含机器人自己） */
+  /** Mention forward targets (excluding the bot itself) */
   mentionTargets?: MentionTarget[];
-  /** 提取的消息正文（移除 @ 占位符后） */
+  /** Extracted message body (after removing @ placeholders) */
   mentionMessageBody?: string;
 };
 

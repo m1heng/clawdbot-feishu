@@ -1,16 +1,16 @@
 import type { FeishuMessageEvent } from "./bot.js";
 
 /**
- * @ 目标用户信息
+ * Mention target user info
  */
 export type MentionTarget = {
   openId: string;
   name: string;
-  key: string; // 原消息中的占位符，如 @_user_1
+  key: string; // Placeholder in original message, e.g. @_user_1
 };
 
 /**
- * 从消息事件中提取 @ 目标（排除机器人自己）
+ * Extract mention targets from message event (excluding the bot itself)
  */
 export function extractMentionTargets(
   event: FeishuMessageEvent,
@@ -20,9 +20,9 @@ export function extractMentionTargets(
 
   return mentions
     .filter((m) => {
-      // 排除机器人自己
+      // Exclude the bot itself
       if (botOpenId && m.id.open_id === botOpenId) return false;
-      // 必须有 open_id
+      // Must have open_id
       return !!m.id.open_id;
     })
     .map((m) => ({
@@ -33,10 +33,10 @@ export function extractMentionTargets(
 }
 
 /**
- * 判断消息是否是 @ 转发请求
- * 规则：
- * - 群聊：消息中 @ 了机器人 + 至少还 @ 了其他人
- * - 私聊：消息中 @ 了任何人（不需要 @ 机器人）
+ * Check if message is a mention forward request
+ * Rules:
+ * - Group: message mentions bot + at least one other user
+ * - DM: message mentions any user (no need to mention bot)
  */
 export function isMentionForwardRequest(
   event: FeishuMessageEvent,
@@ -49,22 +49,22 @@ export function isMentionForwardRequest(
   const hasOtherMention = mentions.some((m) => m.id.open_id !== botOpenId);
 
   if (isDirectMessage) {
-    // 私聊：只要 @ 了任何人（非机器人）就触发
+    // DM: trigger if any non-bot user is mentioned
     return hasOtherMention;
   } else {
-    // 群聊：需要同时 @ 机器人和其他人
+    // Group: need to mention both bot and other users
     const hasBotMention = mentions.some((m) => m.id.open_id === botOpenId);
     return hasBotMention && hasOtherMention;
   }
 }
 
 /**
- * 从消息文本中提取正文（移除 @ 占位符）
+ * Extract message body from text (remove @ placeholders)
  */
 export function extractMessageBody(text: string, allMentionKeys: string[]): string {
   let result = text;
 
-  // 移除所有 @ 占位符
+  // Remove all @ placeholders
   for (const key of allMentionKeys) {
     result = result.replace(new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), "");
   }
@@ -73,35 +73,35 @@ export function extractMessageBody(text: string, allMentionKeys: string[]): stri
 }
 
 /**
- * 格式化 @ 文本消息
+ * Format @mention for text message
  */
 export function formatMentionForText(target: MentionTarget): string {
   return `<at user_id="${target.openId}">${target.name}</at>`;
 }
 
 /**
- * 格式化 @ 所有人（文本消息）
+ * Format @everyone for text message
  */
 export function formatMentionAllForText(): string {
-  return `<at user_id="all">所有人</at>`;
+  return `<at user_id="all">Everyone</at>`;
 }
 
 /**
- * 格式化 @ 卡片消息 (lark_md)
+ * Format @mention for card message (lark_md)
  */
 export function formatMentionForCard(target: MentionTarget): string {
   return `<at id=${target.openId}></at>`;
 }
 
 /**
- * 格式化 @ 所有人（卡片消息）
+ * Format @everyone for card message
  */
 export function formatMentionAllForCard(): string {
   return `<at id=all></at>`;
 }
 
 /**
- * 构建带 @ 的完整消息（文本格式）
+ * Build complete message with @mentions (text format)
  */
 export function buildMentionedMessage(targets: MentionTarget[], message: string): string {
   if (targets.length === 0) return message;
@@ -111,7 +111,7 @@ export function buildMentionedMessage(targets: MentionTarget[], message: string)
 }
 
 /**
- * 构建带 @ 的卡片内容（Markdown 格式）
+ * Build card content with @mentions (Markdown format)
  */
 export function buildMentionedCardContent(targets: MentionTarget[], message: string): string {
   if (targets.length === 0) return message;

@@ -93,7 +93,7 @@ export type SendFeishuMessageParams = {
   to: string;
   text: string;
   replyToMessageId?: string;
-  /** @ 目标用户列表 */
+  /** Mention target users */
   mentions?: MentionTarget[];
 };
 
@@ -116,7 +116,7 @@ export async function sendMessageFeishu(params: SendFeishuMessageParams): Promis
     channel: "feishu",
   });
 
-  // 构建消息内容（支持 @）
+  // Build message content (with @mention support)
   let rawText = text ?? "";
   if (mentions && mentions.length > 0) {
     rawText = buildMentionedMessage(mentions, rawText);
@@ -275,11 +275,11 @@ export async function sendMarkdownCardFeishu(params: {
   to: string;
   text: string;
   replyToMessageId?: string;
-  /** @ 目标用户列表 */
+  /** Mention target users */
   mentions?: MentionTarget[];
 }): Promise<FeishuSendResult> {
   const { cfg, to, text, replyToMessageId, mentions } = params;
-  // 构建消息内容（支持 @）
+  // Build message content (with @mention support)
   let cardText = text;
   if (mentions && mentions.length > 0) {
     cardText = buildMentionedCardContent(mentions, text);

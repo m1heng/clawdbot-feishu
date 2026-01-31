@@ -417,12 +417,12 @@ export function parseFeishuMessageEvent(
     contentType: event.message.message_type,
   };
 
-  // 检测 @ 转发请求：消息中 @ 了机器人 + 至少还 @ 了其他人
+  // Detect mention forward request: message mentions bot + at least one other user
   if (isMentionForwardRequest(event, botOpenId)) {
     const mentionTargets = extractMentionTargets(event, botOpenId);
     if (mentionTargets.length > 0) {
       ctx.mentionTargets = mentionTargets;
-      // 提取消息正文（移除所有 @ 占位符）
+      // Extract message body (remove all @ placeholders)
       const allMentionKeys = (event.message.mentions ?? []).map((m) => m.key);
       ctx.mentionMessageBody = extractMessageBody(content, allMentionKeys);
     }

@@ -34,7 +34,7 @@ export type CreateFeishuReplyDispatcherParams = {
   runtime: RuntimeEnv;
   chatId: string;
   replyToMessageId?: string;
-  /** @ 目标用户列表，回复时会自动带上 @ */
+  /** Mention targets, will be auto-included in replies */
   mentionTargets?: MentionTarget[];
 };
 
@@ -114,7 +114,7 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
         const useCard =
           renderMode === "card" || (renderMode === "auto" && shouldUseCard(text));
 
-        // 只在第一条消息中带 @ (避免多条消息重复 @)
+        // Only include @mentions in the first chunk (avoid duplicate @s)
         let isFirstChunk = true;
 
         if (useCard) {
