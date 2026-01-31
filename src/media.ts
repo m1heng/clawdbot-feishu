@@ -404,6 +404,76 @@ export async function sendFileFeishu(params: {
 }
 
 /**
+ * Send a video/audio message using a file_key
+ * 视频消息需要使用 msg_type: "media"，而不是 "file"
+ * 参考: https://open.larkoffice.com/document/server-docs/im-v1/message-content-description/create_json
+ */
+export async function sendVideoFeishu(params: {
+  cfg: ClawdbotConfig;
+  to: string;
+  fileKey: string;
+  imageKey?: string; // 可选的视频封面图
+  replyToMessageId?: string;
+}): Promise<SendMediaResult> {
+  const { cfg, to, fileKey, imageKey, replyToMessageId } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+  const receiveId = normalizeFeishuTarget(to);
+  if (!receiveId) {
+    throw new Error(`Invalid Feishu target: ${to}`);
+  }
+
+  const receiveIdType = resolveReceiveIdType(receiveId);
+  // media 消息格式: { file_key: string, image_key?: string }
+  const contentObj: { file_key: string; image_key?: string } = { file_key: fileKey };
+  if (imageKey) {
+    contentObj.image_key = imageKey;
+  }
+  const content = JSON.stringify(contentObj);
+
+  if (replyToMessageId) {
+    const response = await client.im.message.reply({
+      path: { message_id: replyToMessageId },
+      data: {
+        content,
+        msg_type: "media",
+      },
+    });
+
+    if (response.code !== 0) {
+      throw new Error(`Feishu video reply failed: ${response.msg || `code ${response.code}`}`);
+    }
+
+    return {
+      messageId: response.data?.message_id ?? "unknown",
+      chatId: receiveId,
+    };
+  }
+
+  const response = await client.im.message.create({
+    params: { receive_id_type: receiveIdType },
+    data: {
+      receive_id: receiveId,
+      content,
+      msg_type: "media",
+    },
+  });
+
+  if (response.code !== 0) {
+    throw new Error(`Feishu video send failed: ${response.msg || `code ${response.code}`}`);
+  }
+
+  return {
+    messageId: response.data?.message_id ?? "unknown",
+    chatId: receiveId,
+  };
+}
+
+/**
  * Helper to detect file type from extension
  */
 export function detectFileType(
@@ -495,13 +565,21 @@ export async function sendMediaFeishu(params: {
     throw new Error("Either mediaUrl or mediaBuffer must be provided");
   }
 
-  // Determine if it's an image based on extension
   const ext = path.extname(name).toLowerCase();
   const isImage = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".ico", ".tiff"].includes(ext);
+  const isVideo = [".mp4", ".mov", ".avi", ".mkv", ".webm"].includes(ext);
 
   if (isImage) {
     const { imageKey } = await uploadImageFeishu({ cfg, image: buffer });
     return sendImageFeishu({ cfg, to, imageKey, replyToMessageId });
+  } else if (isVideo) {
+    const { fileKey } = await uploadFileFeishu({
+      cfg,
+      file: buffer,
+      fileName: name,
+      fileType: "mp4",
+    });
+    return sendVideoFeishu({ cfg, to, fileKey, replyToMessageId });
   } else {
     const fileType = detectFileType(name);
     const { fileKey } = await uploadFileFeishu({
