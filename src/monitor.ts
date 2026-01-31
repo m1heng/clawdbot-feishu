@@ -1,3 +1,4 @@
+import http from "node:http";
 import * as Lark from "@larksuiteoapi/node-sdk";
 import type { ClawdbotConfig, RuntimeEnv, HistoryEntry } from "openclaw/plugin-sdk";
 import type { FeishuConfig } from "./types.js";
@@ -14,6 +15,7 @@ export type MonitorFeishuOpts = {
 };
 
 let currentWsClient: Lark.WSClient | null = null;
+let currentHttpServer: http.Server | null = null;
 let botOpenId: string | undefined;
 
 async function fetchBotOpenId(cfg: FeishuConfig): Promise<string | undefined> {
@@ -51,7 +53,7 @@ export async function monitorFeishuProvider(opts: MonitorFeishuOpts = {}): Promi
     return monitorWebSocket({ cfg, feishuCfg: feishuCfg!, runtime: opts.runtime, abortSignal: opts.abortSignal });
   }
 
-  log("feishu: webhook mode not implemented in monitor, use HTTP server directly");
+  return monitorWebhook({ cfg, feishuCfg: feishuCfg!, runtime: opts.runtime, abortSignal: opts.abortSignal });
 }
 
 async function monitorWebSocket(params: {
@@ -148,4 +150,106 @@ export function stopFeishuMonitor(): void {
   if (currentWsClient) {
     currentWsClient = null;
   }
+  if (currentHttpServer) {
+    currentHttpServer.close();
+    currentHttpServer = null;
+  }
+}
+
+async function monitorWebhook(params: {
+  cfg: ClawdbotConfig;
+  feishuCfg: FeishuConfig;
+  runtime?: RuntimeEnv;
+  abortSignal?: AbortSignal;
+}): Promise<void> {
+  const { cfg, feishuCfg, runtime, abortSignal } = params;
+  const log = runtime?.log ?? console.log;
+  const error = runtime?.error ?? console.error;
+
+  const webhookPath = feishuCfg.webhookPath ?? "/feishu/events";
+  const webhookPort = feishuCfg.webhookPort ?? 3000;
+
+  log(`feishu: starting webhook server on port ${webhookPort}, path ${webhookPath}...`);
+
+  const chatHistories = new Map<string, HistoryEntry[]>();
+  const eventDispatcher = createEventDispatcher(feishuCfg);
+
+  eventDispatcher.register({
+    "im.message.receive_v1": async (data) => {
+      try {
+        const event = data as unknown as FeishuMessageEvent;
+        await handleFeishuMessage({
+          cfg,
+          event,
+          botOpenId,
+          runtime,
+          chatHistories,
+        });
+      } catch (err) {
+        error(`feishu: error handling message event: ${String(err)}`);
+      }
+    },
+    "im.message.message_read_v1": async () => {
+      // Ignore read receipts
+    },
+    "im.chat.member.bot.added_v1": async (data) => {
+      try {
+        const event = data as unknown as FeishuBotAddedEvent;
+        log(`feishu: bot added to chat ${event.chat_id}`);
+      } catch (err) {
+        error(`feishu: error handling bot added event: ${String(err)}`);
+      }
+    },
+    "im.chat.member.bot.deleted_v1": async (data) => {
+      try {
+        const event = data as unknown as { chat_id: string };
+        log(`feishu: bot removed from chat ${event.chat_id}`);
+      } catch (err) {
+        error(`feishu: error handling bot removed event: ${String(err)}`);
+      }
+    },
+  });
+
+  return new Promise((resolve, reject) => {
+    const server = http.createServer();
+    currentHttpServer = server;
+
+    const cleanup = () => {
+      if (currentHttpServer === server) {
+        currentHttpServer = null;
+      }
+    };
+
+    const handleAbort = () => {
+      log("feishu: abort signal received, stopping webhook server");
+      server.close(() => {
+        cleanup();
+        resolve();
+      });
+    };
+
+    if (abortSignal?.aborted) {
+      cleanup();
+      resolve();
+      return;
+    }
+
+    abortSignal?.addEventListener("abort", handleAbort, { once: true });
+
+    server.on("error", (err) => {
+      cleanup();
+      abortSignal?.removeEventListener("abort", handleAbort);
+      error(`feishu: webhook server error: ${String(err)}`);
+      reject(err);
+    });
+
+    // adaptDefault automatically handles challenge verification and event decryption
+    server.on("request", Lark.adaptDefault(webhookPath, eventDispatcher, {
+      autoChallenge: true,
+    }));
+
+    server.listen(webhookPort, () => {
+      log(`feishu: webhook server started on port ${webhookPort}`);
+    });
+  });
 }
