@@ -472,17 +472,32 @@ export async function handleFeishuMessage(params: {
     const groupAllowFrom = feishuCfg?.groupAllowFrom ?? [];
     const groupConfig = resolveFeishuGroupConfig({ cfg: feishuCfg, groupId: ctx.chatId });
 
-    const senderAllowFrom = groupConfig?.allowFrom ?? groupAllowFrom;
-    const allowed = isFeishuGroupAllowed({
+    // Check if this GROUP is allowed (groupAllowFrom contains group IDs like oc_xxx, not user IDs)
+    const groupAllowed = isFeishuGroupAllowed({
       groupPolicy,
-      allowFrom: senderAllowFrom,
-      senderId: ctx.senderOpenId,
-      senderName: ctx.senderName,
+      allowFrom: groupAllowFrom,
+      senderId: ctx.chatId, // Check group ID, not sender ID
+      senderName: undefined,
     });
 
-    if (!allowed) {
-      log(`feishu: sender ${ctx.senderOpenId} not in group allowlist`);
+    if (!groupAllowed) {
+      log(`feishu: group ${ctx.chatId} not in allowlist`);
       return;
+    }
+
+    // Additional sender-level allowlist check if group has specific allowFrom config
+    const senderAllowFrom = groupConfig?.allowFrom ?? [];
+    if (senderAllowFrom.length > 0) {
+      const senderAllowed = isFeishuGroupAllowed({
+        groupPolicy: "allowlist",
+        allowFrom: senderAllowFrom,
+        senderId: ctx.senderOpenId,
+        senderName: ctx.senderName,
+      });
+      if (!senderAllowed) {
+        log(`feishu: sender ${ctx.senderOpenId} not in group ${ctx.chatId} sender allowlist`);
+        return;
+      }
     }
 
     const { requireMention } = resolveFeishuReplyPolicy({
