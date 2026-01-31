@@ -251,18 +251,22 @@ export async function updateCardFeishu(params: {
 /**
  * Build a Feishu interactive card with markdown content.
  * Cards render markdown properly (code blocks, tables, links, etc.)
+ * Uses schema 2.0 format for proper markdown rendering.
  */
 export function buildMarkdownCard(text: string): Record<string, unknown> {
   return {
+    schema: "2.0",
     config: {
       wide_screen_mode: true,
     },
-    elements: [
-      {
-        tag: "markdown",
-        content: text,
-      },
-    ],
+    body: {
+      elements: [
+        {
+          tag: "markdown",
+          content: text,
+        },
+      ],
+    },
   };
 }
 
