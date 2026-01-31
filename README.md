@@ -116,6 +116,16 @@ channels:
 - Pairing flow for DM approval
 - User and group directory lookup
 - **Card render mode**: Optional markdown rendering with syntax highlighting
+- **@mention forwarding**: When you @mention someone in your message, the bot's reply will automatically @mention them too
+
+#### @Mention Forwarding
+
+When you want the bot to @mention someone in its reply, simply @mention them in your message:
+
+- **In DM**: `@张三 say hello` → Bot replies with `@张三 Hello!`
+- **In Group**: `@bot @张三 say hello` → Bot replies with `@张三 Hello!`
+
+The bot automatically detects @mentions in your message and includes them in its reply. No extra permissions required beyond the standard messaging permissions.
 
 ### FAQ
 
@@ -269,6 +279,16 @@ channels:
 - 私聊配对审批流程
 - 用户和群组目录查询
 - **卡片渲染模式**：支持语法高亮的 Markdown 渲染
+- **@ 转发功能**：在消息中 @ 某人，机器人的回复会自动 @ 该用户
+
+#### @ 转发功能
+
+如果你希望机器人的回复中 @ 某人，只需在你的消息中 @ 他们：
+
+- **私聊**：`@张三 跟他问好` → 机器人回复 `@张三 你好！`
+- **群聊**：`@机器人 @张三 跟他问好` → 机器人回复 `@张三 你好！`
+
+机器人会自动检测消息中的 @ 并在回复时带上。无需额外权限。
 
 ### 常见问题
 
