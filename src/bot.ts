@@ -16,7 +16,7 @@ import {
   isFeishuGroupAllowed,
 } from "./policy.js";
 import { createFeishuReplyDispatcher } from "./reply-dispatcher.js";
-import { getMessageFeishu } from "./send.js";
+import { getMessageFeishu, getMergeForwardMessagesFeishu } from "./send.js";
 import { downloadImageFeishu, downloadMessageResourceFeishu } from "./media.js";
 import {
   extractMentionTargets,
@@ -221,6 +221,40 @@ function parsePostContent(content: string): {
   } catch {
     return { textContent: "[富文本消息]", imageKeys: [] };
   }
+}
+
+/**
+ * Format merge_forward child messages into readable text.
+ */
+function formatMergeForwardContent(
+  messages: Array<{ content: string; contentType: string }>,
+): string {
+  if (messages.length === 0) {
+    return "[转发的聊天记录 - 无内容]";
+  }
+
+  const lines: string[] = ["[转发的聊天记录]", "---"];
+
+  for (const msg of messages) {
+    if (msg.contentType === "text" || msg.contentType === "post") {
+      lines.push(msg.content);
+    } else if (msg.contentType === "image") {
+      lines.push("[图片]");
+    } else if (msg.contentType === "file") {
+      lines.push("[文件]");
+    } else if (msg.contentType === "audio") {
+      lines.push("[语音]");
+    } else if (msg.contentType === "video") {
+      lines.push("[视频]");
+    } else if (msg.contentType === "sticker") {
+      lines.push("[表情]");
+    } else {
+      lines.push(`[${msg.contentType}]`);
+    }
+  }
+
+  lines.push("---");
+  return lines.join("\n");
 }
 
 /**
@@ -445,6 +479,23 @@ export async function handleFeishuMessage(params: {
 
   let ctx = parseFeishuMessageEvent(event, botOpenId);
   const isGroup = ctx.chatType === "group";
+
+  // Handle merge_forward messages: fetch child messages and format as readable text
+  if (ctx.contentType === "merge_forward") {
+    try {
+      log(`feishu: detected merge_forward message, fetching child messages...`);
+      const childMessages = await getMergeForwardMessagesFeishu({
+        cfg,
+        messageId: ctx.messageId,
+      });
+      const formattedContent = formatMergeForwardContent(childMessages);
+      ctx = { ...ctx, content: formattedContent };
+      log(`feishu: resolved merge_forward with ${childMessages.length} child message(s)`);
+    } catch (err) {
+      log(`feishu: failed to fetch merge_forward content: ${String(err)}`);
+      ctx = { ...ctx, content: "[转发的聊天记录 - 获取失败]" };
+    }
+  }
 
   // Resolve sender display name (best-effort) so the agent can attribute messages correctly.
   const senderName = await resolveFeishuSenderName({

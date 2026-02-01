@@ -16,6 +16,14 @@ export type FeishuMessageInfo = {
   createTime?: number;
 };
 
+export type FeishuMergeForwardMessage = {
+  messageId: string;
+  chatId?: string;
+  content: string;
+  contentType: string;
+  upperMessageId?: string;
+};
+
 /**
  * Get a message by its ID.
  * Useful for fetching quoted/replied message content.
@@ -86,6 +94,101 @@ export async function getMessageFeishu(params: {
   } catch {
     return null;
   }
+}
+
+/**
+ * Get all messages from a merge_forward message.
+ * Returns child messages that are linked via upper_message_id.
+ */
+export async function getMergeForwardMessagesFeishu(params: {
+  cfg: ClawdbotConfig;
+  messageId: string;
+}): Promise<FeishuMergeForwardMessage[]> {
+  const { cfg, messageId } = params;
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  if (!feishuCfg) {
+    throw new Error("Feishu channel not configured");
+  }
+
+  const client = createFeishuClient(feishuCfg);
+
+  const response = (await client.im.message.get({
+    path: { message_id: messageId },
+  })) as {
+    code?: number;
+    msg?: string;
+    data?: {
+      items?: Array<{
+        message_id?: string;
+        chat_id?: string;
+        msg_type?: string;
+        body?: { content?: string };
+        upper_message_id?: string;
+      }>;
+    };
+  };
+
+  if (response.code !== 0) {
+    throw new Error(`Feishu get message failed: ${response.msg || `code ${response.code}`}`);
+  }
+
+  const items = response.data?.items ?? [];
+  const result: FeishuMergeForwardMessage[] = [];
+
+  for (const item of items) {
+    // Skip the merge_forward container itself
+    if (item.msg_type === "merge_forward") {
+      continue;
+    }
+
+    // Parse content based on message type
+    let content = item.body?.content ?? "";
+    try {
+      const parsed = JSON.parse(content);
+      if (item.msg_type === "text" && parsed.text) {
+        content = parsed.text;
+      } else if (item.msg_type === "post") {
+        // Extract text from rich text post
+        content = extractPostText(parsed);
+      }
+    } catch {
+      // Keep raw content if parsing fails
+    }
+
+    result.push({
+      messageId: item.message_id ?? "",
+      chatId: item.chat_id,
+      content,
+      contentType: item.msg_type ?? "text",
+      upperMessageId: item.upper_message_id,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Extract plain text from a Feishu post (rich text) content.
+ */
+function extractPostText(parsed: { title?: string; content?: Array<Array<{ tag: string; text?: string }>> }): string {
+  const title = parsed.title || "";
+  const contentBlocks = parsed.content || [];
+  let textContent = title ? `${title}\n\n` : "";
+
+  for (const paragraph of contentBlocks) {
+    if (Array.isArray(paragraph)) {
+      for (const element of paragraph) {
+        if (element.tag === "text" && element.text) {
+          textContent += element.text;
+        } else if (element.tag === "a") {
+          textContent += (element as { text?: string }).text || "";
+        }
+      }
+      textContent += "\n";
+    }
+  }
+
+  return textContent.trim() || "[富文本消息]";
 }
 
 export type SendFeishuMessageParams = {
