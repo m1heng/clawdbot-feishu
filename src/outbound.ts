@@ -20,17 +20,26 @@ export const feishuOutbound: ChannelOutboundAdapter = {
 
     // Upload and send media if URL provided
     if (mediaUrl) {
-      try {
-        const result = await sendMediaFeishu({ cfg, to, mediaUrl });
-        return { channel: "feishu", ...result };
-      } catch (err) {
-        // Log the error for debugging
-        console.error(`[feishu] sendMediaFeishu failed:`, err);
-        // Fallback to URL link if upload fails
-        const fallbackText = `📎 ${mediaUrl}`;
-        const result = await sendMessageFeishu({ cfg, to, text: fallbackText });
-        return { channel: "feishu", ...result };
+      let lastError;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const result = await sendMediaFeishu({ cfg, to, mediaUrl });
+          return { channel: "feishu", ...result };
+        } catch (err) {
+          lastError = err;
+          console.error(`[feishu] sendMediaFeishu failed (attempt ${attempt}/3):`, err);
+          if (attempt < 3) {
+            const delay = 1000 * Math.pow(2, attempt - 1); // 1000ms, 2000ms
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        }
       }
+
+      // Fallback to URL link if upload fails after retries
+      console.error(`[feishu] sendMediaFeishu failed after 3 attempts. Fallback to URL.`);
+      const fallbackText = `[Media Upload Failed] Click to view: ${mediaUrl}`;
+      const result = await sendMessageFeishu({ cfg, to, text: fallbackText });
+      return { channel: "feishu", ...result };
     }
 
     // No media URL, just return text result
