@@ -278,16 +278,45 @@ async function readDoc(client: Lark.Client, docToken: string) {
   };
 }
 
-async function createDoc(client: Lark.Client, title: string, folderToken?: string) {
+/** Set document permission to allow tenant members to edit */
+async function setDocPermissionTenantEditable(client: Lark.Client, docToken: string) {
+  const res = await client.drive.permissionPublic.patch({
+    path: { token: docToken },
+    params: { type: "docx" },
+    data: {
+      link_share_entity: "tenant_editable",
+      share_entity: "same_tenant",
+    },
+  });
+  if (res.code !== 0) throw new Error(res.msg);
+  return res.data;
+}
+
+export type DocPermission = "private" | "tenant_editable";
+
+async function createDoc(
+  client: Lark.Client,
+  title: string,
+  folderToken?: string,
+  permission?: DocPermission,
+) {
   const res = await client.docx.document.create({
     data: { title, folder_token: folderToken },
   });
   if (res.code !== 0) throw new Error(res.msg);
   const doc = res.data?.document;
+  const docId = doc?.document_id;
+
+  // Set permission if requested
+  if (permission === "tenant_editable" && docId) {
+    await setDocPermissionTenantEditable(client, docId);
+  }
+
   return {
-    document_id: doc?.document_id,
+    document_id: docId,
     title: doc?.title,
-    url: `https://feishu.cn/docx/${doc?.document_id}`,
+    url: `https://feishu.cn/docx/${docId}`,
+    permission: permission ?? "private",
   };
 }
 
@@ -455,6 +484,12 @@ const DocTokenSchema = Type.Object({
 const CreateDocSchema = Type.Object({
   title: Type.String({ description: "Document title" }),
   folder_token: Type.Optional(Type.String({ description: "Target folder token (optional)" })),
+  permission: Type.Optional(
+    Type.Union([Type.Literal("private"), Type.Literal("tenant_editable")], {
+      description:
+        "Document permission: 'private' (default) or 'tenant_editable' (organization members can edit via link)",
+    }),
+  ),
 });
 
 const WriteDocSchema = Type.Object({
@@ -487,6 +522,13 @@ const GetBlockSchema = Type.Object({
 
 const FolderTokenSchema = Type.Object({
   folder_token: Type.String({ description: "Folder token" }),
+});
+
+const SetPermissionSchema = Type.Object({
+  doc_token: Type.String({ description: "Document token" }),
+  permission: Type.Union([Type.Literal("private"), Type.Literal("tenant_editable")], {
+    description: "'private' or 'tenant_editable' (organization members can edit via link)",
+  }),
 });
 
 // ============ Tool Registration ============
@@ -525,12 +567,17 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
     {
       name: "feishu_doc_create",
       label: "Feishu Doc Create",
-      description: "Create a new empty Feishu document",
+      description:
+        "Create a new empty Feishu document. Use permission='tenant_editable' to allow organization members to edit via link.",
       parameters: CreateDocSchema,
       async execute(_toolCallId, params) {
-        const { title, folder_token } = params as { title: string; folder_token?: string };
+        const { title, folder_token, permission } = params as {
+          title: string;
+          folder_token?: string;
+          permission?: DocPermission;
+        };
         try {
-          const result = await createDoc(getClient(), title, folder_token);
+          const result = await createDoc(getClient(), title, folder_token, permission);
           return json(result);
         } catch (err) {
           return json({ error: err instanceof Error ? err.message : String(err) });
@@ -687,7 +734,43 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
     { name: "feishu_folder_list" },
   );
 
-  // Tool 10: feishu_app_scopes
+  // Tool 10: feishu_doc_set_permission
+  api.registerTool(
+    {
+      name: "feishu_doc_set_permission",
+      label: "Feishu Doc Set Permission",
+      description:
+        "Set document sharing permission. Use 'tenant_editable' to allow organization members to edit via link.",
+      parameters: SetPermissionSchema,
+      async execute(_toolCallId, params) {
+        const { doc_token, permission } = params as { doc_token: string; permission: DocPermission };
+        try {
+          if (permission === "tenant_editable") {
+            await setDocPermissionTenantEditable(getClient(), doc_token);
+            return json({ success: true, permission: "tenant_editable" });
+          } else {
+            // Reset to private (only owner can access)
+            const client = getClient();
+            const res = await client.drive.permissionPublic.patch({
+              path: { token: doc_token },
+              params: { type: "docx" },
+              data: {
+                link_share_entity: "closed",
+                share_entity: "only_full_access",
+              },
+            });
+            if (res.code !== 0) throw new Error(res.msg);
+            return json({ success: true, permission: "private" });
+          }
+        } catch (err) {
+          return json({ error: err instanceof Error ? err.message : String(err) });
+        }
+      },
+    },
+    { name: "feishu_doc_set_permission" },
+  );
+
+  // Tool 11: feishu_app_scopes
   api.registerTool(
     {
       name: "feishu_app_scopes",
@@ -707,5 +790,5 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
     { name: "feishu_app_scopes" },
   );
 
-  api.logger.info?.(`feishu_doc: Registered 10 document tools`);
+  api.logger.info?.(`feishu_doc: Registered 11 document tools`);
 }
