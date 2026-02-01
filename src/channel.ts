@@ -50,6 +50,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
     reactions: true,
     edit: true,
     reply: true,
+    blockStreaming: true, // Support streaming message updates via card patching
   },
   agentPrompt: {
     messageToolHints: () => [
@@ -86,6 +87,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
         chunkMode: { type: "string", enum: ["length", "newline"] },
         mediaMaxMb: { type: "number", minimum: 0 },
         renderMode: { type: "string", enum: ["auto", "raw", "card"] },
+        blockStreaming: { type: "boolean" },
       },
     },
   },

@@ -87,6 +87,7 @@ export const FeishuConfigSchema = z
     textChunkLimit: z.number().int().positive().optional(),
     chunkMode: z.enum(["length", "newline"]).optional(),
     blockStreamingCoalesce: BlockStreamingCoalesceSchema,
+    blockStreaming: z.boolean().optional(), // Enable/disable streaming message updates (default: true)
     mediaMaxMb: z.number().positive().optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
     renderMode: RenderModeSchema, // raw = plain text (default), card = interactive card with markdown
