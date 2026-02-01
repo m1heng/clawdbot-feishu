@@ -24,6 +24,25 @@ import {
   isMentionForwardRequest,
 } from "./mention.js";
 
+// --- Message deduplication ---
+const processedMessages = new Map<string, number>(); // messageId -> timestamp
+const MESSAGE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// Periodically clean up expired message IDs (every hour)
+setInterval(() => {
+  const now = Date.now();
+  let cleanedCount = 0;
+  for (const [id, timestamp] of processedMessages) {
+    if (now - timestamp > MESSAGE_EXPIRY_MS) {
+      processedMessages.delete(id);
+      cleanedCount++;
+    }
+  }
+  if (cleanedCount > 0) {
+    console.log(`feishu: cleaned ${cleanedCount} expired message IDs, remaining: ${processedMessages.size}`);
+  }
+}, 60 * 60 * 1000); // Clean every hour
+
 // --- Sender name resolution (so the agent can distinguish who is speaking in group chats) ---
 // Cache display names by open_id to avoid an API call on every message.
 const SENDER_NAME_TTL_MS = 10 * 60 * 1000;
@@ -442,6 +461,14 @@ export async function handleFeishuMessage(params: {
   const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
+
+  // Deduplication: skip if already processed
+  const messageId = event.message.message_id;
+  if (processedMessages.has(messageId)) {
+    log(`feishu: skipping duplicate message ${messageId}`);
+    return;
+  }
+  processedMessages.set(messageId, Date.now());
 
   let ctx = parseFeishuMessageEvent(event, botOpenId);
   const isGroup = ctx.chatType === "group";
