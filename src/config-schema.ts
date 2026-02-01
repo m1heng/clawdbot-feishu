@@ -90,6 +90,7 @@ export const FeishuConfigSchema = z
     mediaMaxMb: z.number().positive().optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
     renderMode: RenderModeSchema, // raw = plain text (default), card = interactive card with markdown
+    menuEvents: z.record(z.string(), z.string()).optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
