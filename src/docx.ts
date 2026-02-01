@@ -232,6 +232,101 @@ async function processImages(
   return processed;
 }
 
+// ============ Wiki Functions ============
+
+type WikiNodeInfo = {
+  node_token: string;
+  obj_token: string;
+  obj_type: string;
+  space_id: string;
+  title?: string;
+  parent_node_token?: string;
+  node_type?: string;
+  origin_space_id?: string;
+};
+
+/** Get wiki node info by token (from /wiki/XXX URL) */
+async function getWikiNode(client: Lark.Client, wikiToken: string): Promise<WikiNodeInfo> {
+  const res = await client.wiki.space.getNode({
+    params: { token: wikiToken },
+  });
+  if (res.code !== 0) throw new Error(res.msg);
+  const node = res.data?.node;
+  if (!node) throw new Error("Wiki node not found");
+  return {
+    node_token: node.node_token ?? wikiToken,
+    obj_token: node.obj_token ?? "",
+    obj_type: node.obj_type ?? "",
+    space_id: node.space_id ?? "",
+    title: node.title,
+    parent_node_token: node.parent_node_token,
+    node_type: node.node_type,
+    origin_space_id: node.origin_space_id,
+  };
+}
+
+/** Read wiki page content (resolves to underlying docx) */
+async function readWiki(client: Lark.Client, wikiToken: string) {
+  // 1. Get wiki node info to find the underlying document
+  const node = await getWikiNode(client, wikiToken);
+
+  if (node.obj_type !== "docx") {
+    return {
+      node,
+      error: `Wiki node is of type '${node.obj_type}', only 'docx' is supported for reading content. Use the obj_token with the appropriate API.`,
+    };
+  }
+
+  // 2. Read the underlying docx content
+  const docContent = await readDoc(client, node.obj_token);
+
+  return {
+    wiki_token: wikiToken,
+    title: node.title,
+    obj_type: node.obj_type,
+    obj_token: node.obj_token,
+    space_id: node.space_id,
+    ...docContent,
+  };
+}
+
+/** List wiki spaces */
+async function listWikiSpaces(client: Lark.Client) {
+  const res = await client.wiki.space.list({});
+  if (res.code !== 0) throw new Error(res.msg);
+
+  return {
+    spaces:
+      res.data?.items?.map((s) => ({
+        space_id: s.space_id,
+        name: s.name,
+        description: s.description,
+        type: s.space_type === "team" ? "team" : "personal",
+        visibility: s.visibility,
+      })) ?? [],
+  };
+}
+
+/** List wiki nodes under a parent */
+async function listWikiNodes(client: Lark.Client, spaceId: string, parentNodeToken?: string) {
+  const res = await client.wiki.spaceNode.list({
+    path: { space_id: spaceId },
+    params: { parent_node_token: parentNodeToken },
+  });
+  if (res.code !== 0) throw new Error(res.msg);
+
+  return {
+    nodes:
+      res.data?.items?.map((n) => ({
+        node_token: n.node_token,
+        obj_token: n.obj_token,
+        obj_type: n.obj_type,
+        title: n.title,
+        has_child: n.has_child,
+      })) ?? [],
+  };
+}
+
 // ============ Actions ============
 
 // Block types that are NOT included in rawContent (plain text) output
@@ -531,6 +626,18 @@ const SetPermissionSchema = Type.Object({
   }),
 });
 
+// Wiki Schemas
+const WikiTokenSchema = Type.Object({
+  wiki_token: Type.String({ description: "Wiki token (extract from URL /wiki/XXX)" }),
+});
+
+const WikiSpaceIdSchema = Type.Object({
+  space_id: Type.String({ description: "Wiki space ID" }),
+  parent_node_token: Type.Optional(
+    Type.String({ description: "Parent node token (optional, for listing children)" }),
+  ),
+});
+
 // ============ Tool Registration ============
 
 export function registerFeishuDocTools(api: OpenClawPluginApi) {
@@ -770,7 +877,71 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
     { name: "feishu_doc_set_permission" },
   );
 
-  // Tool 11: feishu_app_scopes
+  // Tool 11: feishu_wiki_read
+  api.registerTool(
+    {
+      name: "feishu_wiki_read",
+      label: "Feishu Wiki Read",
+      description:
+        "Read content from a Feishu wiki page. Extract wiki_token from URL /wiki/XXX. Returns wiki metadata and document content if the underlying type is docx.",
+      parameters: WikiTokenSchema,
+      async execute(_toolCallId, params) {
+        const { wiki_token } = params as { wiki_token: string };
+        try {
+          const result = await readWiki(getClient(), wiki_token);
+          return json(result);
+        } catch (err) {
+          return json({ error: err instanceof Error ? err.message : String(err) });
+        }
+      },
+    },
+    { name: "feishu_wiki_read" },
+  );
+
+  // Tool 12: feishu_wiki_spaces
+  api.registerTool(
+    {
+      name: "feishu_wiki_spaces",
+      label: "Feishu Wiki Spaces",
+      description: "List available wiki spaces (knowledge bases) the app has access to.",
+      parameters: Type.Object({}),
+      async execute() {
+        try {
+          const result = await listWikiSpaces(getClient());
+          return json(result);
+        } catch (err) {
+          return json({ error: err instanceof Error ? err.message : String(err) });
+        }
+      },
+    },
+    { name: "feishu_wiki_spaces" },
+  );
+
+  // Tool 13: feishu_wiki_nodes
+  api.registerTool(
+    {
+      name: "feishu_wiki_nodes",
+      label: "Feishu Wiki Nodes",
+      description:
+        "List wiki nodes (pages) in a space. Use parent_node_token to list children of a specific node.",
+      parameters: WikiSpaceIdSchema,
+      async execute(_toolCallId, params) {
+        const { space_id, parent_node_token } = params as {
+          space_id: string;
+          parent_node_token?: string;
+        };
+        try {
+          const result = await listWikiNodes(getClient(), space_id, parent_node_token);
+          return json(result);
+        } catch (err) {
+          return json({ error: err instanceof Error ? err.message : String(err) });
+        }
+      },
+    },
+    { name: "feishu_wiki_nodes" },
+  );
+
+  // Tool 14: feishu_app_scopes
   api.registerTool(
     {
       name: "feishu_app_scopes",
@@ -790,5 +961,5 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
     { name: "feishu_app_scopes" },
   );
 
-  api.logger.info?.(`feishu_doc: Registered 11 document tools`);
+  api.logger.info?.(`feishu_doc: Registered 14 document/wiki tools`);
 }
