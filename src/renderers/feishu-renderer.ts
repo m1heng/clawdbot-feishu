@@ -52,6 +52,70 @@ function applyMentions(mentions: MentionTarget[] | undefined, text: string): str
   return buildMentionedCardContent(mentions, text);
 }
 
+const TOOL_NAMES = new Set(
+  [
+    "read",
+    "write",
+    "edit",
+    "exec",
+    "process",
+    "web_search",
+    "web_fetch",
+    "browser",
+    "message",
+    "sessions_list",
+    "sessions_send",
+    "sessions_spawn",
+    "session_status",
+    "cron",
+    "feishu_doc_read",
+    "feishu_doc_write",
+    "feishu_doc_append",
+    "feishu_doc_list_blocks",
+    "feishu_doc_update",
+    "feishu_doc_delete_block",
+    "feishu_folder_list",
+    "feishu_doc_create",
+    "memory_search",
+    "memory_get",
+    "tts",
+    "canvas",
+    "nodes",
+    "gateway",
+    "agents_list",
+  ].map((name) => name.toLowerCase()),
+);
+
+function splitToolSummaryLines(text: string) {
+  const toolLines: string[] = [];
+  const otherLines: string[] = [];
+  const lines = text.split(/\r?\n/);
+  const toolRegex =
+    /^\s*[\p{Extended_Pictographic}\uFE0F\u200D\s]+([A-Za-z0-9_]+)\s*:/u;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      otherLines.push(rawLine);
+      continue;
+    }
+    const match = line.match(toolRegex);
+    if (match) {
+      const toolName = match[1]?.toLowerCase();
+      if (toolName && TOOL_NAMES.has(toolName)) {
+        toolLines.push(line);
+        continue;
+      }
+    }
+    otherLines.push(rawLine);
+  }
+
+  return {
+    toolLines,
+    remainingText: otherLines.join("\n").trim(),
+  };
+}
+
 function extractAgentMessages(payload: ReplyPayload): AgentCoreMessage[] | null {
   const raw = payload as unknown as {
     messages?: AgentCoreMessage[];
@@ -375,6 +439,15 @@ function createAgentCardRenderer(params: CreateFeishuRendererParams): FeishuRend
 
   return {
     async deliver(payload: ReplyPayload) {
+      try {
+        const snapshot = JSON.stringify(payload);
+        runtime.log?.(
+          `feishu payload keys=${Object.keys(payload as Record<string, unknown>).join(",")} size=${snapshot.length}`,
+        );
+        runtime.log?.(`feishu payload sample=${snapshot.slice(0, 2000)}`);
+      } catch (err) {
+        runtime.log?.(`feishu payload log failed: ${String(err)}`);
+      }
       const messages = extractAgentMessages(payload);
       const events = extractVerboseEvents(payload);
       const payloadText = payload.text ?? "";
@@ -395,9 +468,25 @@ function createAgentCardRenderer(params: CreateFeishuRendererParams): FeishuRend
         }
         tracker.appendMessages(messages);
       } else if (payloadText.trim()) {
-        assistantBuffer = mergeStreamText(assistantBuffer, payloadText);
-        tracker.setDraftAnswer(assistantBuffer);
-        tracker.setStatus(AgentRunStatus.Thinking);
+        const { toolLines, remainingText } = splitToolSummaryLines(payloadText);
+
+        if (toolLines.length > 0) {
+          tracker.setStatus(AgentRunStatus.ToolCalling);
+          tracker.appendMessages([
+            {
+              role: "assistant",
+              content: toolLines.map((line) => ({ type: "text", text: line })),
+            },
+          ]);
+        }
+
+        if (remainingText) {
+          assistantBuffer = mergeStreamText(assistantBuffer, remainingText);
+          tracker.setDraftAnswer(assistantBuffer);
+          if (toolLines.length === 0) {
+            tracker.setStatus(AgentRunStatus.Thinking);
+          }
+        }
       } else if (!events || events.length === 0) {
         runtime.log?.(`feishu deliver: empty text, skipping`);
         return;
