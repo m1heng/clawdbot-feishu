@@ -1,4 +1,4 @@
-import { execSync, exec } from "child_process";
+import { execSync, exec, spawn } from "child_process";
 import * as Lark from "@larksuiteoapi/node-sdk";
 import type { ClawdbotConfig, RuntimeEnv, HistoryEntry } from "openclaw/plugin-sdk";
 import type { FeishuConfig } from "./types.js";
@@ -24,6 +24,36 @@ async function fetchBotOpenId(cfg: FeishuConfig): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+// Helper to execute script with payload via Stdin
+function executeScript(command: string, payload: any, log: (msg: string) => void, error: (msg: string) => void) {
+  log(`feishu: executing script '${command}'...`);
+  const child = spawn(command, { shell: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  
+  let stdout = '';
+  let stderr = '';
+
+  child.stdout.on('data', (data) => { stdout += data.toString(); });
+  child.stderr.on('data', (data) => { stderr += data.toString(); });
+
+  child.on('close', (code) => {
+    if (code !== 0) {
+      error(`feishu: script '${command}' exited with code ${code}`);
+      if (stderr) error(`feishu: stderr: ${stderr.trim()}`);
+    } else {
+      log(`feishu: script '${command}' finished successfully.`);
+      if (stdout) log(`feishu: stdout: ${stdout.trim()}`);
+    }
+  });
+
+  child.on('error', (err) => {
+    error(`feishu: failed to start script '${command}': ${err.message}`);
+  });
+
+  // Write payload to stdin
+  child.stdin.write(JSON.stringify(payload));
+  child.stdin.end();
 }
 
 export async function monitorFeishuProvider(opts: MonitorFeishuOpts = {}): Promise<void> {
@@ -74,6 +104,18 @@ async function monitorWebSocket(params: {
 
   const eventDispatcher = createEventDispatcher(feishuCfg);
 
+  // Generic handler for events mapped in config
+  const handleGenericEvent = async (key: string, data: any) => {
+    // Check config.channels.feishu.events[key]
+    const script = feishuCfg.events?.[key];
+    if (script) {
+      log(`feishu: routing event '${key}' to script: ${script}`);
+      executeScript(script, data, log, error);
+      return true;
+    }
+    return false;
+  };
+
   eventDispatcher.register({
     "im.message.receive_v1": async (data) => {
       try {
@@ -108,12 +150,28 @@ async function monitorWebSocket(params: {
         error(`feishu: error handling bot removed event: ${String(err)}`);
       }
     },
+    "card.action.trigger": async (data) => {
+      try {
+        log(`feishu: card action received`);
+        // Try generic handler first
+        const handled = await handleGenericEvent("card.action.trigger", data);
+        if (!handled) {
+           log("feishu: unhandled card action (configure 'card.action.trigger' in events)");
+        }
+      } catch (err) {
+        error(`feishu: error handling card action: ${String(err)}`);
+      }
+    },
     "application.bot.menu_v6": async (data) => {
       try {
         const event = data as unknown as { event_key: string };
         log(`feishu: menu event received: ${event.event_key}`);
 
-        // Check for configured menu event mapping
+        // 1. Check generic event mapping (PRIORITY)
+        const handled = await handleGenericEvent("application.bot.menu_v6", data);
+        if (handled) return;
+
+        // 2. Check legacy menuEvents mapping
         const mappedCommand = feishuCfg.menuEvents?.[event.event_key];
         if (mappedCommand) {
           log(`feishu: executing mapped command for '${event.event_key}': ${mappedCommand}`);
@@ -128,6 +186,7 @@ async function monitorWebSocket(params: {
           return;
         }
 
+        // 3. Hardcoded fallback
         if (event.event_key === "restart_gateway") {
           log("feishu: executing restart gateway command...");
           execSync("openclaw gateway restart", { stdio: "inherit" });
