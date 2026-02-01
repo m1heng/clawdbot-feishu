@@ -1,3 +1,4 @@
+import { execSync, exec } from "child_process";
 import * as Lark from "@larksuiteoapi/node-sdk";
 import type { ClawdbotConfig, RuntimeEnv, HistoryEntry } from "openclaw/plugin-sdk";
 import type { FeishuConfig } from "./types.js";
@@ -105,6 +106,34 @@ async function monitorWebSocket(params: {
         log(`feishu: bot removed from chat ${event.chat_id}`);
       } catch (err) {
         error(`feishu: error handling bot removed event: ${String(err)}`);
+      }
+    },
+    "application.bot.menu_v6": async (data) => {
+      try {
+        const event = data as unknown as { event_key: string };
+        log(`feishu: menu event received: ${event.event_key}`);
+
+        // Check for configured menu event mapping
+        const mappedCommand = feishuCfg.menuEvents?.[event.event_key];
+        if (mappedCommand) {
+          log(`feishu: executing mapped command for '${event.event_key}': ${mappedCommand}`);
+          exec(mappedCommand, (err, stdout, stderr) => {
+             if (err) {
+               error(`feishu: command '${mappedCommand}' failed: ${err.message}`);
+               return;
+             }
+             if (stdout) log(`feishu: cmd stdout: ${stdout.trim()}`);
+             if (stderr) error(`feishu: cmd stderr: ${stderr.trim()}`);
+          });
+          return;
+        }
+
+        if (event.event_key === "restart_gateway") {
+          log("feishu: executing restart gateway command...");
+          execSync("openclaw gateway restart", { stdio: "inherit" });
+        }
+      } catch (err) {
+        error(`feishu: error handling menu event: ${String(err)}`);
       }
     },
   });
