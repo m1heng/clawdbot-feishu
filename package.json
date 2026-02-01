@@ -47,6 +47,7 @@
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.30.0",
     "@sinclair/typebox": "^0.34.48",
+    "lru-cache": "^11.2.5",
     "zod": "^4.3.6"
   },
   "devDependencies": {

@@ -24,10 +24,15 @@ import {
   isMentionForwardRequest,
 } from "./mention.js";
 
+import { LRUCache } from "lru-cache";
+
 // --- Sender name resolution (so the agent can distinguish who is speaking in group chats) ---
 // Cache display names by open_id to avoid an API call on every message.
 const SENDER_NAME_TTL_MS = 10 * 60 * 1000;
-const senderNameCache = new Map<string, { name: string; expireAt: number }>();
+const senderNameCache = new LRUCache<string, string>({
+  max: 1000,
+  ttl: SENDER_NAME_TTL_MS,
+});
 
 async function resolveFeishuSenderName(params: {
   feishuCfg?: FeishuConfig;
@@ -39,8 +44,7 @@ async function resolveFeishuSenderName(params: {
   if (!senderOpenId) return undefined;
 
   const cached = senderNameCache.get(senderOpenId);
-  const now = Date.now();
-  if (cached && cached.expireAt > now) return cached.name;
+  if (cached) return cached;
 
   try {
     const client = createFeishuClient(feishuCfg);
@@ -58,7 +62,7 @@ async function resolveFeishuSenderName(params: {
       res?.data?.user?.en_name;
 
     if (name && typeof name === "string") {
-      senderNameCache.set(senderOpenId, { name, expireAt: now + SENDER_NAME_TTL_MS });
+      senderNameCache.set(senderOpenId, name);
       return name;
     }
 
