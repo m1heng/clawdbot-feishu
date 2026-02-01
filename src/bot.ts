@@ -1,13 +1,14 @@
-import type { ClawdbotConfig, RuntimeEnv } from "clawdbot/plugin-sdk";
+import type { ClawdbotConfig, RuntimeEnv } from "openclaw/plugin-sdk";
 import {
   buildPendingHistoryContextFromMap,
   recordPendingHistoryEntryIfEnabled,
   clearHistoryEntriesIfEnabled,
   DEFAULT_GROUP_HISTORY_LIMIT,
   type HistoryEntry,
-} from "clawdbot/plugin-sdk";
+} from "openclaw/plugin-sdk";
 import type { FeishuConfig, FeishuMessageContext, FeishuMediaInfo } from "./types.js";
 import { getFeishuRuntime } from "./runtime.js";
+import { createFeishuClient } from "./client.js";
 import {
   resolveFeishuGroupConfig,
   resolveFeishuReplyPolicy,
@@ -17,6 +18,52 @@ import {
 import { createFeishuReplyDispatcher } from "./reply-dispatcher.js";
 import { getMessageFeishu } from "./send.js";
 import { downloadImageFeishu, downloadMessageResourceFeishu } from "./media.js";
+
+// --- Sender name resolution (so the agent can distinguish who is speaking in group chats) ---
+// Cache display names by open_id to avoid an API call on every message.
+const SENDER_NAME_TTL_MS = 10 * 60 * 1000;
+const senderNameCache = new Map<string, { name: string; expireAt: number }>();
+
+async function resolveFeishuSenderName(params: {
+  feishuCfg?: FeishuConfig;
+  senderOpenId: string;
+  log: (...args: any[]) => void;
+}): Promise<string | undefined> {
+  const { feishuCfg, senderOpenId, log } = params;
+  if (!feishuCfg) return undefined;
+  if (!senderOpenId) return undefined;
+
+  const cached = senderNameCache.get(senderOpenId);
+  const now = Date.now();
+  if (cached && cached.expireAt > now) return cached.name;
+
+  try {
+    const client = createFeishuClient(feishuCfg);
+
+    // contact/v3/users/:user_id?user_id_type=open_id
+    const res: any = await client.contact.user.get({
+      path: { user_id: senderOpenId },
+      params: { user_id_type: "open_id" },
+    });
+
+    const name: string | undefined =
+      res?.data?.user?.name ||
+      res?.data?.user?.display_name ||
+      res?.data?.user?.nickname ||
+      res?.data?.user?.en_name;
+
+    if (name && typeof name === "string") {
+      senderNameCache.set(senderOpenId, { name, expireAt: now + SENDER_NAME_TTL_MS });
+      return name;
+    }
+
+    return undefined;
+  } catch (err) {
+    // Best-effort. Don't fail message handling if name lookup fails.
+    log(`feishu: failed to resolve sender name for ${senderOpenId}: ${String(err)}`);
+    return undefined;
+  }
+}
 
 export type FeishuMessageEvent = {
   sender: {
@@ -378,8 +425,16 @@ export async function handleFeishuMessage(params: {
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
 
-  const ctx = parseFeishuMessageEvent(event, botOpenId);
+  let ctx = parseFeishuMessageEvent(event, botOpenId);
   const isGroup = ctx.chatType === "group";
+
+  // Resolve sender display name (best-effort) so the agent can attribute messages correctly.
+  const senderName = await resolveFeishuSenderName({
+    feishuCfg,
+    senderOpenId: ctx.senderOpenId,
+    log,
+  });
+  if (senderName) ctx = { ...ctx, senderName };
 
   log(`feishu: received message from ${ctx.senderOpenId} in ${ctx.chatId} (${ctx.chatType})`);
 
@@ -421,7 +476,7 @@ export async function handleFeishuMessage(params: {
           limit: historyLimit,
           entry: {
             sender: ctx.senderOpenId,
-            body: ctx.content,
+            body: `${ctx.senderName ?? ctx.senderOpenId}: ${ctx.content}`,
             timestamp: Date.now(),
             messageId: ctx.messageId,
           },
@@ -448,7 +503,9 @@ export async function handleFeishuMessage(params: {
   try {
     const core = getFeishuRuntime();
 
-    const feishuFrom = isGroup ? `feishu:group:${ctx.chatId}` : `feishu:${ctx.senderOpenId}`;
+    // In group chats, the session is scoped to the group, but the *speaker* is the sender.
+    // Using a group-scoped From causes the agent to treat different users as the same person.
+    const feishuFrom = `feishu:${ctx.senderOpenId}`;
     const feishuTo = isGroup ? `chat:${ctx.chatId}` : `user:${ctx.senderOpenId}`;
 
     const route = core.channel.routing.resolveAgentRoute({
@@ -504,9 +561,16 @@ export async function handleFeishuMessage(params: {
       messageBody = `[Replying to: "${quotedContent}"]\n\n${ctx.content}`;
     }
 
+    // Include a readable speaker label so the model can attribute instructions.
+    // (DMs already have per-sender sessions, but the prefix is still useful for clarity.)
+    const speaker = ctx.senderName ?? ctx.senderOpenId;
+    messageBody = `${speaker}: ${messageBody}`;
+
+    const envelopeFrom = isGroup ? `${ctx.chatId}:${ctx.senderOpenId}` : ctx.senderOpenId;
+
     const body = core.channel.reply.formatAgentEnvelope({
       channel: "Feishu",
-      from: isGroup ? ctx.chatId : ctx.senderOpenId,
+      from: envelopeFrom,
       timestamp: new Date(),
       envelope: envelopeOptions,
       body: messageBody,
@@ -524,9 +588,10 @@ export async function handleFeishuMessage(params: {
         formatEntry: (entry) =>
           core.channel.reply.formatAgentEnvelope({
             channel: "Feishu",
-            from: ctx.chatId,
+            // Preserve speaker identity in group history as well.
+            from: `${ctx.chatId}:${entry.sender}`,
             timestamp: entry.timestamp,
-            body: `${entry.sender}: ${entry.body}`,
+            body: entry.body,
             envelope: envelopeOptions,
           }),
       });
@@ -542,7 +607,7 @@ export async function handleFeishuMessage(params: {
       AccountId: route.accountId,
       ChatType: isGroup ? "group" : "direct",
       GroupSubject: isGroup ? ctx.chatId : undefined,
-      SenderName: ctx.senderOpenId,
+      SenderName: ctx.senderName ?? ctx.senderOpenId,
       SenderId: ctx.senderOpenId,
       Provider: "feishu" as const,
       Surface: "feishu" as const,

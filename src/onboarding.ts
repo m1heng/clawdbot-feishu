@@ -4,8 +4,8 @@ import type {
   ClawdbotConfig,
   DmPolicy,
   WizardPrompter,
-} from "clawdbot/plugin-sdk";
-import { addWildcardAllowFrom, DEFAULT_ACCOUNT_ID, formatDocsLink } from "clawdbot/plugin-sdk";
+} from "openclaw/plugin-sdk";
+import { addWildcardAllowFrom, DEFAULT_ACCOUNT_ID, formatDocsLink } from "openclaw/plugin-sdk";
 
 import { resolveFeishuCredentials } from "./accounts.js";
 import { probeFeishu } from "./probe.js";

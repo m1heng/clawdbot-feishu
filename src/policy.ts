@@ -1,4 +1,4 @@
-import type { ChannelGroupContext, GroupToolPolicyConfig } from "clawdbot/plugin-sdk";
+import type { ChannelGroupContext, GroupToolPolicyConfig } from "openclaw/plugin-sdk";
 import type { FeishuConfig, FeishuGroupConfig } from "./types.js";
 
 export type FeishuAllowlistMatch = {
