@@ -18,6 +18,57 @@ import {
 import { createFeishuReplyDispatcher } from "./reply-dispatcher.js";
 import { getMessageFeishu } from "./send.js";
 import { downloadImageFeishu, downloadMessageResourceFeishu } from "./media.js";
+import {
+  extractMentionTargets,
+  extractMessageBody,
+  isMentionForwardRequest,
+} from "./mention.js";
+
+// --- Sender name resolution (so the agent can distinguish who is speaking in group chats) ---
+// Cache display names by open_id to avoid an API call on every message.
+const SENDER_NAME_TTL_MS = 10 * 60 * 1000;
+const senderNameCache = new Map<string, { name: string; expireAt: number }>();
+
+async function resolveFeishuSenderName(params: {
+  feishuCfg?: FeishuConfig;
+  senderOpenId: string;
+  log: (...args: any[]) => void;
+}): Promise<string | undefined> {
+  const { feishuCfg, senderOpenId, log } = params;
+  if (!feishuCfg) return undefined;
+  if (!senderOpenId) return undefined;
+
+  const cached = senderNameCache.get(senderOpenId);
+  const now = Date.now();
+  if (cached && cached.expireAt > now) return cached.name;
+
+  try {
+    const client = createFeishuClient(feishuCfg);
+
+    // contact/v3/users/:user_id?user_id_type=open_id
+    const res: any = await client.contact.user.get({
+      path: { user_id: senderOpenId },
+      params: { user_id_type: "open_id" },
+    });
+
+    const name: string | undefined =
+      res?.data?.user?.name ||
+      res?.data?.user?.display_name ||
+      res?.data?.user?.nickname ||
+      res?.data?.user?.en_name;
+
+    if (name && typeof name === "string") {
+      senderNameCache.set(senderOpenId, { name, expireAt: now + SENDER_NAME_TTL_MS });
+      return name;
+    }
+
+    return undefined;
+  } catch (err) {
+    // Best-effort. Don't fail message handling if name lookup fails.
+    log(`feishu: failed to resolve sender name for ${senderOpenId}: ${String(err)}`);
+    return undefined;
+  }
+}
 
 // --- Sender name resolution (so the agent can distinguish who is speaking in group chats) ---
 // Cache display names by open_id to avoid an API call on every message.
@@ -399,7 +450,7 @@ export function parseFeishuMessageEvent(
   const mentionedBot = checkBotMentioned(event, botOpenId);
   const content = stripBotMention(rawContent, event.message.mentions);
 
-  return {
+  const ctx: FeishuMessageContext = {
     chatId: event.message.chat_id,
     messageId: event.message.message_id,
     senderId: event.sender.sender_id.user_id || event.sender.sender_id.open_id || "",
@@ -411,6 +462,19 @@ export function parseFeishuMessageEvent(
     content,
     contentType: event.message.message_type,
   };
+
+  // Detect mention forward request: message mentions bot + at least one other user
+  if (isMentionForwardRequest(event, botOpenId)) {
+    const mentionTargets = extractMentionTargets(event, botOpenId);
+    if (mentionTargets.length > 0) {
+      ctx.mentionTargets = mentionTargets;
+      // Extract message body (remove all @ placeholders)
+      const allMentionKeys = (event.message.mentions ?? []).map((m) => m.key);
+      ctx.mentionMessageBody = extractMessageBody(content, allMentionKeys);
+    }
+  }
+
+  return ctx;
 }
 
 export async function handleFeishuMessage(params: {
@@ -437,6 +501,12 @@ export async function handleFeishuMessage(params: {
   if (senderName) ctx = { ...ctx, senderName };
 
   log(`feishu: received message from ${ctx.senderOpenId} in ${ctx.chatId} (${ctx.chatType})`);
+
+  // Log mention targets if detected
+  if (ctx.mentionTargets && ctx.mentionTargets.length > 0) {
+    const names = ctx.mentionTargets.map((t) => t.name).join(", ");
+    log(`feishu: detected @ forward request, targets: [${names}]`);
+  }
 
   const historyLimit = Math.max(
     0,
@@ -566,6 +636,12 @@ export async function handleFeishuMessage(params: {
     const speaker = ctx.senderName ?? ctx.senderOpenId;
     messageBody = `${speaker}: ${messageBody}`;
 
+    // If there are mention targets, inform the agent that replies will auto-mention them
+    if (ctx.mentionTargets && ctx.mentionTargets.length > 0) {
+      const targetNames = ctx.mentionTargets.map((t) => t.name).join(", ");
+      messageBody += `\n\n[System: Your reply will automatically @mention: ${targetNames}. Do not write @xxx yourself.]`;
+    }
+
     const envelopeFrom = isGroup ? `${ctx.chatId}:${ctx.senderOpenId}` : ctx.senderOpenId;
 
     const body = core.channel.reply.formatAgentEnvelope({
@@ -626,6 +702,7 @@ export async function handleFeishuMessage(params: {
       runtime: runtime as RuntimeEnv,
       chatId: ctx.chatId,
       replyToMessageId: ctx.messageId,
+      mentionTargets: ctx.mentionTargets,
     });
 
     log(`feishu: dispatching to agent (session=${route.sessionKey})`);

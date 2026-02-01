@@ -1,4 +1,5 @@
 import type { FeishuConfigSchema, FeishuGroupSchema, z } from "./config-schema.js";
+import type { MentionTarget } from "./mention.js";
 
 export type FeishuConfig = z.infer<typeof FeishuConfigSchema>;
 export type FeishuGroupConfig = z.infer<typeof FeishuGroupSchema>;
@@ -28,6 +29,10 @@ export type FeishuMessageContext = {
   parentId?: string;
   content: string;
   contentType: string;
+  /** Mention forward targets (excluding the bot itself) */
+  mentionTargets?: MentionTarget[];
+  /** Extracted message body (after removing @ placeholders) */
+  mentionMessageBody?: string;
 };
 
 export type FeishuSendResult = {

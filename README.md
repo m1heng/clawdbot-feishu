@@ -1,6 +1,6 @@
 # clawd-feishu
 
-Feishu/Lark (飞书) channel plugin for [Clawdbot](https://github.com/clawdbot/clawdbot).
+Feishu/Lark (飞书) channel plugin for [OpenClaw](https://github.com/openclaw/openclaw).
 
 [English](#english) | [中文](#中文)
 
@@ -11,7 +11,7 @@ Feishu/Lark (飞书) channel plugin for [Clawdbot](https://github.com/clawdbot/c
 ### Installation
 
 ```bash
-clawdbot plugins install @m1heng-clawd/feishu
+openclaw plugins install @m1heng-clawd/feishu
 ```
 
 Or install via npm:
@@ -32,7 +32,7 @@ npm install @m1heng-clawd/feishu
 
 | Permission | Scope | Description |
 |------------|-------|-------------|
-| `contact:user.base:readonly` | User info | Get basic user information |
+| `contact:user.base:readonly` | User info | Get basic user info (required to resolve sender display names for speaker attribution) |
 | `im:message` | Messaging | Send and receive messages |
 | `im:message.p2p_msg:readonly` | DM | Read direct messages to bot |
 | `im:message.group_at_msg:readonly` | Group | Receive @mention messages in groups |
@@ -48,6 +48,18 @@ npm install @m1heng-clawd/feishu
 | `im:message:update` | Edit | Update/edit sent messages |
 | `im:message:recall` | Recall | Recall sent messages |
 | `im:message.reactions:read` | Reactions | View message reactions |
+
+#### Document Tools Permissions
+
+Required if using Feishu document tools (`feishu_doc_*`):
+
+| Permission | Description |
+|------------|-------------|
+| `docx:document` | Create/edit documents |
+| `docx:document:readonly` | Read documents |
+| `docx:document.block:convert` | Markdown to blocks conversion (required for write/append) |
+| `drive:drive` | Upload images to documents |
+| `drive:drive:readonly` | List folders |
 
 #### Event Subscriptions ⚠️
 
@@ -68,9 +80,9 @@ In the Feishu Open Platform console, go to **Events & Callbacks**:
 3. Ensure the event permissions are approved
 
 ```bash
-clawdbot config set channels.feishu.appId "cli_xxxxx"
-clawdbot config set channels.feishu.appSecret "your_app_secret"
-clawdbot config set channels.feishu.enabled true
+openclaw config set channels.feishu.appId "cli_xxxxx"
+openclaw config set channels.feishu.appSecret "your_app_secret"
+openclaw config set channels.feishu.enabled true
 ```
 
 ### Configuration Options
@@ -116,6 +128,17 @@ channels:
 - Pairing flow for DM approval
 - User and group directory lookup
 - **Card render mode**: Optional markdown rendering with syntax highlighting
+- **Document tools**: Read, create, and write Feishu documents with markdown (tables not supported due to API limitations)
+- **@mention forwarding**: When you @mention someone in your message, the bot's reply will automatically @mention them too
+
+#### @Mention Forwarding
+
+When you want the bot to @mention someone in its reply, simply @mention them in your message:
+
+- **In DM**: `@张三 say hello` → Bot replies with `@张三 Hello!`
+- **In Group**: `@bot @张三 say hello` → Bot replies with `@张三 Hello!`
+
+The bot automatically detects @mentions in your message and includes them in its reply. No extra permissions required beyond the standard messaging permissions.
 
 ### FAQ
 
@@ -141,14 +164,14 @@ Feishu API has rate limits. Streaming updates can easily trigger throttling. We 
 
 #### Windows install error `spawn npm ENOENT`
 
-If `clawdbot plugins install` fails, install manually:
+If `openclaw plugins install` fails, install manually:
 
 ```bash
 # 1. Download the package
-curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.1.tgz
+curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.3.tgz
 
 # 2. Install from local file
-clawdbot plugins install ./feishu-0.1.1.tgz
+openclaw plugins install ./feishu-0.1.3.tgz
 ```
 
 #### Cannot find the bot in Feishu
@@ -164,7 +187,7 @@ clawdbot plugins install ./feishu-0.1.1.tgz
 ### 安装
 
 ```bash
-clawdbot plugins install @m1heng-clawd/feishu
+openclaw plugins install @m1heng-clawd/feishu
 ```
 
 或通过 npm 安装：
@@ -185,7 +208,7 @@ npm install @m1heng-clawd/feishu
 
 | 权限 | 范围 | 说明 |
 |------|------|------|
-| `contact:user.base:readonly` | 用户信息 | 获取用户基本信息 |
+| `contact:user.base:readonly` | 用户信息 | 获取用户基本信息（用于解析发送者姓名，避免群聊/私聊把不同人当成同一说话者） |
 | `im:message` | 消息 | 发送和接收消息 |
 | `im:message.p2p_msg:readonly` | 私聊 | 读取发给机器人的私聊消息 |
 | `im:message.group_at_msg:readonly` | 群聊 | 接收群内 @机器人 的消息 |
@@ -201,6 +224,18 @@ npm install @m1heng-clawd/feishu
 | `im:message:update` | 编辑 | 更新/编辑已发送消息 |
 | `im:message:recall` | 撤回 | 撤回已发送消息 |
 | `im:message.reactions:read` | 表情 | 查看消息表情回复 |
+
+#### 文档工具权限
+
+使用飞书文档工具（`feishu_doc_*`）需要以下权限：
+
+| 权限 | 说明 |
+|------|------|
+| `docx:document` | 创建/编辑文档 |
+| `docx:document:readonly` | 读取文档 |
+| `docx:document.block:convert` | Markdown 转 blocks（write/append 必需） |
+| `drive:drive` | 上传图片到文档 |
+| `drive:drive:readonly` | 列出文件夹 |
 
 #### 事件订阅 ⚠️
 
@@ -221,9 +256,9 @@ npm install @m1heng-clawd/feishu
 3. 确保事件订阅的权限已申请并通过审核
 
 ```bash
-clawdbot config set channels.feishu.appId "cli_xxxxx"
-clawdbot config set channels.feishu.appSecret "your_app_secret"
-clawdbot config set channels.feishu.enabled true
+openclaw config set channels.feishu.appId "cli_xxxxx"
+openclaw config set channels.feishu.appSecret "your_app_secret"
+openclaw config set channels.feishu.enabled true
 ```
 
 ### 配置选项
@@ -269,6 +304,17 @@ channels:
 - 私聊配对审批流程
 - 用户和群组目录查询
 - **卡片渲染模式**：支持语法高亮的 Markdown 渲染
+- **文档工具**：读取、创建、用 Markdown 写入飞书文档（表格因 API 限制不支持）
+- **@ 转发功能**：在消息中 @ 某人，机器人的回复会自动 @ 该用户
+
+#### @ 转发功能
+
+如果你希望机器人的回复中 @ 某人，只需在你的消息中 @ 他们：
+
+- **私聊**：`@张三 跟他问好` → 机器人回复 `@张三 你好！`
+- **群聊**：`@机器人 @张三 跟他问好` → 机器人回复 `@张三 你好！`
+
+机器人会自动检测消息中的 @ 并在回复时带上。无需额外权限。
 
 ### 常见问题
 
@@ -294,14 +340,14 @@ channels:
 
 #### Windows 安装报错 `spawn npm ENOENT`
 
-如果 `clawdbot plugins install` 失败，可以手动安装：
+如果 `openclaw plugins install` 失败，可以手动安装：
 
 ```bash
 # 1. 下载插件包
-curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.1.tgz
+curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.3.tgz
 
 # 2. 从本地安装
-clawdbot plugins install ./feishu-0.1.1.tgz
+openclaw plugins install ./feishu-0.1.3.tgz
 ```
 
 #### 在飞书里找不到机器人

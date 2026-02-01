@@ -9,6 +9,7 @@ import {
 import { getFeishuRuntime } from "./runtime.js";
 import { sendMessageFeishu, sendMarkdownCardFeishu } from "./send.js";
 import type { FeishuConfig } from "./types.js";
+import type { MentionTarget } from "./mention.js";
 import {
   addTypingIndicator,
   removeTypingIndicator,
@@ -33,11 +34,13 @@ export type CreateFeishuReplyDispatcherParams = {
   runtime: RuntimeEnv;
   chatId: string;
   replyToMessageId?: string;
+  /** Mention targets, will be auto-included in replies */
+  mentionTargets?: MentionTarget[];
 };
 
 export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherParams) {
   const core = getFeishuRuntime();
-  const { cfg, agentId, chatId, replyToMessageId } = params;
+  const { cfg, agentId, chatId, replyToMessageId, mentionTargets } = params;
 
   const prefixContext = createReplyPrefixContext({
     cfg,
@@ -111,6 +114,9 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
         const useCard =
           renderMode === "card" || (renderMode === "auto" && shouldUseCard(text));
 
+        // Only include @mentions in the first chunk (avoid duplicate @s)
+        let isFirstChunk = true;
+
         if (useCard) {
           // Card mode: send as interactive card with markdown rendering
           const chunks = core.channel.text.chunkTextWithMode(text, textChunkLimit, chunkMode);
@@ -121,7 +127,9 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
               to: chatId,
               text: chunk,
               replyToMessageId,
+              mentions: isFirstChunk ? mentionTargets : undefined,
             });
+            isFirstChunk = false;
           }
         } else {
           // Raw mode: send as plain text with table conversion
@@ -134,7 +142,9 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
               to: chatId,
               text: chunk,
               replyToMessageId,
+              mentions: isFirstChunk ? mentionTargets : undefined,
             });
+            isFirstChunk = false;
           }
         }
       },

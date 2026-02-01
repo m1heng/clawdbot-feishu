@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Feishu/Lark (飞书) channel plugin for [Clawdbot](https://github.com/clawdbot/clawdbot). It enables Clawdbot to send/receive messages through Feishu's enterprise messaging platform.
+This is a Feishu/Lark (飞书) channel plugin for [OpenClaw](https://github.com/openclaw/openclaw). It enables OpenClaw to send/receive messages through Feishu's enterprise messaging platform.
 
 ## Development
 
-This is a TypeScript ESM project. No build step is required - the plugin is loaded directly as `.ts` files by Clawdbot.
+This is a TypeScript ESM project. No build step is required - the plugin is loaded directly as `.ts` files by OpenClaw.
 
 ```bash
 # Install dependencies
@@ -54,7 +54,7 @@ npx tsc --noEmit
 1. `monitor.ts` starts WebSocket connection, registers event handlers
 2. On `im.message.receive_v1`, `bot.ts` parses the event
 3. For media messages, `media.ts` downloads content via `im.messageResource.get`
-4. Message is dispatched to Clawdbot agent via `reply-dispatcher.ts`
+4. Message is dispatched to OpenClaw agent via `reply-dispatcher.ts`
 5. Agent responses flow through `outbound.ts` → `send.ts` (text/card based on `renderMode`)
 
 ### Key Configuration Options
