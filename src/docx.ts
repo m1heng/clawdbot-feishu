@@ -207,14 +207,25 @@ async function insertBlocks(
   const BATCH_SIZE = 50;
   const allChildren: any[] = [];
 
+  // Get current children count to determine insert index
+  let insertIndex = 0;
+  const existing = await client.docx.documentBlockChildren.get({
+    path: { document_id: docToken, block_id: blockId },
+  });
+  if (existing.code === 0) {
+    insertIndex = existing.data?.items?.length ?? 0;
+  }
+
   for (let i = 0; i < cleaned.length; i += BATCH_SIZE) {
     const batch = cleaned.slice(i, i + BATCH_SIZE);
     const res = await client.docx.documentBlockChildren.create({
       path: { document_id: docToken, block_id: blockId },
-      data: { children: batch },
+      data: { children: batch, index: insertIndex },
     });
     if (res.code !== 0) throw new Error(res.msg);
-    allChildren.push(...(res.data?.children ?? []));
+    const inserted = res.data?.children ?? [];
+    allChildren.push(...inserted);
+    insertIndex += inserted.length;
   }
 
   return { children: allChildren, skipped };
