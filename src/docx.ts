@@ -263,6 +263,231 @@ function cleanBlocksForInsert(blocks: any[]): { cleaned: any[]; skipped: string[
   return { cleaned, skipped };
 }
 
+// ============ Helpers for Recursive Insert ============
+
+/** Delay helper for rate limiting */
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/** API call with retry for rate limiting */
+async function createChildrenWithRetry(
+  client: Lark.Client,
+  docToken: string,
+  parentBlockId: string,
+  children: any[],
+  index?: number,
+  retries = 3
+): Promise<any> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await client.docx.documentBlockChildren.create({
+        path: { document_id: docToken, block_id: parentBlockId },
+        data: {
+          children,
+          ...(index !== undefined && { index })
+        },
+      });
+      if (res.code === 0) return res;
+      // Rate limit error
+      if (res.code === 99991400 || res.msg?.includes('rate')) {
+        await delay((i + 1) * 2000);
+        continue;
+      }
+      return res;
+    } catch (e: any) {
+      if (e.message?.includes('429') || e.response?.status === 429) {
+        await delay((i + 1) * 2000);
+        continue;
+      }
+      throw e;
+    }
+  }
+  return { code: -1, msg: 'Max retries exceeded' };
+}
+
+/** Context for recursive block insertion */
+interface InsertContext {
+  client: Lark.Client;
+  docToken: string;
+  blockMap: Map<string, any>;
+  tableRelatedIds: Set<string>;
+  tableDataMap: Map<string, TableData>;
+  insertedCount: number;
+  tablesCreated: number;
+}
+
+/** Recursively insert a block and its children */
+async function insertBlockWithChildren(
+  ctx: InsertContext,
+  block: any,
+  parentBlockId: string,
+  index?: number
+): Promise<string | null> {
+  // Skip table-related blocks (handled separately)
+  if (ctx.tableRelatedIds.has(block.block_id)) {
+    if (block.block_type === TABLE_BLOCK_TYPE) {
+      const tableData = ctx.tableDataMap.get(block.block_id);
+      if (tableData) {
+        return await createTableWithRetry(ctx, parentBlockId, tableData, index);
+      }
+    }
+    return null;
+  }
+
+  // Clean block (remove read-only fields but preserve children reference)
+  const { block_id, parent_id, children, ...cleanBlock } = block;
+
+  // Add delay to avoid rate limiting
+  await delay(100);
+
+  // Insert current block
+  const insertRes = await createChildrenWithRetry(
+    ctx.client,
+    ctx.docToken,
+    parentBlockId,
+    [cleanBlock],
+    index
+  );
+
+  if (insertRes.code !== 0) {
+    console.error(`Failed to insert block: ${insertRes.msg}`);
+    return null;
+  }
+
+  const newBlockId = insertRes.data?.children?.[0]?.block_id;
+  if (!newBlockId) return null;
+
+  ctx.insertedCount++;
+
+  // Recursively insert children
+  if (children && children.length > 0) {
+    for (let i = 0; i < children.length; i++) {
+      const childId = children[i];
+      const childBlock = ctx.blockMap.get(childId);
+      if (childBlock) {
+        await insertBlockWithChildren(ctx, childBlock, newBlockId, i);
+      }
+    }
+  }
+
+  return newBlockId;
+}
+
+/** Create and fill a table with retry */
+async function createTableWithRetry(
+  ctx: InsertContext,
+  parentBlockId: string,
+  tableData: TableData,
+  index?: number
+): Promise<string | null> {
+  await delay(100);
+
+  const createRes = await createChildrenWithRetry(
+    ctx.client,
+    ctx.docToken,
+    parentBlockId,
+    [{
+      block_type: TABLE_BLOCK_TYPE,
+      table: {
+        property: { row_size: tableData.rowSize, column_size: tableData.colSize, header_row: true },
+        cells: []
+      }
+    }],
+    index
+  );
+
+  if (createRes.code !== 0) {
+    console.error(`Failed to create table: ${createRes.msg}`);
+    return null;
+  }
+
+  const tableBlockId = createRes.data?.children?.[0]?.block_id;
+  if (!tableBlockId) return null;
+
+  // Fill table content
+  const cellBlocksRes = await ctx.client.docx.documentBlockChildren.get({
+    path: { document_id: ctx.docToken, block_id: tableBlockId },
+  });
+  const cellBlocks = cellBlocksRes.data?.items ?? [];
+
+  let cellIndex = 0;
+  for (let row = 0; row < tableData.rowSize; row++) {
+    for (let col = 0; col < tableData.colSize; col++) {
+      if (cellIndex >= cellBlocks.length) break;
+      const cellBlockId = cellBlocks[cellIndex]?.block_id;
+      const cellText = tableData.cells[row]?.[col] ?? "";
+      if (cellBlockId && cellText) {
+        await delay(50);
+        const cellChildrenRes = await ctx.client.docx.documentBlockChildren.get({
+          path: { document_id: ctx.docToken, block_id: cellBlockId },
+        });
+        const textBlockId = cellChildrenRes.data?.items?.[0]?.block_id;
+        if (textBlockId) {
+          await ctx.client.docx.documentBlock.patch({
+            path: { document_id: ctx.docToken, block_id: textBlockId },
+            data: { update_text_elements: { elements: [{ text_run: { content: cellText } }] } },
+          });
+        }
+      }
+      cellIndex++;
+    }
+  }
+
+  ctx.tablesCreated++;
+  return tableBlockId;
+}
+
+/** Insert blocks recursively preserving nested structure */
+async function insertBlocksRecursively(
+  client: Lark.Client,
+  docToken: string,
+  blocks: any[],
+  firstLevelBlockIds: string[],
+  startIndex: number = 0
+): Promise<{ blocksInserted: number; tablesCreated: number }> {
+  // Build block map
+  const blockMap = new Map<string, any>();
+  for (const block of blocks) {
+    if (block.block_id) {
+      blockMap.set(block.block_id, block);
+    }
+  }
+
+  // Extract table data and related IDs
+  const tableRelatedIds = new Set<string>();
+  const tableDataMap = new Map<string, TableData>();
+
+  for (const block of blocks) {
+    if (block.block_type === TABLE_BLOCK_TYPE) {
+      const { tableData, relatedIds } = extractTableData(block, blockMap);
+      tableDataMap.set(block.block_id, tableData);
+      for (const id of relatedIds) {
+        tableRelatedIds.add(id);
+      }
+    }
+  }
+
+  const ctx: InsertContext = {
+    client,
+    docToken,
+    blockMap,
+    tableRelatedIds,
+    tableDataMap,
+    insertedCount: 0,
+    tablesCreated: 0,
+  };
+
+  // Insert blocks in order of first_level_block_ids
+  for (let i = 0; i < firstLevelBlockIds.length; i++) {
+    const blockId = firstLevelBlockIds[i];
+    const block = blockMap.get(blockId);
+    if (block) {
+      await insertBlockWithChildren(ctx, block, docToken, startIndex + i);
+    }
+  }
+
+  return { blocksInserted: ctx.insertedCount, tablesCreated: ctx.tablesCreated };
+}
+
 // ============ Core Functions ============
 
 /** Convert markdown to Feishu blocks using the Convert API */
@@ -811,124 +1036,75 @@ async function writeDoc(client: Lark.Client, docToken: string, markdown: string)
   const deleted = await clearDocumentContent(client, docToken);
 
   // 2. Convert markdown to blocks
-  const { blocks } = await convertMarkdown(client, markdown);
+  const { blocks, firstLevelBlockIds } = await convertMarkdown(client, markdown);
   if (blocks.length === 0) {
     return { success: true, blocks_deleted: deleted, blocks_added: 0, images_processed: 0, tables_created: 0 };
   }
 
-  // 3. Convert to content items (preserves table positions)
-  const contentItems = convertBlocksToContentItems(blocks);
+  // 3. Insert blocks recursively (preserves nested structure)
+  const { blocksInserted, tablesCreated } = await insertBlocksRecursively(
+    client,
+    docToken,
+    blocks,
+    firstLevelBlockIds,
+    0
+  );
 
-  // 4. Insert content items in order
-  let insertIndex = 0;
-  const allInserted: any[] = [];
-  const allSkipped: string[] = [];
-  let tablesCreated = 0;
-  let pendingBlocks: any[] = [];
-
-  const flushPendingBlocks = async () => {
-    if (pendingBlocks.length === 0) return;
-    const { children, skipped } = await insertBlocksAtIndex(client, docToken, pendingBlocks, insertIndex);
-    allInserted.push(...children);
-    allSkipped.push(...skipped);
-    insertIndex += children.length;
-    pendingBlocks = [];
-  };
-
-  for (const item of contentItems) {
-    if (item.type === "block") {
-      pendingBlocks.push(item.block);
-    } else if (item.type === "table") {
-      await flushPendingBlocks();
-      const success = await createAndFillTableAtIndex(client, docToken, docToken, item.table, insertIndex);
-      if (success) {
-        tablesCreated++;
-        insertIndex++;
-      }
-    }
-  }
-
-  await flushPendingBlocks();
-
-  // 5. Process images
-  const imagesProcessed = await processImages(client, docToken, markdown, allInserted);
+  // 4. Process images (get inserted blocks for image processing)
+  const insertedRes = await client.docx.documentBlock.list({
+    path: { document_id: docToken },
+    params: { page_size: 500 },
+  });
+  const insertedBlocks = insertedRes.data?.items ?? [];
+  const imagesProcessed = await processImages(client, docToken, markdown, insertedBlocks);
 
   return {
     success: true,
     blocks_deleted: deleted,
-    blocks_added: allInserted.length,
+    blocks_added: blocksInserted,
     tables_created: tablesCreated,
     images_processed: imagesProcessed,
-    ...(allSkipped.length > 0 && {
-      warning: `Skipped unsupported block types: ${allSkipped.join(", ")}.`,
-    }),
   };
 }
 
 async function appendDoc(client: Lark.Client, docToken: string, markdown: string) {
   // 1. Convert markdown to blocks
-  const { blocks } = await convertMarkdown(client, markdown);
+  const { blocks, firstLevelBlockIds } = await convertMarkdown(client, markdown);
   if (blocks.length === 0) {
     throw new Error("Content is empty");
   }
 
-  // 2. Convert to content items (preserves table positions)
-  const contentItems = convertBlocksToContentItems(blocks);
-
-  // 3. Get current insert index
-  let insertIndex = 0;
+  // 2. Get current insert index
+  let startIndex = 0;
   const existing = await client.docx.documentBlockChildren.get({
     path: { document_id: docToken, block_id: docToken },
   });
   if (existing.code === 0) {
-    insertIndex = existing.data?.items?.length ?? 0;
+    startIndex = existing.data?.items?.length ?? 0;
   }
 
-  // 4. Insert content items in order, batching consecutive blocks
-  const allInserted: any[] = [];
-  const allSkipped: string[] = [];
-  let tablesCreated = 0;
-  let pendingBlocks: any[] = [];
+  // 3. Insert blocks recursively (preserves nested structure)
+  const { blocksInserted, tablesCreated } = await insertBlocksRecursively(
+    client,
+    docToken,
+    blocks,
+    firstLevelBlockIds,
+    startIndex
+  );
 
-  const flushPendingBlocks = async () => {
-    if (pendingBlocks.length === 0) return;
-    const { children, skipped } = await insertBlocksAtIndex(client, docToken, pendingBlocks, insertIndex);
-    allInserted.push(...children);
-    allSkipped.push(...skipped);
-    insertIndex += children.length;
-    pendingBlocks = [];
-  };
-
-  for (const item of contentItems) {
-    if (item.type === "block") {
-      pendingBlocks.push(item.block);
-    } else if (item.type === "table") {
-      // Flush pending blocks before creating table
-      await flushPendingBlocks();
-      // Create table at current position
-      const success = await createAndFillTableAtIndex(client, docToken, docToken, item.table, insertIndex);
-      if (success) {
-        tablesCreated++;
-        insertIndex++;
-      }
-    }
-  }
-
-  // Flush any remaining blocks
-  await flushPendingBlocks();
-
-  // 5. Process images
-  const imagesProcessed = await processImages(client, docToken, markdown, allInserted);
+  // 4. Process images (get inserted blocks for image processing)
+  const insertedRes = await client.docx.documentBlock.list({
+    path: { document_id: docToken },
+    params: { page_size: 500 },
+  });
+  const insertedBlocks = insertedRes.data?.items ?? [];
+  const imagesProcessed = await processImages(client, docToken, markdown, insertedBlocks);
 
   return {
     success: true,
-    blocks_added: allInserted.length,
+    blocks_added: blocksInserted,
     tables_created: tablesCreated,
     images_processed: imagesProcessed,
-    block_ids: allInserted.map((b: any) => b.block_id),
-    ...(allSkipped.length > 0 && {
-      warning: `Skipped unsupported block types: ${allSkipped.join(", ")}.`,
-    }),
   };
 }
 
