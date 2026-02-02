@@ -129,12 +129,63 @@ interface TableData {
   cells: string[][]; // 2D array of cell text content
 }
 
-/** Extract table data from converted blocks (flat list with ID references) */
-function extractTableFromBlocks(blocks: any[]): { tables: TableData[]; otherBlocks: any[] } {
-  const tables: TableData[] = [];
-  const otherBlocks: any[] = [];
+/** A content item that can be either a regular block or a table */
+type ContentItem =
+  | { type: "block"; block: any }
+  | { type: "table"; table: TableData };
 
-  // Build a map of block_id -> block for quick lookup
+/** Extract table data from a table block */
+function extractTableData(tableBlock: any, blockMap: Map<string, any>): { tableData: TableData; relatedIds: Set<string> } {
+  const relatedIds = new Set<string>();
+  relatedIds.add(tableBlock.block_id);
+
+  const tableInfo = tableBlock.table;
+  const rowSize = tableInfo?.property?.row_size ?? 0;
+  const colSize = tableInfo?.property?.column_size ?? 0;
+
+  const cells: string[][] = Array.from({ length: rowSize }, () =>
+    Array.from({ length: colSize }, () => ""),
+  );
+
+  const cellIds: string[] = tableInfo?.cells ?? [];
+  let cellIndex = 0;
+
+  for (let row = 0; row < rowSize; row++) {
+    for (let col = 0; col < colSize; col++) {
+      if (cellIndex >= cellIds.length) break;
+
+      const cellId = cellIds[cellIndex];
+      relatedIds.add(cellId);
+
+      const cellBlock = blockMap.get(cellId);
+      if (cellBlock?.block_type === TABLE_CELL_BLOCK_TYPE) {
+        const childIds: string[] = cellBlock.children ?? [];
+        const textParts: string[] = [];
+
+        for (const childId of childIds) {
+          relatedIds.add(childId);
+          const textBlock = blockMap.get(childId);
+          if (textBlock?.block_type === 2 && textBlock.text?.elements) {
+            const text = textBlock.text.elements
+              .filter((e: any) => e.text_run)
+              .map((e: any) => e.text_run.content)
+              .join("");
+            textParts.push(text);
+          }
+        }
+
+        cells[row][col] = textParts.join("\n");
+      }
+
+      cellIndex++;
+    }
+  }
+
+  return { tableData: { rowSize, colSize, cells }, relatedIds };
+}
+
+/** Convert blocks to content items, preserving order with tables in correct positions */
+function convertBlocksToContentItems(blocks: any[]): ContentItem[] {
   const blockMap = new Map<string, any>();
   for (const block of blocks) {
     if (block.block_id) {
@@ -142,69 +193,52 @@ function extractTableFromBlocks(blocks: any[]): { tables: TableData[]; otherBloc
     }
   }
 
-  // Track which blocks are part of tables (to exclude from otherBlocks)
+  // Track which blocks are part of tables
   const tableRelatedIds = new Set<string>();
+  const tableDataMap = new Map<string, TableData>();
 
+  // First pass: extract all table data and mark related IDs
   for (const block of blocks) {
     if (block.block_type === TABLE_BLOCK_TYPE) {
-      tableRelatedIds.add(block.block_id);
-
-      const tableInfo = block.table;
-      if (tableInfo) {
-        const rowSize = tableInfo.property?.row_size ?? 0;
-        const colSize = tableInfo.property?.column_size ?? 0;
-
-        // Initialize cells array
-        const cells: string[][] = Array.from({ length: rowSize }, () =>
-          Array.from({ length: colSize }, () => ""),
-        );
-
-        // table.cells is a flat array of cell block IDs in row-major order
-        const cellIds: string[] = tableInfo.cells ?? [];
-
-        let cellIndex = 0;
-        for (let row = 0; row < rowSize; row++) {
-          for (let col = 0; col < colSize; col++) {
-            if (cellIndex >= cellIds.length) break;
-
-            const cellId = cellIds[cellIndex];
-            tableRelatedIds.add(cellId);
-
-            // Find the TableCell block
-            const cellBlock = blockMap.get(cellId);
-            if (cellBlock?.block_type === TABLE_CELL_BLOCK_TYPE) {
-              // Get text content from cell's children (Text blocks)
-              const childIds: string[] = cellBlock.children ?? [];
-              const textParts: string[] = [];
-
-              for (const childId of childIds) {
-                tableRelatedIds.add(childId);
-                const textBlock = blockMap.get(childId);
-                if (textBlock?.block_type === 2 && textBlock.text?.elements) {
-                  const text = textBlock.text.elements
-                    .filter((e: any) => e.text_run)
-                    .map((e: any) => e.text_run.content)
-                    .join("");
-                  textParts.push(text);
-                }
-              }
-
-              cells[row][col] = textParts.join("\n");
-            }
-
-            cellIndex++;
-          }
-        }
-
-        tables.push({ rowSize, colSize, cells });
+      const { tableData, relatedIds } = extractTableData(block, blockMap);
+      tableDataMap.set(block.block_id, tableData);
+      for (const id of relatedIds) {
+        tableRelatedIds.add(id);
       }
     }
   }
 
-  // Collect non-table blocks
+  // Second pass: build content items in order
+  const items: ContentItem[] = [];
   for (const block of blocks) {
-    if (!tableRelatedIds.has(block.block_id)) {
-      otherBlocks.push(block);
+    if (tableRelatedIds.has(block.block_id)) {
+      // If this is a table block itself, add the table item
+      if (block.block_type === TABLE_BLOCK_TYPE) {
+        const tableData = tableDataMap.get(block.block_id);
+        if (tableData) {
+          items.push({ type: "table", table: tableData });
+        }
+      }
+      // Skip table-related blocks (cells, cell contents)
+    } else {
+      items.push({ type: "block", block });
+    }
+  }
+
+  return items;
+}
+
+/** Extract table data from converted blocks (flat list with ID references) - legacy function */
+function extractTableFromBlocks(blocks: any[]): { tables: TableData[]; otherBlocks: any[] } {
+  const items = convertBlocksToContentItems(blocks);
+  const tables: TableData[] = [];
+  const otherBlocks: any[] = [];
+
+  for (const item of items) {
+    if (item.type === "table") {
+      tables.push(item.table);
+    } else {
+      otherBlocks.push(item.block);
     }
   }
 
@@ -289,6 +323,40 @@ async function insertBlocks(
   return { children: allChildren, skipped };
 }
 
+/** Insert blocks at a specific index (with batching for >50 blocks) */
+async function insertBlocksAtIndex(
+  client: Lark.Client,
+  docToken: string,
+  blocks: any[],
+  startIndex: number,
+  parentBlockId?: string,
+): Promise<{ children: any[]; skipped: string[] }> {
+  const { cleaned, skipped } = cleanBlocksForInsert(blocks);
+  const blockId = parentBlockId ?? docToken;
+
+  if (cleaned.length === 0) {
+    return { children: [], skipped };
+  }
+
+  const BATCH_SIZE = 50;
+  const allChildren: any[] = [];
+  let insertIndex = startIndex;
+
+  for (let i = 0; i < cleaned.length; i += BATCH_SIZE) {
+    const batch = cleaned.slice(i, i + BATCH_SIZE);
+    const res = await client.docx.documentBlockChildren.create({
+      path: { document_id: docToken, block_id: blockId },
+      data: { children: batch, index: insertIndex },
+    });
+    if (res.code !== 0) throw new Error(res.msg);
+    const inserted = res.data?.children ?? [];
+    allChildren.push(...inserted);
+    insertIndex += inserted.length;
+  }
+
+  return { children: allChildren, skipped };
+}
+
 /** Delete all child blocks from a parent */
 async function clearDocumentContent(client: Lark.Client, docToken: string) {
   const existing = await client.docx.documentBlock.list({
@@ -352,6 +420,7 @@ async function createEmptyTable(
   parentBlockId: string,
   rowSize: number,
   colSize: number,
+  index?: number,
 ): Promise<string | null> {
   const tableBlock = {
     block_type: TABLE_BLOCK_TYPE,
@@ -367,7 +436,7 @@ async function createEmptyTable(
 
   const res = await client.docx.documentBlockChildren.create({
     path: { document_id: docToken, block_id: parentBlockId },
-    data: { children: [tableBlock] },
+    data: { children: [tableBlock], ...(index !== undefined && { index }) },
   });
 
   if (res.code !== 0) {
@@ -467,6 +536,34 @@ async function createAndFillTable(
     parentBlockId,
     tableData.rowSize,
     tableData.colSize,
+  );
+
+  if (!tableBlockId) {
+    return false;
+  }
+
+  // 2. Fill table content
+  await fillTableContent(client, docToken, tableBlockId, tableData.cells);
+
+  return true;
+}
+
+/** Create and fill a table at a specific index */
+async function createAndFillTableAtIndex(
+  client: Lark.Client,
+  docToken: string,
+  parentBlockId: string,
+  tableData: TableData,
+  index: number,
+): Promise<boolean> {
+  // 1. Create empty table at specific index
+  const tableBlockId = await createEmptyTable(
+    client,
+    docToken,
+    parentBlockId,
+    tableData.rowSize,
+    tableData.colSize,
+    index,
   );
 
   if (!tableBlockId) {
@@ -719,30 +816,51 @@ async function writeDoc(client: Lark.Client, docToken: string, markdown: string)
     return { success: true, blocks_deleted: deleted, blocks_added: 0, images_processed: 0, tables_created: 0 };
   }
 
-  // 3. Separate tables from other blocks
-  const { tables, otherBlocks } = extractTableFromBlocks(blocks);
+  // 3. Convert to content items (preserves table positions)
+  const contentItems = convertBlocksToContentItems(blocks);
 
-  // 4. Insert non-table blocks
-  const { children: inserted, skipped } = await insertBlocks(client, docToken, otherBlocks);
-
-  // 5. Create and fill tables
+  // 4. Insert content items in order
+  let insertIndex = 0;
+  const allInserted: any[] = [];
+  const allSkipped: string[] = [];
   let tablesCreated = 0;
-  for (const tableData of tables) {
-    const success = await createAndFillTable(client, docToken, docToken, tableData);
-    if (success) tablesCreated++;
+  let pendingBlocks: any[] = [];
+
+  const flushPendingBlocks = async () => {
+    if (pendingBlocks.length === 0) return;
+    const { children, skipped } = await insertBlocksAtIndex(client, docToken, pendingBlocks, insertIndex);
+    allInserted.push(...children);
+    allSkipped.push(...skipped);
+    insertIndex += children.length;
+    pendingBlocks = [];
+  };
+
+  for (const item of contentItems) {
+    if (item.type === "block") {
+      pendingBlocks.push(item.block);
+    } else if (item.type === "table") {
+      await flushPendingBlocks();
+      const success = await createAndFillTableAtIndex(client, docToken, docToken, item.table, insertIndex);
+      if (success) {
+        tablesCreated++;
+        insertIndex++;
+      }
+    }
   }
 
-  // 6. Process images
-  const imagesProcessed = await processImages(client, docToken, markdown, inserted);
+  await flushPendingBlocks();
+
+  // 5. Process images
+  const imagesProcessed = await processImages(client, docToken, markdown, allInserted);
 
   return {
     success: true,
     blocks_deleted: deleted,
-    blocks_added: inserted.length,
+    blocks_added: allInserted.length,
     tables_created: tablesCreated,
     images_processed: imagesProcessed,
-    ...(skipped.length > 0 && {
-      warning: `Skipped unsupported block types: ${skipped.join(", ")}.`,
+    ...(allSkipped.length > 0 && {
+      warning: `Skipped unsupported block types: ${allSkipped.join(", ")}.`,
     }),
   };
 }
@@ -754,30 +872,62 @@ async function appendDoc(client: Lark.Client, docToken: string, markdown: string
     throw new Error("Content is empty");
   }
 
-  // 2. Separate tables from other blocks
-  const { tables, otherBlocks } = extractTableFromBlocks(blocks);
+  // 2. Convert to content items (preserves table positions)
+  const contentItems = convertBlocksToContentItems(blocks);
 
-  // 3. Insert non-table blocks
-  const { children: inserted, skipped } = await insertBlocks(client, docToken, otherBlocks);
-
-  // 4. Create and fill tables
-  let tablesCreated = 0;
-  for (const tableData of tables) {
-    const success = await createAndFillTable(client, docToken, docToken, tableData);
-    if (success) tablesCreated++;
+  // 3. Get current insert index
+  let insertIndex = 0;
+  const existing = await client.docx.documentBlockChildren.get({
+    path: { document_id: docToken, block_id: docToken },
+  });
+  if (existing.code === 0) {
+    insertIndex = existing.data?.items?.length ?? 0;
   }
 
+  // 4. Insert content items in order, batching consecutive blocks
+  const allInserted: any[] = [];
+  const allSkipped: string[] = [];
+  let tablesCreated = 0;
+  let pendingBlocks: any[] = [];
+
+  const flushPendingBlocks = async () => {
+    if (pendingBlocks.length === 0) return;
+    const { children, skipped } = await insertBlocksAtIndex(client, docToken, pendingBlocks, insertIndex);
+    allInserted.push(...children);
+    allSkipped.push(...skipped);
+    insertIndex += children.length;
+    pendingBlocks = [];
+  };
+
+  for (const item of contentItems) {
+    if (item.type === "block") {
+      pendingBlocks.push(item.block);
+    } else if (item.type === "table") {
+      // Flush pending blocks before creating table
+      await flushPendingBlocks();
+      // Create table at current position
+      const success = await createAndFillTableAtIndex(client, docToken, docToken, item.table, insertIndex);
+      if (success) {
+        tablesCreated++;
+        insertIndex++;
+      }
+    }
+  }
+
+  // Flush any remaining blocks
+  await flushPendingBlocks();
+
   // 5. Process images
-  const imagesProcessed = await processImages(client, docToken, markdown, inserted);
+  const imagesProcessed = await processImages(client, docToken, markdown, allInserted);
 
   return {
     success: true,
-    blocks_added: inserted.length,
+    blocks_added: allInserted.length,
     tables_created: tablesCreated,
     images_processed: imagesProcessed,
-    block_ids: inserted.map((b: any) => b.block_id),
-    ...(skipped.length > 0 && {
-      warning: `Skipped unsupported block types: ${skipped.join(", ")}.`,
+    block_ids: allInserted.map((b: any) => b.block_id),
+    ...(allSkipped.length > 0 && {
+      warning: `Skipped unsupported block types: ${allSkipped.join(", ")}.`,
     }),
   };
 }
