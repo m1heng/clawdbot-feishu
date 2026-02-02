@@ -1,6 +1,6 @@
 {
   "name": "@max1874/feishu",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "type": "module",
   "description": "OpenClaw Feishu/Lark channel plugin",
   "license": "MIT",
