@@ -1,70 +1,99 @@
 ---
 name: feishu-doc
 description: |
-  Feishu document read/write tools. Activate when user mentions Feishu docs, cloud docs, or docx links.
+  Feishu document read/write operations. Activate when user mentions Feishu docs, cloud docs, or docx links.
 ---
 
-# Feishu Document Tools
+# Feishu Document Tool
 
-## Reading a Document (IMPORTANT)
-
-**Always follow this flow:**
-
-1. **Start with `feishu_doc_read`** - Get plain text + block statistics
-2. **Check `block_types` in response** - If you see `Table`, `Image`, `Code`, etc. but content seems empty/incomplete:
-3. **Use `feishu_doc_list_blocks`** - Get full structured content of all blocks
-4. **Optional: `feishu_doc_get_block`** - Get single block detail if needed
-
-```
-feishu_doc_read → check block_types → feishu_doc_list_blocks (if needed)
-```
-
-**Why?** `doc_read` returns plain text only. Tables and other structured content require `list_blocks`.
+Single tool `feishu_doc` with action parameter for all document operations.
 
 ## Token Extraction
 
 From URL `https://xxx.feishu.cn/docx/ABC123def` → `doc_token` = `ABC123def`
 
-## Tool Reference
+## Actions
 
-### Reading
+### Read Document
 
-| Tool | Input | Returns |
-|------|-------|---------|
-| `feishu_doc_read` | `doc_token` | Plain text, title, block_count, block_types |
-| `feishu_doc_list_blocks` | `doc_token` | Full block data (tables, images, etc.) |
-| `feishu_doc_get_block` | `doc_token`, `block_id` | Single block detail |
+```json
+{ "action": "read", "doc_token": "ABC123def" }
+```
 
-### Writing
+Returns: title, plain text content, block statistics. Check `hint` field - if present, structured content (tables, images) exists that requires `list_blocks`.
 
-| Tool | Input | Effect |
-|------|-------|--------|
-| `feishu_doc_create` | `title`, `folder_token?` | Create empty doc |
-| `feishu_doc_write` | `doc_token`, `content` (markdown) | Replace all content |
-| `feishu_doc_append` | `doc_token`, `content` (markdown) | Append to end |
+### Write Document (Replace All)
 
-### Block Operations
+```json
+{ "action": "write", "doc_token": "ABC123def", "content": "# Title\n\nMarkdown content..." }
+```
 
-| Tool | Input | Effect |
-|------|-------|--------|
-| `feishu_doc_update_block` | `doc_token`, `block_id`, `content` | Update block text |
-| `feishu_doc_delete_block` | `doc_token`, `block_id` | Delete block |
+Replaces entire document with markdown content. Supports: headings, lists, code blocks, quotes, links, images (`![](url)` auto-uploaded), bold/italic/strikethrough.
 
-**Note:** `block_id` comes from `list_blocks` response.
+**Limitation:** Markdown tables are NOT supported.
 
-### Utilities
+### Append Content
 
-| Tool | Use |
-|------|-----|
-| `feishu_folder_list` | List folder contents |
-| `feishu_app_scopes` | Check app permissions |
+```json
+{ "action": "append", "doc_token": "ABC123def", "content": "Additional content" }
+```
 
-## Markdown Syntax
+Appends markdown to end of document.
 
-For `write` and `append`: headings, lists, code blocks, quotes, links, images (`![](url)` auto-uploaded), bold/italic/strikethrough
+### Create Document
 
-**Limitation:** Markdown tables (`| ... |`) are NOT supported for write/append due to Feishu API restrictions. Use lists or code blocks to represent tabular data instead.
+```json
+{ "action": "create", "title": "New Document" }
+```
+
+With folder:
+```json
+{ "action": "create", "title": "New Document", "folder_token": "fldcnXXX" }
+```
+
+### List Blocks
+
+```json
+{ "action": "list_blocks", "doc_token": "ABC123def" }
+```
+
+Returns full block data including tables, images. Use this to read structured content.
+
+### Get Single Block
+
+```json
+{ "action": "get_block", "doc_token": "ABC123def", "block_id": "doxcnXXX" }
+```
+
+### Update Block Text
+
+```json
+{ "action": "update_block", "doc_token": "ABC123def", "block_id": "doxcnXXX", "content": "New text" }
+```
+
+### Delete Block
+
+```json
+{ "action": "delete_block", "doc_token": "ABC123def", "block_id": "doxcnXXX" }
+```
+
+## Reading Workflow
+
+1. Start with `action: "read"` - get plain text + statistics
+2. Check `block_types` in response for Table, Image, Code, etc.
+3. If structured content exists, use `action: "list_blocks"` for full data
+
+## Configuration
+
+```yaml
+channels:
+  feishu:
+    tools:
+      doc: true  # default: true
+```
+
+**Note:** `feishu_wiki` depends on this tool - wiki page content is read/written via `feishu_doc`.
 
 ## Permissions
 
-Required: `docx:document`, `docx:document:readonly`, `docx:document.block:convert` (for write/append), `drive:drive` (for images)
+Required: `docx:document`, `docx:document:readonly`, `docx:document.block:convert`, `drive:drive`

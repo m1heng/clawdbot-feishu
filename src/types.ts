@@ -53,3 +53,11 @@ export type FeishuMediaInfo = {
   contentType?: string;
   placeholder: string;
 };
+
+export type FeishuToolsConfig = {
+  doc?: boolean;
+  wiki?: boolean;
+  drive?: boolean;
+  perm?: boolean;
+  scopes?: boolean;
+};

@@ -50,6 +50,25 @@ const ChannelHeartbeatVisibilitySchema = z
   .strict()
   .optional();
 
+/**
+ * Feishu tools configuration.
+ * Controls which tool categories are enabled.
+ *
+ * Dependencies:
+ * - wiki requires doc (wiki content is edited via doc tools)
+ * - perm can work independently but is typically used with drive
+ */
+const FeishuToolsConfigSchema = z
+  .object({
+    doc: z.boolean().optional(), // Document operations (default: true)
+    wiki: z.boolean().optional(), // Knowledge base operations (default: true, requires doc)
+    drive: z.boolean().optional(), // Cloud storage operations (default: true)
+    perm: z.boolean().optional(), // Permission management (default: false, sensitive)
+    scopes: z.boolean().optional(), // App scopes diagnostic (default: true)
+  })
+  .strict()
+  .optional();
+
 export const FeishuGroupSchema = z
   .object({
     requireMention: z.boolean().optional(),
@@ -90,6 +109,7 @@ export const FeishuConfigSchema = z
     mediaMaxMb: z.number().positive().optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
     renderMode: RenderModeSchema, // raw = plain text (default), card = interactive card with markdown
+    tools: FeishuToolsConfigSchema,
   })
   .strict()
   .superRefine((value, ctx) => {
