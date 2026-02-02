@@ -1,7 +1,11 @@
 {
   "id": "feishu",
-  "channels": ["feishu"],
-  "skills": ["./skills"],
+  "channels": [
+    "feishu"
+  ],
+  "skills": [
+    "./skills"
+  ],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -28,13 +32,19 @@
       },
       "domain": {
         "type": "string",
-        "enum": ["feishu", "lark"],
+        "enum": [
+          "feishu",
+          "lark"
+        ],
         "default": "feishu",
         "description": "Domain to use (feishu or lark)"
       },
       "connectionMode": {
         "type": "string",
-        "enum": ["websocket", "webhook"],
+        "enum": [
+          "websocket",
+          "webhook"
+        ],
         "default": "websocket",
         "description": "Connection mode for receiving events"
       },
@@ -50,27 +60,41 @@
       },
       "dmPolicy": {
         "type": "string",
-        "enum": ["open", "pairing", "allowlist"],
+        "enum": [
+          "open",
+          "pairing",
+          "allowlist"
+        ],
         "default": "pairing",
         "description": "Direct message access policy"
       },
       "allowFrom": {
         "type": "array",
         "items": {
-          "type": ["string", "integer"]
+          "type": [
+            "string",
+            "integer"
+          ]
         },
         "description": "List of allowed user IDs or names for DMs"
       },
       "groupPolicy": {
         "type": "string",
-        "enum": ["open", "allowlist", "disabled"],
+        "enum": [
+          "open",
+          "allowlist",
+          "disabled"
+        ],
         "default": "allowlist",
         "description": "Group chat access policy"
       },
       "groupAllowFrom": {
         "type": "array",
         "items": {
-          "type": ["string", "integer"]
+          "type": [
+            "string",
+            "integer"
+          ]
         },
         "description": "List of allowed user IDs or names for groups"
       },
@@ -96,13 +120,21 @@
       },
       "chunkMode": {
         "type": "string",
-        "enum": ["length", "newline"],
+        "enum": [
+          "length",
+          "newline"
+        ],
         "description": "Text chunking strategy"
       },
       "renderMode": {
         "type": "string",
-        "enum": ["auto", "raw", "card"],
+        "enum": [
+          "auto",
+          "raw",
+          "card"
+        ],
         "description": "Message rendering mode"
       }
     }
+  }
 }
