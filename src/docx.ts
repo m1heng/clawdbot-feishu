@@ -43,6 +43,60 @@ function extractImageUrls(markdown: string): string[] {
   return urls;
 }
 
+/** Extract text content from a block for sorting */
+function extractBlockText(block: any): string {
+  const elements =
+    block.text?.elements ??
+    block.heading1?.elements ??
+    block.heading2?.elements ??
+    block.heading3?.elements ??
+    block.bullet?.elements ??
+    block.ordered?.elements ??
+    block.quote?.elements ??
+    block.todo?.elements ??
+    [];
+  return elements
+    .filter((e: any) => e.text_run)
+    .map((e: any) => e.text_run.content)
+    .join("");
+}
+
+/**
+ * Sort blocks by their position in firstLevelBlockIds.
+ * The Convert API returns blocks in arbitrary order, but provides
+ * first_level_block_ids in the correct document order.
+ */
+function sortBlocksByFirstLevelIds(blocks: any[], firstLevelBlockIds: string[]): any[] {
+  // Build a map of block_id -> block
+  const blockMap = new Map<string, any>();
+  for (const block of blocks) {
+    if (block.block_id) {
+      blockMap.set(block.block_id, block);
+    }
+  }
+
+  // Reorder blocks according to firstLevelBlockIds
+  const sortedBlocks: any[] = [];
+  const usedIds = new Set<string>();
+
+  for (const id of firstLevelBlockIds) {
+    const block = blockMap.get(id);
+    if (block) {
+      sortedBlocks.push(block);
+      usedIds.add(id);
+    }
+  }
+
+  // Append any remaining blocks (e.g., child blocks like TableCell)
+  for (const block of blocks) {
+    if (block.block_id && !usedIds.has(block.block_id)) {
+      sortedBlocks.push(block);
+    }
+  }
+
+  return sortedBlocks;
+}
+
 const BLOCK_TYPE_NAMES: Record<number, string> = {
   1: "Page",
   2: "Text",
@@ -183,10 +237,14 @@ async function convertMarkdown(client: Lark.Client, markdown: string) {
     data: { content_type: "markdown", content: markdown },
   });
   if (res.code !== 0) throw new Error(res.msg);
-  return {
-    blocks: res.data?.blocks ?? [],
-    firstLevelBlockIds: res.data?.first_level_block_ids ?? [],
-  };
+
+  const rawBlocks = res.data?.blocks ?? [];
+  const firstLevelBlockIds = res.data?.first_level_block_ids ?? [];
+
+  // Sort blocks according to first_level_block_ids (Convert API returns blocks in arbitrary order)
+  const blocks = sortBlocksByFirstLevelIds(rawBlocks, firstLevelBlockIds);
+
+  return { blocks, firstLevelBlockIds };
 }
 
 /** Insert blocks as children of a parent block (with batching for >50 blocks) */
