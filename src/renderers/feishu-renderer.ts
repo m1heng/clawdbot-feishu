@@ -476,14 +476,16 @@ function createAgentCardRenderer(params: CreateFeishuRendererParams): FeishuRend
 
   return {
     async deliver(payload: ReplyPayload) {
-      try {
-        const snapshot = JSON.stringify(payload);
-        runtime.log?.(
-          `feishu payload keys=${Object.keys(payload as Record<string, unknown>).join(",")} size=${snapshot.length}`,
-        );
-        runtime.log?.(`feishu payload sample=${snapshot.slice(0, 2000)}`);
-      } catch (err) {
-        runtime.log?.(`feishu payload log failed: ${String(err)}`);
+      if (runtime.debug) {
+        try {
+          const snapshot = JSON.stringify(payload);
+          runtime.log?.(
+            `feishu payload keys=${Object.keys(payload as Record<string, unknown>).join(",")} size=${snapshot.length}`,
+          );
+          runtime.log?.(`feishu payload sample=${snapshot.slice(0, 2000)}`);
+        } catch (err) {
+          runtime.log?.(`feishu payload log failed: ${String(err)}`);
+        }
       }
       const messages = extractAgentMessages(payload);
       const events = extractVerboseEvents(payload);
