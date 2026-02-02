@@ -64,32 +64,110 @@ const BLOCK_TYPE_NAMES: Record<number, string> = {
   32: "TableCell",
 };
 
-// Block types that cannot be created via documentBlockChildren.create API
-const UNSUPPORTED_CREATE_TYPES = new Set([
-  31, // Table - must use different API or workaround
-  32, // TableCell - child of Table
-]);
+// Block types that need special handling (not via standard documentBlockChildren.create)
+const TABLE_BLOCK_TYPE = 31;
+const TABLE_CELL_BLOCK_TYPE = 32;
 
-/** Clean blocks for insertion (remove unsupported types and read-only fields) */
+/** Extracted table data from convert API result */
+interface TableData {
+  rowSize: number;
+  colSize: number;
+  cells: string[][]; // 2D array of cell text content
+}
+
+/** Extract table data from converted blocks (flat list with ID references) */
+function extractTableFromBlocks(blocks: any[]): { tables: TableData[]; otherBlocks: any[] } {
+  const tables: TableData[] = [];
+  const otherBlocks: any[] = [];
+
+  // Build a map of block_id -> block for quick lookup
+  const blockMap = new Map<string, any>();
+  for (const block of blocks) {
+    if (block.block_id) {
+      blockMap.set(block.block_id, block);
+    }
+  }
+
+  // Track which blocks are part of tables (to exclude from otherBlocks)
+  const tableRelatedIds = new Set<string>();
+
+  for (const block of blocks) {
+    if (block.block_type === TABLE_BLOCK_TYPE) {
+      tableRelatedIds.add(block.block_id);
+
+      const tableInfo = block.table;
+      if (tableInfo) {
+        const rowSize = tableInfo.property?.row_size ?? 0;
+        const colSize = tableInfo.property?.column_size ?? 0;
+
+        // Initialize cells array
+        const cells: string[][] = Array.from({ length: rowSize }, () =>
+          Array.from({ length: colSize }, () => ""),
+        );
+
+        // table.cells is a flat array of cell block IDs in row-major order
+        const cellIds: string[] = tableInfo.cells ?? [];
+
+        let cellIndex = 0;
+        for (let row = 0; row < rowSize; row++) {
+          for (let col = 0; col < colSize; col++) {
+            if (cellIndex >= cellIds.length) break;
+
+            const cellId = cellIds[cellIndex];
+            tableRelatedIds.add(cellId);
+
+            // Find the TableCell block
+            const cellBlock = blockMap.get(cellId);
+            if (cellBlock?.block_type === TABLE_CELL_BLOCK_TYPE) {
+              // Get text content from cell's children (Text blocks)
+              const childIds: string[] = cellBlock.children ?? [];
+              const textParts: string[] = [];
+
+              for (const childId of childIds) {
+                tableRelatedIds.add(childId);
+                const textBlock = blockMap.get(childId);
+                if (textBlock?.block_type === 2 && textBlock.text?.elements) {
+                  const text = textBlock.text.elements
+                    .filter((e: any) => e.text_run)
+                    .map((e: any) => e.text_run.content)
+                    .join("");
+                  textParts.push(text);
+                }
+              }
+
+              cells[row][col] = textParts.join("\n");
+            }
+
+            cellIndex++;
+          }
+        }
+
+        tables.push({ rowSize, colSize, cells });
+      }
+    }
+  }
+
+  // Collect non-table blocks
+  for (const block of blocks) {
+    if (!tableRelatedIds.has(block.block_id)) {
+      otherBlocks.push(block);
+    }
+  }
+
+  return { tables, otherBlocks };
+}
+
+/** Clean blocks for insertion (remove read-only fields) */
 function cleanBlocksForInsert(blocks: any[]): { cleaned: any[]; skipped: string[] } {
   const skipped: string[] = [];
-  const cleaned = blocks
-    .filter((block) => {
-      if (UNSUPPORTED_CREATE_TYPES.has(block.block_type)) {
-        const typeName = BLOCK_TYPE_NAMES[block.block_type] || `type_${block.block_type}`;
-        skipped.push(typeName);
-        return false;
-      }
-      return true;
-    })
-    .map((block) => {
-      // Remove any read-only fields that might slip through
-      if (block.block_type === 31 && block.table?.merge_info) {
-        const { merge_info, ...tableRest } = block.table;
-        return { ...block, table: tableRest };
-      }
-      return block;
-    });
+  const cleaned = blocks.map((block) => {
+    // Remove any read-only fields that might slip through
+    if (block.block_type === TABLE_BLOCK_TYPE && block.table?.merge_info) {
+      const { merge_info, ...tableRest } = block.table;
+      return { ...block, table: tableRest };
+    }
+    return block;
+  });
   return { cleaned, skipped };
 }
 
@@ -183,6 +261,140 @@ async function downloadImage(url: string): Promise<Buffer> {
     throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
   }
   return Buffer.from(await response.arrayBuffer());
+}
+
+/** Create an empty table and return its block ID */
+async function createEmptyTable(
+  client: Lark.Client,
+  docToken: string,
+  parentBlockId: string,
+  rowSize: number,
+  colSize: number,
+): Promise<string | null> {
+  const tableBlock = {
+    block_type: TABLE_BLOCK_TYPE,
+    table: {
+      property: {
+        row_size: rowSize,
+        column_size: colSize,
+        header_row: true,
+      },
+      cells: [], // Empty cells, will be filled later
+    },
+  };
+
+  const res = await client.docx.documentBlockChildren.create({
+    path: { document_id: docToken, block_id: parentBlockId },
+    data: { children: [tableBlock] },
+  });
+
+  if (res.code !== 0) {
+    console.error(`Failed to create table: ${res.msg}`);
+    return null;
+  }
+
+  const created = res.data?.children ?? [];
+  return created[0]?.block_id ?? null;
+}
+
+/** Get children blocks of a parent block */
+async function getBlockChildren(
+  client: Lark.Client,
+  docToken: string,
+  blockId: string,
+): Promise<any[]> {
+  const res = await client.docx.documentBlockChildren.get({
+    path: { document_id: docToken, block_id: blockId },
+  });
+  if (res.code !== 0) {
+    throw new Error(`Failed to get block children: ${res.msg}`);
+  }
+  return res.data?.items ?? [];
+}
+
+/** Update a text block's content */
+async function updateTextBlock(
+  client: Lark.Client,
+  docToken: string,
+  blockId: string,
+  content: string,
+): Promise<void> {
+  const res = await client.docx.documentBlock.patch({
+    path: { document_id: docToken, block_id: blockId },
+    data: {
+      update_text_elements: {
+        elements: [{ text_run: { content } }],
+      },
+    },
+  });
+  if (res.code !== 0) {
+    console.error(`Failed to update text block ${blockId}: ${res.msg}`);
+  }
+}
+
+/** Fill table cells with content */
+async function fillTableContent(
+  client: Lark.Client,
+  docToken: string,
+  tableBlockId: string,
+  cells: string[][],
+): Promise<void> {
+  // Get table's cell blocks (they are direct children of the table)
+  const cellBlocks = await getBlockChildren(client, docToken, tableBlockId);
+
+  // Cells are in row-major order
+  const colSize = cells[0]?.length ?? 0;
+  let cellIndex = 0;
+
+  for (let row = 0; row < cells.length; row++) {
+    for (let col = 0; col < colSize; col++) {
+      if (cellIndex >= cellBlocks.length) break;
+
+      const cellBlock = cellBlocks[cellIndex];
+      const cellBlockId = cellBlock?.block_id;
+      const cellText = cells[row]?.[col] ?? "";
+
+      if (cellBlockId && cellText) {
+        // Each cell block contains text blocks as children
+        const cellChildren = await getBlockChildren(client, docToken, cellBlockId);
+        if (cellChildren.length > 0) {
+          // Update the first text block in the cell
+          const textBlockId = cellChildren[0]?.block_id;
+          if (textBlockId) {
+            await updateTextBlock(client, docToken, textBlockId, cellText);
+          }
+        }
+      }
+
+      cellIndex++;
+    }
+  }
+}
+
+/** Create and fill a table */
+async function createAndFillTable(
+  client: Lark.Client,
+  docToken: string,
+  parentBlockId: string,
+  tableData: TableData,
+): Promise<boolean> {
+  // 1. Create empty table
+  const tableBlockId = await createEmptyTable(
+    client,
+    docToken,
+    parentBlockId,
+    tableData.rowSize,
+    tableData.colSize,
+  );
+
+  if (!tableBlockId) {
+    return false;
+  }
+
+  // 2. Fill table content
+  await fillTableContent(client, docToken, tableBlockId, tableData.cells);
+
+  return true;
 }
 
 /** Process images in markdown: download from URL, upload to Feishu, update blocks */
@@ -422,22 +634,33 @@ async function writeDoc(client: Lark.Client, docToken: string, markdown: string)
   // 2. Convert markdown to blocks
   const { blocks } = await convertMarkdown(client, markdown);
   if (blocks.length === 0) {
-    return { success: true, blocks_deleted: deleted, blocks_added: 0, images_processed: 0 };
+    return { success: true, blocks_deleted: deleted, blocks_added: 0, images_processed: 0, tables_created: 0 };
   }
 
-  // 3. Insert new blocks (unsupported types like Table are filtered)
-  const { children: inserted, skipped } = await insertBlocks(client, docToken, blocks);
+  // 3. Separate tables from other blocks
+  const { tables, otherBlocks } = extractTableFromBlocks(blocks);
 
-  // 4. Process images
+  // 4. Insert non-table blocks
+  const { children: inserted, skipped } = await insertBlocks(client, docToken, otherBlocks);
+
+  // 5. Create and fill tables
+  let tablesCreated = 0;
+  for (const tableData of tables) {
+    const success = await createAndFillTable(client, docToken, docToken, tableData);
+    if (success) tablesCreated++;
+  }
+
+  // 6. Process images
   const imagesProcessed = await processImages(client, docToken, markdown, inserted);
 
   return {
     success: true,
     blocks_deleted: deleted,
     blocks_added: inserted.length,
+    tables_created: tablesCreated,
     images_processed: imagesProcessed,
     ...(skipped.length > 0 && {
-      warning: `Skipped unsupported block types: ${skipped.join(", ")}. Tables are not supported via this API.`,
+      warning: `Skipped unsupported block types: ${skipped.join(", ")}.`,
     }),
   };
 }
@@ -449,19 +672,30 @@ async function appendDoc(client: Lark.Client, docToken: string, markdown: string
     throw new Error("Content is empty");
   }
 
-  // 2. Insert blocks (unsupported types like Table are filtered)
-  const { children: inserted, skipped } = await insertBlocks(client, docToken, blocks);
+  // 2. Separate tables from other blocks
+  const { tables, otherBlocks } = extractTableFromBlocks(blocks);
 
-  // 3. Process images
+  // 3. Insert non-table blocks
+  const { children: inserted, skipped } = await insertBlocks(client, docToken, otherBlocks);
+
+  // 4. Create and fill tables
+  let tablesCreated = 0;
+  for (const tableData of tables) {
+    const success = await createAndFillTable(client, docToken, docToken, tableData);
+    if (success) tablesCreated++;
+  }
+
+  // 5. Process images
   const imagesProcessed = await processImages(client, docToken, markdown, inserted);
 
   return {
     success: true,
     blocks_added: inserted.length,
+    tables_created: tablesCreated,
     images_processed: imagesProcessed,
     block_ids: inserted.map((b: any) => b.block_id),
     ...(skipped.length > 0 && {
-      warning: `Skipped unsupported block types: ${skipped.join(", ")}. Tables are not supported via this API.`,
+      warning: `Skipped unsupported block types: ${skipped.join(", ")}.`,
     }),
   };
 }
@@ -700,7 +934,7 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
       name: "feishu_doc_write",
       label: "Feishu Doc Write",
       description:
-        "Write markdown content to a Feishu document (replaces all content). Supports headings, lists, code blocks, quotes, links, images, and text styling. Note: tables are not supported.",
+        "Write markdown content to a Feishu document (replaces all content). Supports headings, lists, code blocks, quotes, links, images, tables, and text styling.",
       parameters: WriteDocSchema,
       async execute(_toolCallId, params) {
         const { doc_token, content } = params as { doc_token: string; content: string };
