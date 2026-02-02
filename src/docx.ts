@@ -157,16 +157,20 @@ function extractTableFromBlocks(blocks: any[]): { tables: TableData[]; otherBloc
   return { tables, otherBlocks };
 }
 
-/** Clean blocks for insertion (remove read-only fields) */
+/** Clean blocks for insertion (remove read-only fields and unsupported nested structures) */
 function cleanBlocksForInsert(blocks: any[]): { cleaned: any[]; skipped: string[] } {
   const skipped: string[] = [];
   const cleaned = blocks.map((block) => {
-    // Remove any read-only fields that might slip through
+    const { children, parent_id, block_id, ...rest } = block;
+
+    // Remove children from non-table blocks (nested lists not supported in create API)
+    // Table children are handled separately via table.cells
     if (block.block_type === TABLE_BLOCK_TYPE && block.table?.merge_info) {
       const { merge_info, ...tableRest } = block.table;
-      return { ...block, table: tableRest };
+      return { ...rest, table: tableRest };
     }
-    return block;
+
+    return rest;
   });
   return { cleaned, skipped };
 }
@@ -185,7 +189,7 @@ async function convertMarkdown(client: Lark.Client, markdown: string) {
   };
 }
 
-/** Insert blocks as children of a parent block */
+/** Insert blocks as children of a parent block (with batching for >50 blocks) */
 async function insertBlocks(
   client: Lark.Client,
   docToken: string,
@@ -199,12 +203,21 @@ async function insertBlocks(
     return { children: [], skipped };
   }
 
-  const res = await client.docx.documentBlockChildren.create({
-    path: { document_id: docToken, block_id: blockId },
-    data: { children: cleaned },
-  });
-  if (res.code !== 0) throw new Error(res.msg);
-  return { children: res.data?.children ?? [], skipped };
+  // Feishu API limits to 50 blocks per request
+  const BATCH_SIZE = 50;
+  const allChildren: any[] = [];
+
+  for (let i = 0; i < cleaned.length; i += BATCH_SIZE) {
+    const batch = cleaned.slice(i, i + BATCH_SIZE);
+    const res = await client.docx.documentBlockChildren.create({
+      path: { document_id: docToken, block_id: blockId },
+      data: { children: batch },
+    });
+    if (res.code !== 0) throw new Error(res.msg);
+    allChildren.push(...(res.data?.children ?? []));
+  }
+
+  return { children: allChildren, skipped };
 }
 
 /** Delete all child blocks from a parent */
