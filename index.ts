@@ -6,6 +6,7 @@ import { registerFeishuDocTools } from "./src/docx.js";
 import { registerFeishuWikiTools } from "./src/wiki.js";
 import { registerFeishuDriveTools } from "./src/drive.js";
 import { registerFeishuPermTools } from "./src/perm.js";
+import { registerFeishuBitableTools } from "./src/bitable.js";
 
 export { monitorFeishuProvider } from "./src/monitor.js";
 export {
@@ -55,6 +56,7 @@ const plugin = {
     registerFeishuWikiTools(api);
     registerFeishuDriveTools(api);
     registerFeishuPermTools(api);
+    registerFeishuBitableTools(api);
   },
 };
 

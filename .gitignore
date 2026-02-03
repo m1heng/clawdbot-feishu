@@ -4,3 +4,5 @@ dist/
 *.log
 .DS_Store
 .env
+pnpm-lock.yaml
+package-lock.json

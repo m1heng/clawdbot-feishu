@@ -4,7 +4,7 @@ import type { MentionTarget } from "./mention.js";
 export type FeishuConfig = z.infer<typeof FeishuConfigSchema>;
 export type FeishuGroupConfig = z.infer<typeof FeishuGroupSchema>;
 
-export type FeishuDomain = "feishu" | "lark";
+export type FeishuDomain = "feishu" | "lark" | (string & {});
 export type FeishuConnectionMode = "websocket" | "webhook";
 
 export type ResolvedFeishuAccount = {

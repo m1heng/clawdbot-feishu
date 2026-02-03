@@ -14,6 +14,13 @@ Don't install both this plugin and [clawdbot-feishu](https://github.com/m1heng/c
 ```bash
 openclaw plugins update feishu
 ```
+---
+Below is the README content from clawdbot-feishu repo.
+
+---
+> **中文社区资料** - 配置教程、常见问题、使用技巧：[Wiki](https://github.com/m1heng/clawdbot-feishu/wiki)
+
+[English](#english) | [中文](#中文)
 
 ---
 
@@ -43,7 +50,6 @@ openclaw plugins update feishu
 
 | Permission | Scope | Description |
 |------------|-------|-------------|
-| `contact:user.base:readonly` | User info | Get basic user info (required to resolve sender display names for speaker attribution) |
 | `im:message` | Messaging | Send and receive messages |
 | `im:message.p2p_msg:readonly` | DM | Read direct messages to bot |
 | `im:message.group_at_msg:readonly` | Group | Receive @mention messages in groups |
@@ -54,6 +60,7 @@ openclaw plugins update feishu
 
 | Permission | Scope | Description |
 |------------|-------|-------------|
+| `contact:user.base:readonly` | User info | Get basic user info (required to resolve sender display names for speaker attribution) |
 | `im:message.group_msg` | Group | Read all group messages (sensitive) |
 | `im:message:readonly` | Read | Get message history |
 | `im:message:update` | Edit | Update/edit sent messages |
@@ -69,6 +76,7 @@ openclaw plugins update feishu
 | `docx:document:readonly` | `feishu_doc` | Read documents |
 | `drive:drive:readonly` | `feishu_drive` | List folders, get file info |
 | `wiki:wiki:readonly` | `feishu_wiki` | List spaces, list nodes, get node info, search |
+| `bitable:app:readonly` | `feishu_bitable` | Read bitable records and fields |
 
 **Read-write** (optional, for create/edit/delete operations):
 
@@ -78,6 +86,7 @@ openclaw plugins update feishu
 | `docx:document.block:convert` | `feishu_doc` | Markdown to blocks conversion (required for write/append) |
 | `drive:drive` | `feishu_doc`, `feishu_drive` | Upload images to documents, create folders, move/delete files |
 | `wiki:wiki` | `feishu_wiki` | Create/move/rename wiki nodes |
+| `bitable:app` | `feishu_bitable` | Create/update bitable records |
 
 #### Drive Access ⚠️
 
@@ -102,6 +111,19 @@ Without this step, `feishu_drive` operations like `create_folder` will fail beca
 Without this step, `feishu_wiki` will return empty results even with correct API permissions.
 
 Reference: [Wiki FAQ - How to add app to wiki](https://open.feishu.cn/document/server-docs/docs/wiki-v2/wiki-qa#a40ad4ca)
+
+#### Bitable Access ⚠️
+
+> **Important:** Like other resources, the bot can only access bitables that have been **shared with it**.
+
+To let the bot access a bitable:
+1. Open the bitable you want the bot to access
+2. Click **Share** button → search for your bot name
+3. Grant appropriate permission (view/edit)
+
+The `feishu_bitable` tools support both URL formats:
+- `/base/XXX?table=YYY` - Standard bitable URL
+- `/wiki/XXX?table=YYY` - Bitable embedded in wiki (auto-converts to app_token)
 
 #### Event Subscriptions ⚠️
 
@@ -135,10 +157,12 @@ channels:
     enabled: true
     appId: "cli_xxxxx"
     appSecret: "secret"
-    # Domain: "feishu" (China) or "lark" (International)
-    domain: "feishu"
+    # Domain: "feishu" (China), "lark" (International), or custom URL
+    domain: "feishu"  # or "https://open.xxx.cn" for private deployment
     # Connection mode: "websocket" (recommended) or "webhook"
     connectionMode: "websocket"
+    # Webhook path (default: "/feishu/events")
+    webhookPath: "/feishu/events"
     # DM policy: "pairing" | "open" | "allowlist"
     dmPolicy: "pairing"
     # Group policy: "open" | "allowlist" | "disabled"
@@ -173,6 +197,7 @@ channels:
 - **Document tools**: Read, create, and write Feishu documents with markdown (tables not supported due to API limitations)
 - **Wiki tools**: Navigate knowledge bases, list spaces, get node details, search, create/move/rename nodes
 - **Drive tools**: List folders, get file info, create folders, move/delete files
+- **Bitable tools**: Read/write bitable (多维表格) records, supports both `/base/` and `/wiki/` URLs
 - **@mention forwarding**: When you @mention someone in your message, the bot's reply will automatically @mention them too
 - **Permission error notification**: When the bot encounters a Feishu API permission error, it automatically notifies the user with the permission grant URL
 
@@ -253,7 +278,6 @@ openclaw plugins update feishu
 
 | 权限 | 范围 | 说明 |
 |------|------|------|
-| `contact:user.base:readonly` | 用户信息 | 获取用户基本信息（用于解析发送者姓名，避免群聊/私聊把不同人当成同一说话者） |
 | `im:message` | 消息 | 发送和接收消息 |
 | `im:message.p2p_msg:readonly` | 私聊 | 读取发给机器人的私聊消息 |
 | `im:message.group_at_msg:readonly` | 群聊 | 接收群内 @机器人 的消息 |
@@ -264,6 +288,7 @@ openclaw plugins update feishu
 
 | 权限 | 范围 | 说明 |
 |------|------|------|
+| `contact:user.base:readonly` | 用户信息 | 获取用户基本信息（用于解析发送者姓名，避免群聊/私聊把不同人当成同一说话者） |
 | `im:message.group_msg` | 群聊 | 读取所有群消息（敏感） |
 | `im:message:readonly` | 读取 | 获取历史消息 |
 | `im:message:update` | 编辑 | 更新/编辑已发送消息 |
@@ -279,6 +304,7 @@ openclaw plugins update feishu
 | `docx:document:readonly` | `feishu_doc` | 读取文档 |
 | `drive:drive:readonly` | `feishu_drive` | 列出文件夹、获取文件信息 |
 | `wiki:wiki:readonly` | `feishu_wiki` | 列出空间、列出节点、获取节点详情、搜索 |
+| `bitable:app:readonly` | `feishu_bitable` | 读取多维表格记录和字段 |
 
 **读写权限**（可选，用于创建/编辑/删除操作）：
 
@@ -288,6 +314,7 @@ openclaw plugins update feishu
 | `docx:document.block:convert` | `feishu_doc` | Markdown 转 blocks（write/append 必需） |
 | `drive:drive` | `feishu_doc`, `feishu_drive` | 上传图片到文档、创建文件夹、移动/删除文件 |
 | `wiki:wiki` | `feishu_wiki` | 创建/移动/重命名知识库节点 |
+| `bitable:app` | `feishu_bitable` | 创建/更新多维表格记录 |
 
 #### 云空间访问权限 ⚠️
 
@@ -312,6 +339,19 @@ openclaw plugins update feishu
 如果不做这一步，即使 API 权限正确，`feishu_wiki` 也会返回空结果。
 
 参考文档：[知识库常见问题 - 如何将应用添加为知识库成员](https://open.feishu.cn/document/server-docs/docs/wiki-v2/wiki-qa#a40ad4ca)
+
+#### 多维表格访问权限 ⚠️
+
+> **重要：** 与其他资源一样，机器人只能访问**被分享给它的多维表格**。
+
+要让机器人访问多维表格：
+1. 打开需要机器人访问的多维表格
+2. 点击 **分享** 按钮 → 搜索机器人名称
+3. 授予相应权限（查看/编辑）
+
+`feishu_bitable` 工具支持两种 URL 格式：
+- `/base/XXX?table=YYY` - 标准多维表格链接
+- `/wiki/XXX?table=YYY` - 嵌入在知识库中的多维表格（自动转换为 app_token）
 
 #### 事件订阅 ⚠️
 
@@ -345,10 +385,12 @@ channels:
     enabled: true
     appId: "cli_xxxxx"
     appSecret: "secret"
-    # 域名: "feishu" (国内) 或 "lark" (国际)
-    domain: "feishu"
+    # 域名: "feishu" (国内)、"lark" (国际) 或自定义 URL
+    domain: "feishu"  # 私有化部署可用 "https://open.xxx.cn"
     # 连接模式: "websocket" (推荐) 或 "webhook"
     connectionMode: "websocket"
+    # Webhook 路径 (默认: "/feishu/events")
+    webhookPath: "/feishu/events"
     # 私聊策略: "pairing" | "open" | "allowlist"
     dmPolicy: "pairing"
     # 群聊策略: "open" | "allowlist" | "disabled"
@@ -383,6 +425,7 @@ channels:
 - **文档工具**：读取、创建、用 Markdown 写入飞书文档（表格因 API 限制不支持）
 - **知识库工具**：浏览知识库、列出空间、获取节点详情、搜索、创建/移动/重命名节点
 - **云空间工具**：列出文件夹、获取文件信息、创建文件夹、移动/删除文件
+- **多维表格工具**：读写多维表格记录，支持 `/base/` 和 `/wiki/` 两种链接格式
 - **@ 转发功能**：在消息中 @ 某人，机器人的回复会自动 @ 该用户
 - **权限错误提示**：当机器人遇到飞书 API 权限错误时，会自动通知用户并提供权限授权链接
 

@@ -71,7 +71,12 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
         appSecret: { type: "string" },
         encryptKey: { type: "string" },
         verificationToken: { type: "string" },
-        domain: { type: "string", enum: ["feishu", "lark"] },
+        domain: {
+          oneOf: [
+            { type: "string", enum: ["feishu", "lark"] },
+            { type: "string", format: "uri", pattern: "^https://" },
+          ],
+        },
         connectionMode: { type: "string", enum: ["websocket", "webhook"] },
         webhookPath: { type: "string" },
         webhookPort: { type: "integer", minimum: 1 },

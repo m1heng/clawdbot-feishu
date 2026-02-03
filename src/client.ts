@@ -5,8 +5,10 @@ import { resolveFeishuCredentials } from "./accounts.js";
 let cachedClient: Lark.Client | null = null;
 let cachedConfig: { appId: string; appSecret: string; domain: FeishuDomain } | null = null;
 
-function resolveDomain(domain: FeishuDomain) {
-  return domain === "lark" ? Lark.Domain.Lark : Lark.Domain.Feishu;
+function resolveDomain(domain: FeishuDomain): Lark.Domain | string {
+  if (domain === "lark") return Lark.Domain.Lark;
+  if (domain === "feishu") return Lark.Domain.Feishu;
+  return domain.replace(/\/+$/, ""); // Custom URL, remove trailing slashes
 }
 
 export function createFeishuClient(cfg: FeishuConfig): Lark.Client {
