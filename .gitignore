@@ -6,3 +6,4 @@ dist/
 .env
 pnpm-lock.yaml
 package-lock.json
+package-moltbot-lark.json
