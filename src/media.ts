@@ -6,6 +6,10 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { Readable } from "stream";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 export type DownloadImageResult = {
   buffer: Buffer;
@@ -344,13 +348,16 @@ export async function sendImageFeishu(params: {
 /**
  * Send a file message using a file_key
  */
-export async function sendFileFeishu(params: {
+async function sendUploadedFileLikeMessageFeishu(params: {
   cfg: ClawdbotConfig;
   to: string;
   fileKey: string;
+  msgType: "file" | "audio" | "media";
+  imageKey?: string; // for msg_type=media
   replyToMessageId?: string;
 }): Promise<SendMediaResult> {
-  const { cfg, to, fileKey, replyToMessageId } = params;
+  const { cfg, to, fileKey, msgType, imageKey, replyToMessageId } = params;
+
   const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
   if (!feishuCfg) {
     throw new Error("Feishu channel not configured");
@@ -363,19 +370,24 @@ export async function sendFileFeishu(params: {
   }
 
   const receiveIdType = resolveReceiveIdType(receiveId);
-  const content = JSON.stringify({ file_key: fileKey });
+  const content = JSON.stringify({
+    file_key: fileKey,
+    ...(msgType === "media" && imageKey ? { image_key: imageKey } : {}),
+  });
 
   if (replyToMessageId) {
     const response = await client.im.message.reply({
       path: { message_id: replyToMessageId },
       data: {
         content,
-        msg_type: "file",
+        msg_type: msgType,
       },
     });
 
     if (response.code !== 0) {
-      throw new Error(`Feishu file reply failed: ${response.msg || `code ${response.code}`}`);
+      throw new Error(
+        `Feishu ${msgType} reply failed: ${response.msg || `code ${response.code}`}`,
+      );
     }
 
     return {
@@ -389,18 +401,79 @@ export async function sendFileFeishu(params: {
     data: {
       receive_id: receiveId,
       content,
-      msg_type: "file",
+      msg_type: msgType,
     },
   });
 
   if (response.code !== 0) {
-    throw new Error(`Feishu file send failed: ${response.msg || `code ${response.code}`}`);
+    throw new Error(
+      `Feishu ${msgType} send failed: ${response.msg || `code ${response.code}`}`,
+    );
   }
 
   return {
     messageId: response.data?.message_id ?? "unknown",
     chatId: receiveId,
   };
+}
+
+/**
+ * Send a file message using a file_key
+ */
+export async function sendFileFeishu(params: {
+  cfg: ClawdbotConfig;
+  to: string;
+  fileKey: string;
+  replyToMessageId?: string;
+}): Promise<SendMediaResult> {
+  const { cfg, to, fileKey, replyToMessageId } = params;
+  return sendUploadedFileLikeMessageFeishu({
+    cfg,
+    to,
+    fileKey,
+    msgType: "file",
+    replyToMessageId,
+  });
+}
+
+/**
+ * Send an audio message using a file_key (uploaded with file_type=opus)
+ */
+export async function sendAudioFeishu(params: {
+  cfg: ClawdbotConfig;
+  to: string;
+  fileKey: string;
+  replyToMessageId?: string;
+}): Promise<SendMediaResult> {
+  const { cfg, to, fileKey, replyToMessageId } = params;
+  return sendUploadedFileLikeMessageFeishu({
+    cfg,
+    to,
+    fileKey,
+    msgType: "audio",
+    replyToMessageId,
+  });
+}
+
+/**
+ * Send a media (video) message using a file_key (uploaded with file_type=mp4)
+ */
+export async function sendVideoFeishu(params: {
+  cfg: ClawdbotConfig;
+  to: string;
+  fileKey: string;
+  imageKey?: string;
+  replyToMessageId?: string;
+}): Promise<SendMediaResult> {
+  const { cfg, to, fileKey, imageKey, replyToMessageId } = params;
+  return sendUploadedFileLikeMessageFeishu({
+    cfg,
+    to,
+    fileKey,
+    imageKey,
+    msgType: "media",
+    replyToMessageId,
+  });
 }
 
 /**
@@ -437,6 +510,50 @@ export function detectFileType(
 /**
  * Check if a string is a local file path (not a URL)
  */
+async function tryGetMediaDurationMs(filePath: string): Promise<number | undefined> {
+  try {
+    // ffprobe is commonly available alongside ffmpeg. If not present, we'll just omit duration.
+    const { stdout } = await execFileAsync("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration",
+      "-of",
+      "default=noprint_wrappers=1:nokey=1",
+      filePath,
+    ]);
+
+    const seconds = Number(String(stdout).trim());
+    if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+    return Math.round(seconds * 1000);
+  } catch {
+    return undefined;
+  }
+}
+
+async function tryGenerateVideoThumbnailJpg(params: {
+  videoPath: string;
+  outPath: string;
+}): Promise<boolean> {
+  try {
+    // Generate a representative frame as cover image.
+    // We use the first frame to keep it deterministic.
+    await execFileAsync("ffmpeg", [
+      "-y",
+      "-i",
+      params.videoPath,
+      "-frames:v",
+      "1",
+      "-q:v",
+      "2",
+      params.outPath,
+    ]);
+    return fs.existsSync(params.outPath);
+  } catch {
+    return false;
+  }
+}
+
 function isLocalPath(urlOrPath: string): boolean {
   // Starts with / or ~ or drive letter (Windows)
   if (urlOrPath.startsWith("/") || urlOrPath.startsWith("~") || /^[a-zA-Z]:/.test(urlOrPath)) {
@@ -467,6 +584,10 @@ export async function sendMediaFeishu(params: {
   let buffer: Buffer;
   let name: string;
 
+  // Best-effort: keep a file path around so we can compute duration / thumbnail for video.
+  // If the input is a Buffer or remote URL, we may write a temporary file.
+  let localPath: string | undefined;
+
   if (mediaBuffer) {
     buffer = mediaBuffer;
     name = fileName ?? "file";
@@ -482,6 +603,7 @@ export async function sendMediaFeishu(params: {
       }
       buffer = fs.readFileSync(filePath);
       name = fileName ?? path.basename(filePath);
+      localPath = filePath;
     } else {
       // Remote URL - fetch
       const response = await fetch(mediaUrl);
@@ -502,14 +624,93 @@ export async function sendMediaFeishu(params: {
   if (isImage) {
     const { imageKey } = await uploadImageFeishu({ cfg, image: buffer });
     return sendImageFeishu({ cfg, to, imageKey, replyToMessageId });
-  } else {
-    const fileType = detectFileType(name);
-    const { fileKey } = await uploadFileFeishu({
-      cfg,
-      file: buffer,
-      fileName: name,
-      fileType,
-    });
-    return sendFileFeishu({ cfg, to, fileKey, replyToMessageId });
   }
+
+  const fileType = detectFileType(name);
+
+  // Best-effort: provide duration for audio/video uploads.
+  // Feishu will display duration as 0 if duration is omitted.
+  let durationMs: number | undefined;
+  let tmpPath: string | undefined;
+
+  if (fileType === "mp4" || fileType === "opus") {
+    try {
+      const probePath = localPath;
+      if (probePath) {
+        durationMs = await tryGetMediaDurationMs(probePath);
+      } else {
+        tmpPath = path.join(os.tmpdir(), `feishu_media_${Date.now()}_${Math.random().toString(16).slice(2)}_${name}`);
+        await fs.promises.writeFile(tmpPath, buffer);
+        durationMs = await tryGetMediaDurationMs(tmpPath);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Upload
+  const { fileKey } = await uploadFileFeishu({
+    cfg,
+    file: buffer,
+    fileName: name,
+    fileType,
+    ...(durationMs !== undefined ? { duration: durationMs } : {}),
+  });
+
+  // Cleanup temp probe file if we created one.
+  if (tmpPath) {
+    await fs.promises.unlink(tmpPath).catch(() => {});
+  }
+
+  // Feishu requires msg_type to match the upload file_type.
+  // - file_type=mp4  -> msg_type=media (and include image_key for cover if possible)
+  // - file_type=opus -> msg_type=audio
+  // - other          -> msg_type=file
+  if (fileType === "mp4") {
+    // Best-effort: generate & upload a cover image so clients can render preview correctly.
+    let imageKey: string | undefined;
+    try {
+      const videoPath = localPath;
+      // If we don't have a local path, write a temp file for thumbnail generation.
+      const videoTmpPath = videoPath
+        ? undefined
+        : path.join(
+            os.tmpdir(),
+            `feishu_media_thumb_${Date.now()}_${Math.random().toString(16).slice(2)}_${name}`,
+          );
+
+      if (videoTmpPath) {
+        await fs.promises.writeFile(videoTmpPath, buffer);
+      }
+
+      const thumbPath = path.join(
+        os.tmpdir(),
+        `feishu_cover_${Date.now()}_${Math.random().toString(16).slice(2)}.jpg`,
+      );
+
+      const ok = await tryGenerateVideoThumbnailJpg({
+        videoPath: videoPath ?? videoTmpPath!,
+        outPath: thumbPath,
+      });
+
+      if (ok) {
+        const uploaded = await uploadImageFeishu({ cfg, image: thumbPath });
+        imageKey = uploaded.imageKey;
+      }
+
+      await fs.promises.unlink(thumbPath).catch(() => {});
+      if (videoTmpPath) await fs.promises.unlink(videoTmpPath).catch(() => {});
+    } catch {
+      // ignore
+    }
+
+    return sendVideoFeishu({ cfg, to, fileKey, imageKey, replyToMessageId });
+  }
+
+  if (fileType === "opus") {
+    return sendAudioFeishu({ cfg, to, fileKey, replyToMessageId });
+  }
+
+  return sendFileFeishu({ cfg, to, fileKey, replyToMessageId });
 }
+
