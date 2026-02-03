@@ -352,3 +352,50 @@ export async function editMessageFeishu(params: {
     throw new Error(`Feishu message edit failed: ${response.msg || `code ${response.code}`}`);
   }
 }
+
+/**
+ * Build a Feishu interactive card with title, content and buttons.
+ * Supports markdown content and interactive buttons with actions.
+ */
+export function buildInteractiveCard(params: {
+  title: string;
+  template?: string;
+  content: string;
+  buttons?: Array<{
+    text: string;
+    type?: "primary" | "default";
+    url?: string;
+    value?: Record<string, unknown>;
+  }>;
+}): Record<string, unknown> {
+  const elements: Array<Record<string, unknown>> = [
+    {
+      tag: "markdown",
+      content: params.content,
+    },
+  ];
+
+  if (params.buttons && params.buttons.length > 0) {
+    const actions = params.buttons.map(button => ({
+      tag: "button",
+      text: { tag: "plain_text", content: button.text },
+      type: button.type || "default",
+      ...(button.url ? { url: button.url } : {}),
+      ...(button.value ? { value: button.value } : {}),
+    }));
+
+    elements.push({
+      tag: "action",
+      actions,
+    });
+  }
+
+  return {
+    schema_version: "2.0",
+    header: {
+      title: { tag: "plain_text", content: params.title },
+      template: params.template || "blue",
+    },
+    elements,
+  };
+}

@@ -50,6 +50,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
     reactions: true,
     edit: true,
     reply: true,
+    cards: true,
   },
   agentPrompt: {
     messageToolHints: () => [

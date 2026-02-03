@@ -15,6 +15,8 @@ export {
   updateCardFeishu,
   editMessageFeishu,
   getMessageFeishu,
+  sendMarkdownCardFeishu,
+  buildInteractiveCard,
 } from "./src/send.js";
 export {
   uploadImageFeishu,
@@ -43,6 +45,7 @@ export {
   type MentionTarget,
 } from "./src/mention.js";
 export { feishuPlugin } from "./src/channel.js";
+export { feishuOutbound } from "./src/outbound.js";
 
 const plugin = {
   id: "feishu",
