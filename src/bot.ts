@@ -227,7 +227,7 @@ function parsePostContent(content: string): {
  * Format merge_forward child messages into readable text.
  */
 function formatMergeForwardContent(
-  messages: Array<{ content: string; contentType: string }>,
+  messages: Array<{ content: string; contentType: string; senderName?: string; senderId?: string }>,
 ): string {
   if (messages.length === 0) {
     return "[转发的聊天记录 - 无内容]";
@@ -236,20 +236,22 @@ function formatMergeForwardContent(
   const lines: string[] = ["[转发的聊天记录]", "---"];
 
   for (const msg of messages) {
+    const speaker = msg.senderName || msg.senderId || "未知";
+
     if (msg.contentType === "text" || msg.contentType === "post") {
-      lines.push(msg.content);
+      lines.push(`${speaker}: ${msg.content}`);
     } else if (msg.contentType === "image") {
-      lines.push("[图片]");
+      lines.push(`${speaker}: [图片]`);
     } else if (msg.contentType === "file") {
-      lines.push("[文件]");
+      lines.push(`${speaker}: [文件]`);
     } else if (msg.contentType === "audio") {
-      lines.push("[语音]");
+      lines.push(`${speaker}: [语音]`);
     } else if (msg.contentType === "video") {
-      lines.push("[视频]");
+      lines.push(`${speaker}: [视频]`);
     } else if (msg.contentType === "sticker") {
-      lines.push("[表情]");
+      lines.push(`${speaker}: [表情]`);
     } else {
-      lines.push(`[${msg.contentType}]`);
+      lines.push(`${speaker}: [${msg.contentType}]`);
     }
   }
 
@@ -488,7 +490,18 @@ export async function handleFeishuMessage(params: {
         cfg,
         messageId: ctx.messageId,
       });
-      const formattedContent = formatMergeForwardContent(childMessages);
+
+      // Resolve sender names for child messages (only when ID type is open_id)
+      const messagesWithNames = await Promise.all(
+        childMessages.map(async (msg) => ({
+          ...msg,
+          senderName: (msg.senderId && msg.senderIdType === "open_id")
+            ? await resolveFeishuSenderName({ feishuCfg, senderOpenId: msg.senderId, log })
+            : undefined,
+        }))
+      );
+
+      const formattedContent = formatMergeForwardContent(messagesWithNames);
       ctx = { ...ctx, content: formattedContent };
       log(`feishu: resolved merge_forward with ${childMessages.length} child message(s)`);
     } catch (err) {

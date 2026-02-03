@@ -22,6 +22,8 @@ export type FeishuMergeForwardMessage = {
   content: string;
   contentType: string;
   upperMessageId?: string;
+  senderId?: string;
+  senderIdType?: string;
 };
 
 /**
@@ -124,6 +126,7 @@ export async function getMergeForwardMessagesFeishu(params: {
         msg_type?: string;
         body?: { content?: string };
         upper_message_id?: string;
+        sender?: { id?: string; id_type?: string };
       }>;
     };
   };
@@ -161,6 +164,8 @@ export async function getMergeForwardMessagesFeishu(params: {
       content,
       contentType: item.msg_type ?? "text",
       upperMessageId: item.upper_message_id,
+      senderId: item.sender?.id,
+      senderIdType: item.sender?.id_type,
     });
   }
 
