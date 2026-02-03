@@ -635,7 +635,7 @@ export async function handleFeishuMessage(params: {
 
     // Resolve media from message
     const mediaMaxBytes = (feishuCfg?.mediaMaxMb ?? 30) * 1024 * 1024; // 30MB default
-    const mediaList = await resolveFeishuMediaList({
+    let mediaList = await resolveFeishuMediaList({
       cfg,
       messageId: ctx.messageId,
       messageType: event.message.message_type,
@@ -643,7 +643,6 @@ export async function handleFeishuMessage(params: {
       maxBytes: mediaMaxBytes,
       log,
     });
-    const mediaPayload = buildFeishuMediaPayload(mediaList);
 
     // Fetch quoted/replied message content if parentId exists
     let quotedContent: string | undefined;
@@ -653,11 +652,23 @@ export async function handleFeishuMessage(params: {
         if (quotedMsg) {
           quotedContent = quotedMsg.content;
           log(`feishu: fetched quoted message: ${quotedContent?.slice(0, 100)}`);
+          // Resolve media from quoted message and merge with main media list
+          const quotedMediaList = await resolveFeishuMediaList({
+            cfg,
+            messageId: quotedMsg.messageId,
+            messageType: quotedMsg.contentType,
+            content: quotedMsg.content,
+            maxBytes: mediaMaxBytes,
+            log,
+          });
+          mediaList = [...mediaList, ...quotedMediaList];
+          log(`feishu: resolved ${quotedMediaList.length} media items from quoted message`);
         }
       } catch (err) {
         log(`feishu: failed to fetch quoted message: ${String(err)}`);
       }
     }
+    const mediaPayload = buildFeishuMediaPayload(mediaList);
 
     const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
 
