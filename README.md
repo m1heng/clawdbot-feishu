@@ -1,23 +1,7 @@
-# moltbot-lark
+# clawd-feishu
 
-Only if you are using Lark, and you had check [clawdbot-feishu](https://github.com/m1heng/clawdbot-feishu/pull/98) still not merged this PR, then you can use this plugin.
+Feishu/Lark (飞书) channel plugin for [OpenClaw](https://github.com/openclaw/openclaw).
 
-## Installation
-
-```bash
-openclaw plugins install moltbot-lark
-```
-Don't install both this plugin and [clawdbot-feishu](https://github.com/m1heng/clawdbot-feishu), they are the same plugin.
-
-## Upgrade
-
-```bash
-openclaw plugins update feishu
-```
----
-Below is the README content from clawdbot-feishu repo.
-
----
 > **中文社区资料** - 配置教程、常见问题、使用技巧：[Wiki](https://github.com/m1heng/clawdbot-feishu/wiki)
 
 [English](#english) | [中文](#中文)
