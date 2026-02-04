@@ -582,7 +582,7 @@ export async function handleFeishuMessage(params: {
           limit: historyLimit,
           entry: {
             sender: ctx.senderOpenId,
-            body: `${ctx.senderName ?? ctx.senderOpenId}: ${ctx.content}`,
+            body: `${ctx.senderName ? `sender=${ctx.senderName} (${ctx.senderOpenId})` : `sender=${ctx.senderOpenId}`}: ${ctx.content}`,
             timestamp: Date.now(),
             messageId: ctx.messageId,
           },
@@ -618,6 +618,10 @@ export async function handleFeishuMessage(params: {
       cfg,
       channel: "feishu",
       peer: {
+        // Restore original routing semantics:
+        // - group: route by chat_id
+        // - dm: route by senderOpenId
+        // This keeps DM sessions stable per user and keeps group sessions scoped per chat.
         kind: isGroup ? "group" : "dm",
         id: isGroup ? ctx.chatId : ctx.senderOpenId,
       },
@@ -625,8 +629,8 @@ export async function handleFeishuMessage(params: {
 
     const preview = ctx.content.replace(/\s+/g, " ").slice(0, 160);
     const inboundLabel = isGroup
-      ? `Feishu message in group ${ctx.chatId}`
-      : `Feishu DM from ${ctx.senderOpenId}`;
+      ? `Feishu group chat ${ctx.chatId} (from ${ctx.senderOpenId})`
+      : `Feishu DM from ${ctx.senderOpenId} (chat ${ctx.chatId})`;
 
     core.system.enqueueSystemEvent(`${inboundLabel}: ${preview}`, {
       sessionKey: route.sessionKey,
@@ -669,8 +673,17 @@ export async function handleFeishuMessage(params: {
 
     // Include a readable speaker label so the model can attribute instructions.
     // (DMs already have per-sender sessions, but the prefix is still useful for clarity.)
-    const speaker = ctx.senderName ?? ctx.senderOpenId;
+    const speaker = ctx.senderName
+      ? `sender=${ctx.senderName} (${ctx.senderOpenId})`
+      : `sender=${ctx.senderOpenId}`;
     messageBody = `${speaker}: ${messageBody}`;
+
+    // Pass conversation metadata to the agent.
+    // - chatId: stable conversation identifier (used for routing)
+    // - senderOpenId: user identity (authorization + display name lookup)
+    // - senderName: best-effort display name (can be empty)
+    // - chatType: group vs dm (different behavioral expectations)
+    messageBody += `\n\n[System: chatType=${isGroup ? "group" : "direct"}; chatId=${ctx.chatId}; senderOpenId=${ctx.senderOpenId}; senderName=${ctx.senderName ?? ""}]`;
 
     // If there are mention targets, inform the agent that replies will auto-mention them
     if (ctx.mentionTargets && ctx.mentionTargets.length > 0) {
