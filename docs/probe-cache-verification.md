@@ -20,8 +20,8 @@ console.log(`[probe-cache] Cache MISS for appId=${creds.appId}, calling API...`)
 
 ### 2. Monitor API Calls
 Watch for actual Feishu API calls in the logs. With caching:
-- First call within 5 minutes → API call (cache miss)
-- Subsequent calls within 5 minutes → no API call (cache hit)
+- First call within 10 minutes → API call (cache miss)
+- Subsequent calls within 10 minutes → no API call (cache hit)
 
 ### 3. Expected Behavior
 
@@ -39,10 +39,10 @@ Watch for actual Feishu API calls in the logs. With caching:
 00:00 → API call (cache miss)
 01:00 → cache hit
 02:00 → cache hit
-03:00 → cache hit
-04:00 → cache hit
-05:00 → API call (cache expired)
-06:00 → cache hit
+...
+09:00 → cache hit
+10:00 → API call (cache expired)
+11:00 → cache hit
 ...
 ```
 
@@ -69,11 +69,11 @@ clearProbeCache();
 
 ### API Call Reduction
 - **Before:** ~60 calls/hour = ~1,440 calls/day
-- **After:** ~12 calls/hour = ~288 calls/day
-- **Reduction:** 80% fewer API calls
+- **After:** ~6 calls/hour = ~144 calls/day
+- **Reduction:** 90% fewer API calls
 
 ### Cache Hit Rate (Expected)
-- **Success case:** ~83% hit rate (5 min cache / 6 probes per 5 min)
+- **Success case:** ~90% hit rate (10 min cache / 10 probes per 10 min)
 - **Failure case:** ~0% hit rate (1 min cache ensures fast recovery detection)
 
 ## Implementation Details
@@ -85,7 +85,7 @@ clearProbeCache();
 
 ### Cache Duration
 ```typescript
-const SUCCESS_CACHE_MS = 5 * 60 * 1000; // 5 minutes
+const SUCCESS_CACHE_MS = 10 * 60 * 1000; // 10 minutes
 const FAILURE_CACHE_MS = 1 * 60 * 1000; // 1 minute
 ```
 

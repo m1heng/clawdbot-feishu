@@ -7,10 +7,10 @@ interface CacheEntry {
 
 /**
  * Cache duration in milliseconds
- * - Success: 5 minutes (avoid excessive API calls)
+ * - Success: 10 minutes (avoid excessive API calls)
  * - Failure: 1 minute (detect recovery faster)
  */
-const SUCCESS_CACHE_MS = 5 * 60 * 1000; // 5 minutes
+const SUCCESS_CACHE_MS = 10 * 60 * 1000; // 10 minutes
 const FAILURE_CACHE_MS = 1 * 60 * 1000; // 1 minute
 
 const cache = new Map<string, CacheEntry>();
