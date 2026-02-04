@@ -5,6 +5,7 @@ import { createFeishuWSClient, createEventDispatcher } from "./client.js";
 import { resolveFeishuCredentials } from "./accounts.js";
 import { handleFeishuMessage, type FeishuMessageEvent, type FeishuBotAddedEvent } from "./bot.js";
 import { probeFeishu } from "./probe.js";
+import { MessageDeduplicator } from "./dedup.js";
 
 export type MonitorFeishuOpts = {
   config?: ClawdbotConfig;
@@ -72,11 +73,19 @@ async function monitorWebSocket(params: {
   const chatHistories = new Map<string, HistoryEntry[]>();
 
   const eventDispatcher = createEventDispatcher(feishuCfg);
+  const deduplicator = new MessageDeduplicator();
 
   eventDispatcher.register({
     "im.message.receive_v1": async (data) => {
       try {
         const event = data as unknown as FeishuMessageEvent;
+        
+        const messageId = event.message?.message_id;
+        if (messageId && deduplicator.checkAndMark(messageId)) {
+          log(`feishu: duplicate message detected, ignoring: ${messageId}`);
+          return;
+        }
+
         await handleFeishuMessage({
           cfg,
           event,
