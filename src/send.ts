@@ -5,6 +5,7 @@ import { buildMentionedMessage, buildMentionedCardContent } from "./mention.js";
 import { createFeishuClient } from "./client.js";
 import { resolveReceiveIdType, normalizeFeishuTarget } from "./targets.js";
 import { getFeishuRuntime } from "./runtime.js";
+import { containsMarkdownTable, splitIntoSegments, buildCardElements } from "./table-parser.js";
 
 export type FeishuMessageInfo = {
   messageId: string;
@@ -275,9 +276,21 @@ export async function updateCardFeishu(params: {
 
 /**
  * Build a Feishu interactive card with markdown content.
- * Cards render markdown properly (code blocks, tables, links, etc.)
+ * Cards render markdown properly (code blocks, bold/italic, links, etc.)
+ *
+ * Markdown tables are automatically converted to native Feishu table
+ * components, since Feishu's card markdown tag does not support table syntax.
  */
 export function buildMarkdownCard(text: string): Record<string, unknown> {
+  if (containsMarkdownTable(text)) {
+    const segments = splitIntoSegments(text);
+    const elements = buildCardElements(segments);
+    return {
+      config: { wide_screen_mode: true },
+      elements,
+    };
+  }
+
   return {
     config: {
       wide_screen_mode: true,
