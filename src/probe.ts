@@ -1,6 +1,7 @@
 import type { FeishuConfig, FeishuProbeResult } from "./types.js";
 import { createFeishuClient } from "./client.js";
 import { resolveFeishuCredentials } from "./accounts.js";
+import { getCachedProbeResult, setCachedProbeResult } from "./probe-cache.js";
 
 export async function probeFeishu(cfg?: FeishuConfig): Promise<FeishuProbeResult> {
   const creds = resolveFeishuCredentials(cfg);
@@ -11,6 +12,15 @@ export async function probeFeishu(cfg?: FeishuConfig): Promise<FeishuProbeResult
     };
   }
 
+  // Check cache first
+  const cached = getCachedProbeResult(creds.appId);
+  if (cached) {
+    return cached;
+  }
+
+  // Perform actual probe
+  let result: FeishuProbeResult;
+  
   try {
     const client = createFeishuClient(cfg!);
     // Use im.chat.list as a simple connectivity test
@@ -22,25 +32,30 @@ export async function probeFeishu(cfg?: FeishuConfig): Promise<FeishuProbeResult
     });
 
     if (response.code !== 0) {
-      return {
+      result = {
         ok: false,
         appId: creds.appId,
         error: `API error: ${response.msg || `code ${response.code}`}`,
       };
+    } else {
+      const bot = response.bot || response.data?.bot;
+      result = {
+        ok: true,
+        appId: creds.appId,
+        botName: bot?.bot_name,
+        botOpenId: bot?.open_id,
+      };
     }
-
-    const bot = response.bot || response.data?.bot;
-    return {
-      ok: true,
-      appId: creds.appId,
-      botName: bot?.bot_name,
-      botOpenId: bot?.open_id,
-    };
   } catch (err) {
-    return {
+    result = {
       ok: false,
       appId: creds.appId,
       error: err instanceof Error ? err.message : String(err),
     };
   }
+
+  // Cache the result
+  setCachedProbeResult(result, creds.appId);
+  
+  return result;
 }
