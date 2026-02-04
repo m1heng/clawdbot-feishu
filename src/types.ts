@@ -52,4 +52,5 @@ export type FeishuMediaInfo = {
   path: string;
   contentType?: string;
   placeholder: string;
+  fileName?: string;
 };

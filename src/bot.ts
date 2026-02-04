@@ -395,6 +395,7 @@ async function resolveFeishuMediaList(params: {
       path: saved.path,
       contentType: saved.contentType,
       placeholder: inferPlaceholder(messageType),
+      fileName,
     });
 
     log?.(`feishu: downloaded ${messageType} media, saved to ${saved.path}`);
