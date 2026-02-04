@@ -149,10 +149,23 @@ channels:
     webhookPath: "/feishu/events"
     # DM policy: "pairing" | "open" | "allowlist"
     dmPolicy: "pairing"
+    # DM allowlist (senderOpenId / sender display name). Supports wildcard "*".
+    allowFrom: ["ou_xxx"]
     # Group policy: "open" | "allowlist" | "disabled"
     groupPolicy: "allowlist"
+    # Group allowlist (chat_id like oc_xxx). Supports wildcard "*".
+    groupAllowFrom: ["oc_xxx"]
     # Require @mention in groups
     requireMention: true
+    # Per-group overrides (keyed by chat_id)
+    groups:
+      oc_xxx:
+        # Sender allowlist inside this group (senderOpenId / sender display name).
+        # Supports wildcard "*" to allow all members (recommended for large/rotating groups).
+        allowFrom: ["*"]
+        # When true, messages from non-allowlisted senders are still forwarded to the agent,
+        # but outbound replies are suppressed (useful for later summarization).
+        forwardNonAllowlistedSenders: false
     # Max media size in MB (default: 30)
     mediaMaxMb: 30
     # Render mode for bot replies: "auto" | "raw" | "card"
@@ -377,10 +390,21 @@ channels:
     webhookPath: "/feishu/events"
     # 私聊策略: "pairing" | "open" | "allowlist"
     dmPolicy: "pairing"
+    # 私聊 allowlist（senderOpenId / 发送者显示名），支持通配符 "*"
+    allowFrom: ["ou_xxx"]
     # 群聊策略: "open" | "allowlist" | "disabled"
     groupPolicy: "allowlist"
+    # 群聊 allowlist（chat_id，如 oc_xxx），支持通配符 "*"
+    groupAllowFrom: ["oc_xxx"]
     # 群聊是否需要 @机器人
     requireMention: true
+    # 单群配置（以 chat_id 为 key）
+    groups:
+      oc_xxx:
+        # 群内发送者 allowlist（senderOpenId / 发送者显示名），支持通配符 "*"（适合成员频繁变动的大群）
+        allowFrom: ["*"]
+        # 为 true 时：非 allowlist 发送者的消息仍会转发给 agent，但会抑制机器人出站回复（便于后续总结）
+        forwardNonAllowlistedSenders: false
     # 媒体文件最大大小 (MB, 默认 30)
     mediaMaxMb: 30
     # 回复渲染模式: "auto" | "raw" | "card"
