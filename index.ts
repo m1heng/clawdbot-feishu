@@ -24,6 +24,7 @@ export {
   sendMediaFeishu,
 } from "./src/media.js";
 export { probeFeishu } from "./src/probe.js";
+export { clearProbeCache } from "./src/probe-cache.js";
 export {
   addReactionFeishu,
   removeReactionFeishu,
