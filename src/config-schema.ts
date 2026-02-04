@@ -79,6 +79,8 @@ export const FeishuGroupSchema = z
     skills: z.array(z.string()).optional(),
     enabled: z.boolean().optional(),
     allowFrom: z.array(z.union([z.string(), z.number()])).optional(),
+    /** If true, forward messages from non-allowlisted senders to the agent but suppress outbound replies. */
+    forwardNonAllowlistedSenders: z.boolean().optional(),
     systemPrompt: z.string().optional(),
   })
   .strict();

@@ -534,6 +534,9 @@ export async function handleFeishuMessage(params: {
     feishuCfg?.historyLimit ?? cfg.messages?.groupChat?.historyLimit ?? DEFAULT_GROUP_HISTORY_LIMIT,
   );
 
+  // When true, the agent may still run (for context/summarization) but we suppress outbound replies.
+  let suppressReply = false;
+
   if (isGroup) {
     const groupPolicy = feishuCfg?.groupPolicy ?? "open";
     const groupAllowFrom = feishuCfg?.groupAllowFrom ?? [];
@@ -553,7 +556,11 @@ export async function handleFeishuMessage(params: {
     }
 
     // Additional sender-level allowlist check if group has specific allowFrom config
+    // Semantics:
+    // - If sender is NOT allowed, we should NOT respond.
+    // - But we may still want to forward the message to the agent (for later summarization).
     const senderAllowFrom = groupConfig?.allowFrom ?? [];
+
     if (senderAllowFrom.length > 0) {
       const senderAllowed = isFeishuGroupAllowed({
         groupPolicy: "allowlist",
@@ -561,9 +568,34 @@ export async function handleFeishuMessage(params: {
         senderId: ctx.senderOpenId,
         senderName: ctx.senderName,
       });
+
       if (!senderAllowed) {
-        log(`feishu: sender ${ctx.senderOpenId} not in group ${ctx.chatId} sender allowlist`);
-        return;
+        suppressReply = true;
+
+        // Always record to pending history so later an allowed user can ask for a recap.
+        if (chatHistories) {
+          recordPendingHistoryEntryIfEnabled({
+            historyMap: chatHistories,
+            historyKey: ctx.chatId,
+            limit: historyLimit,
+            entry: {
+              sender: ctx.senderOpenId,
+              body: `${ctx.senderName ? `sender=${ctx.senderName} (${ctx.senderOpenId})` : `sender=${ctx.senderOpenId}`}: ${ctx.content}`,
+              timestamp: Date.now(),
+              messageId: ctx.messageId,
+            },
+          });
+        }
+
+        // Optional: also forward to agent immediately (but suppress outbound send)
+        // so the agent can "know" what was said even before an allowed user speaks.
+        const forward = groupConfig?.forwardNonAllowlistedSenders ?? false;
+        if (!forward) {
+          log(`feishu: sender ${ctx.senderOpenId} not in group ${ctx.chatId} sender allowlist; recording to history only (forward=false)`);
+          return;
+        }
+
+        log(`feishu: sender ${ctx.senderOpenId} not in group ${ctx.chatId} sender allowlist; forwarding to agent with reply suppressed (forward=true)`);
       }
     }
 
@@ -573,7 +605,10 @@ export async function handleFeishuMessage(params: {
       groupConfig,
     });
 
-    if (requireMention && !ctx.mentionedBot) {
+    // Mention gating should gate *responses*, not visibility.
+    // If we're already suppressing replies (e.g. sender not in allowlist), we still want the agent to see the message
+    // when forwardNonAllowlistedSenders=true.
+    if (requireMention && !ctx.mentionedBot && !suppressReply) {
       log(`feishu: message in group ${ctx.chatId} did not mention bot, recording to history`);
       if (chatHistories) {
         recordPendingHistoryEntryIfEnabled({
@@ -582,7 +617,7 @@ export async function handleFeishuMessage(params: {
           limit: historyLimit,
           entry: {
             sender: ctx.senderOpenId,
-            body: `${ctx.senderName ?? ctx.senderOpenId}: ${ctx.content}`,
+            body: `${ctx.senderName ? `sender=${ctx.senderName} (${ctx.senderOpenId})` : `sender=${ctx.senderOpenId}`}: ${ctx.content}`,
             timestamp: Date.now(),
             messageId: ctx.messageId,
           },
@@ -618,6 +653,10 @@ export async function handleFeishuMessage(params: {
       cfg,
       channel: "feishu",
       peer: {
+        // Restore original routing semantics:
+        // - group: route by chat_id
+        // - dm: route by senderOpenId
+        // This keeps DM sessions stable per user and keeps group sessions scoped per chat.
         kind: isGroup ? "group" : "dm",
         id: isGroup ? ctx.chatId : ctx.senderOpenId,
       },
@@ -625,8 +664,8 @@ export async function handleFeishuMessage(params: {
 
     const preview = ctx.content.replace(/\s+/g, " ").slice(0, 160);
     const inboundLabel = isGroup
-      ? `Feishu message in group ${ctx.chatId}`
-      : `Feishu DM from ${ctx.senderOpenId}`;
+      ? `Feishu group chat ${ctx.chatId} (from ${ctx.senderOpenId})`
+      : `Feishu DM from ${ctx.senderOpenId} (chat ${ctx.chatId})`;
 
     core.system.enqueueSystemEvent(`${inboundLabel}: ${preview}`, {
       sessionKey: route.sessionKey,
@@ -669,8 +708,17 @@ export async function handleFeishuMessage(params: {
 
     // Include a readable speaker label so the model can attribute instructions.
     // (DMs already have per-sender sessions, but the prefix is still useful for clarity.)
-    const speaker = ctx.senderName ?? ctx.senderOpenId;
+    const speaker = ctx.senderName
+      ? `sender=${ctx.senderName} (${ctx.senderOpenId})`
+      : `sender=${ctx.senderOpenId}`;
     messageBody = `${speaker}: ${messageBody}`;
+
+    // Pass conversation metadata to the agent.
+    // - chatId: stable conversation identifier (used for routing)
+    // - senderOpenId: user identity (authorization + display name lookup)
+    // - senderName: best-effort display name (can be empty)
+    // - chatType: group vs dm (different behavioral expectations)
+    messageBody += `\n\n[System: chatType=${isGroup ? "group" : "direct"}; chatId=${ctx.chatId}; senderOpenId=${ctx.senderOpenId}; senderName=${ctx.senderName ?? ""}]`;
 
     // If there are mention targets, inform the agent that replies will auto-mention them
     if (ctx.mentionTargets && ctx.mentionTargets.length > 0) {
@@ -793,8 +841,10 @@ export async function handleFeishuMessage(params: {
       agentId: route.agentId,
       runtime: runtime as RuntimeEnv,
       chatId: ctx.chatId,
-      replyToMessageId: ctx.messageId,
+      // If replies are suppressed, don't attach typing indicators to this message.
+      replyToMessageId: suppressReply ? undefined : ctx.messageId,
       mentionTargets: ctx.mentionTargets,
+      allowSend: !suppressReply,
     });
 
     log(`feishu: dispatching to agent (session=${route.sessionKey})`);

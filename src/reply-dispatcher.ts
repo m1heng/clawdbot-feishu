@@ -36,11 +36,14 @@ export type CreateFeishuReplyDispatcherParams = {
   replyToMessageId?: string;
   /** Mention targets, will be auto-included in replies */
   mentionTargets?: MentionTarget[];
+  /** When false, run the agent but drop outbound replies (no typing indicator, no send). */
+  allowSend?: boolean;
 };
 
 export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherParams) {
   const core = getFeishuRuntime();
   const { cfg, agentId, chatId, replyToMessageId, mentionTargets } = params;
+  const allowSend = params.allowSend ?? true;
 
   const prefixContext = createReplyPrefixContext({
     cfg,
@@ -53,11 +56,13 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
 
   const typingCallbacks = createTypingCallbacks({
     start: async () => {
+      if (!allowSend) return;
       if (!replyToMessageId) return;
       typingState = await addTypingIndicator({ cfg, messageId: replyToMessageId });
       params.runtime.log?.(`feishu: added typing indicator reaction`);
     },
     stop: async () => {
+      if (!allowSend) return;
       if (!typingState) return;
       await removeTypingIndicator({ cfg, state: typingState });
       typingState = null;
@@ -99,6 +104,11 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
       humanDelay: core.channel.reply.resolveHumanDelayConfig(cfg, agentId),
       onReplyStart: typingCallbacks.onReplyStart,
       deliver: async (payload: ReplyPayload) => {
+        if (!allowSend) {
+          params.runtime.log?.(`feishu deliver: allowSend=false (reply suppressed)`);
+          return;
+        }
+
         params.runtime.log?.(`feishu deliver called: text=${payload.text?.slice(0, 100)}`);
         const text = payload.text ?? "";
         if (!text.trim()) {
