@@ -201,12 +201,9 @@ export async function uploadImageFeishu(params: {
   accountId?: string;
 }): Promise<UploadImageResult> {
   const { cfg, image, imageType = "message", accountId } = params;
-  const account = resolveFeishuAccount({ cfg, accountId });
-  if (!account.configured) {
-    throw new Error(`Feishu account "${account.accountId}" not configured`);
-  }
 
-  const client = createFeishuClient(account);
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  const client = createFeishuClient(feishuCfg);
 
   // SDK expects a Readable stream, not a Buffer
   // Use type assertion since SDK actually accepts any Readable at runtime
@@ -248,12 +245,10 @@ export async function uploadFileFeishu(params: {
   accountId?: string;
 }): Promise<UploadFileResult> {
   const { cfg, file, fileName, fileType, duration, accountId } = params;
-  const account = resolveFeishuAccount({ cfg, accountId });
-  if (!account.configured) {
-    throw new Error(`Feishu account "${account.accountId}" not configured`);
-  }
-
-  const client = createFeishuClient(account);
+  
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  
+  const client = createFeishuClient(feishuCfg);
 
   // SDK expects a Readable stream, not a Buffer
   // Use type assertion since SDK actually accepts any Readable at runtime
@@ -294,12 +289,9 @@ export async function sendImageFeishu(params: {
   accountId?: string;
 }): Promise<SendMediaResult> {
   const { cfg, to, imageKey, replyToMessageId, accountId } = params;
-  const account = resolveFeishuAccount({ cfg, accountId });
-  if (!account.configured) {
-    throw new Error(`Feishu account "${account.accountId}" not configured`);
-  }
 
-  const client = createFeishuClient(account);
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  const client = createFeishuClient(feishuCfg);
   const receiveId = normalizeFeishuTarget(to);
   if (!receiveId) {
     throw new Error(`Invalid Feishu target: ${to}`);
@@ -357,12 +349,9 @@ export async function sendFileFeishu(params: {
   accountId?: string;
 }): Promise<SendMediaResult> {
   const { cfg, to, fileKey, replyToMessageId, accountId } = params;
-  const account = resolveFeishuAccount({ cfg, accountId });
-  if (!account.configured) {
-    throw new Error(`Feishu account "${account.accountId}" not configured`);
-  }
 
-  const client = createFeishuClient(account);
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+  const client = createFeishuClient(feishuCfg);
   const receiveId = normalizeFeishuTarget(to);
   if (!receiveId) {
     throw new Error(`Invalid Feishu target: ${to}`);
@@ -480,16 +469,12 @@ function getAllowedWorkspaceRoot(): string {
 
 /**
  * Resolve and validate a local file path against the workspace root.
- * Rejects absolute paths, paths with .., and paths outside workspace.
+ * Accepts absolute paths but only if they are within the workspace root.
+ * Rejects paths with .., home directory expansion, and paths outside workspace.
  * Returns the resolved absolute path if valid, otherwise throws an error.
  */
 function resolveAndValidatePath(rawPath: string): string {
   const workspaceRoot = getAllowedWorkspaceRoot();
-
-  // Reject absolute paths (they can access arbitrary files)
-  if (path.isAbsolute(rawPath)) {
-    throw new Error(`Absolute paths are not allowed for security reasons: ${rawPath}`);
-  }
 
   // Reject home directory expansion
   if (rawPath.startsWith("~") || rawPath.startsWith("$HOME")) {
@@ -501,8 +486,14 @@ function resolveAndValidatePath(rawPath: string): string {
     throw new Error(`Path traversal is not allowed for security reasons: ${rawPath}`);
   }
 
-  // Resolve relative to workspace root
-  const resolvedPath = path.resolve(workspaceRoot, rawPath);
+  let resolvedPath: string;
+  if (path.isAbsolute(rawPath)) {
+    // Absolute path - resolve and verify it's within workspace
+    resolvedPath = path.resolve(rawPath);
+  } else {
+    // Relative path - resolve against workspace root
+    resolvedPath = path.resolve(workspaceRoot, rawPath);
+  }
 
   // Verify the resolved path is within workspace root
   const relativePath = path.relative(workspaceRoot, resolvedPath);
@@ -527,33 +518,41 @@ export async function sendMediaFeishu(params: {
 }): Promise<SendMediaResult> {
   const { cfg, to, mediaUrl, mediaBuffer, fileName, replyToMessageId, accountId } = params;
 
+  console.error(`[feishu] sendMediaFeishu: mediaUrl=${mediaUrl}, fileName=${fileName}`);
+
   let buffer: Buffer;
   let name: string;
 
   if (mediaBuffer) {
     buffer = mediaBuffer;
     name = fileName ?? "file";
+    console.error(`[feishu] Using buffer: ${buffer.length} bytes`);
   } else if (mediaUrl) {
+    console.error(`[feishu] Processing mediaUrl: ${mediaUrl}`);
     if (isLocalPath(mediaUrl)) {
       // Local file path - resolve and validate against workspace
       const filePath = mediaUrl.replace("file://", "");
 
-      // Validate and resolve path to prevent arbitrary file access
+      console.error(`[feishu] Validating path: ${filePath}`);
       const safePath = resolveAndValidatePath(filePath);
+      console.error(`[feishu] Safe path: ${safePath}`);
 
       if (!fs.existsSync(safePath)) {
         throw new Error(`Local file not found: ${safePath}`);
       }
       buffer = fs.readFileSync(safePath);
       name = fileName ?? path.basename(safePath);
+      console.error(`[feishu] Read file: ${name}, ${buffer.length} bytes`);
     } else {
       // Remote URL - fetch
+      console.error(`[feishu] Fetching remote URL...`);
       const response = await fetch(mediaUrl);
       if (!response.ok) {
         throw new Error(`Failed to fetch media from URL: ${response.status}`);
       }
       buffer = Buffer.from(await response.arrayBuffer());
       name = fileName ?? (path.basename(new URL(mediaUrl).pathname) || "file");
+      console.error(`[feishu] Fetched: ${name}, ${buffer.length} bytes`);
     }
   } else {
     throw new Error("Either mediaUrl or mediaBuffer must be provided");
@@ -562,12 +561,16 @@ export async function sendMediaFeishu(params: {
   // Determine if it's an image based on extension
   const ext = path.extname(name).toLowerCase();
   const isImage = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".ico", ".tiff"].includes(ext);
+  console.error(`[feishu] File type: ${ext}, isImage=${isImage}`);
 
   if (isImage) {
+    console.error(`[feishu] Uploading as image...`);
     const { imageKey } = await uploadImageFeishu({ cfg, image: buffer, accountId });
+    console.error(`[feishu] Image uploaded: ${imageKey}`);
     return sendImageFeishu({ cfg, to, imageKey, replyToMessageId, accountId });
   } else {
     const fileType = detectFileType(name);
+    console.error(`[feishu] Uploading as file: type=${fileType}`);
     const { fileKey } = await uploadFileFeishu({
       cfg,
       file: buffer,
@@ -575,6 +578,7 @@ export async function sendMediaFeishu(params: {
       fileType,
       accountId,
     });
+    console.error(`[feishu] File uploaded: ${fileKey}`);
     return sendFileFeishu({ cfg, to, fileKey, replyToMessageId, accountId });
   }
 }
