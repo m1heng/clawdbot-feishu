@@ -469,6 +469,51 @@ function isLocalPath(urlOrPath: string): boolean {
 }
 
 /**
+ * Get the allowed workspace root directory for file access.
+ * This prevents arbitrary file system access.
+ */
+function getAllowedWorkspaceRoot(): string {
+  // Try OpenClaw workspace from environment
+  const workspace = process.env.OPENCLAW_WORKSPACE || process.env.WORKSPACE || process.cwd();
+  return path.resolve(workspace);
+}
+
+/**
+ * Resolve and validate a local file path against the workspace root.
+ * Rejects absolute paths, paths with .., and paths outside workspace.
+ * Returns the resolved absolute path if valid, otherwise throws an error.
+ */
+function resolveAndValidatePath(rawPath: string): string {
+  const workspaceRoot = getAllowedWorkspaceRoot();
+
+  // Reject absolute paths (they can access arbitrary files)
+  if (path.isAbsolute(rawPath)) {
+    throw new Error(`Absolute paths are not allowed for security reasons: ${rawPath}`);
+  }
+
+  // Reject home directory expansion
+  if (rawPath.startsWith("~") || rawPath.startsWith("$HOME")) {
+    throw new Error(`Home directory expansion is not allowed for security reasons: ${rawPath}`);
+  }
+
+  // Reject path traversal attempts
+  if (rawPath.includes("..") || rawPath.includes("~/")) {
+    throw new Error(`Path traversal is not allowed for security reasons: ${rawPath}`);
+  }
+
+  // Resolve relative to workspace root
+  const resolvedPath = path.resolve(workspaceRoot, rawPath);
+
+  // Verify the resolved path is within workspace root
+  const relativePath = path.relative(workspaceRoot, resolvedPath);
+  if (relativePath.startsWith("..")) {
+    throw new Error(`Path outside workspace root is not allowed: ${resolvedPath}`);
+  }
+
+  return resolvedPath;
+}
+
+/**
  * Upload and send media (image or file) from URL, local path, or buffer
  */
 export async function sendMediaFeishu(params: {
@@ -490,16 +535,17 @@ export async function sendMediaFeishu(params: {
     name = fileName ?? "file";
   } else if (mediaUrl) {
     if (isLocalPath(mediaUrl)) {
-      // Local file path - read directly
-      const filePath = mediaUrl.startsWith("~")
-        ? mediaUrl.replace("~", process.env.HOME ?? "")
-        : mediaUrl.replace("file://", "");
+      // Local file path - resolve and validate against workspace
+      const filePath = mediaUrl.replace("file://", "");
 
-      if (!fs.existsSync(filePath)) {
-        throw new Error(`Local file not found: ${filePath}`);
+      // Validate and resolve path to prevent arbitrary file access
+      const safePath = resolveAndValidatePath(filePath);
+
+      if (!fs.existsSync(safePath)) {
+        throw new Error(`Local file not found: ${safePath}`);
       }
-      buffer = fs.readFileSync(filePath);
-      name = fileName ?? path.basename(filePath);
+      buffer = fs.readFileSync(safePath);
+      name = fileName ?? path.basename(safePath);
     } else {
       // Remote URL - fetch
       const response = await fetch(mediaUrl);
