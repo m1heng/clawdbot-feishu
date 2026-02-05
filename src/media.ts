@@ -201,12 +201,9 @@ export async function uploadImageFeishu(params: {
   accountId?: string;
 }): Promise<UploadImageResult> {
   const { cfg, image, imageType = "message", accountId } = params;
-  const account = resolveFeishuAccount({ cfg, accountId });
-  if (!account.configured) {
-    throw new Error(`Feishu account "${account.accountId}" not configured`);
-  }
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
 
-  const client = createFeishuClient(account);
+  const client = createFeishuClient(feishuCfg);
 
   // SDK expects a Readable stream, not a Buffer
   // Use type assertion since SDK actually accepts any Readable at runtime
@@ -248,12 +245,9 @@ export async function uploadFileFeishu(params: {
   accountId?: string;
 }): Promise<UploadFileResult> {
   const { cfg, file, fileName, fileType, duration, accountId } = params;
-  const account = resolveFeishuAccount({ cfg, accountId });
-  if (!account.configured) {
-    throw new Error(`Feishu account "${account.accountId}" not configured`);
-  }
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
 
-  const client = createFeishuClient(account);
+  const client = createFeishuClient(feishuCfg);
 
   // SDK expects a Readable stream, not a Buffer
   // Use type assertion since SDK actually accepts any Readable at runtime
@@ -294,12 +288,9 @@ export async function sendImageFeishu(params: {
   accountId?: string;
 }): Promise<SendMediaResult> {
   const { cfg, to, imageKey, replyToMessageId, accountId } = params;
-  const account = resolveFeishuAccount({ cfg, accountId });
-  if (!account.configured) {
-    throw new Error(`Feishu account "${account.accountId}" not configured`);
-  }
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
 
-  const client = createFeishuClient(account);
+  const client = createFeishuClient(feishuCfg);
   const receiveId = normalizeFeishuTarget(to);
   if (!receiveId) {
     throw new Error(`Invalid Feishu target: ${to}`);
@@ -357,12 +348,9 @@ export async function sendFileFeishu(params: {
   accountId?: string;
 }): Promise<SendMediaResult> {
   const { cfg, to, fileKey, replyToMessageId, accountId } = params;
-  const account = resolveFeishuAccount({ cfg, accountId });
-  if (!account.configured) {
-    throw new Error(`Feishu account "${account.accountId}" not configured`);
-  }
+  const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
 
-  const client = createFeishuClient(account);
+  const client = createFeishuClient(feishuCfg);
   const receiveId = normalizeFeishuTarget(to);
   if (!receiveId) {
     throw new Error(`Invalid Feishu target: ${to}`);
