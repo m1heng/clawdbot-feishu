@@ -482,40 +482,32 @@ export async function sendMediaFeishu(params: {
 }): Promise<SendMediaResult> {
   const { cfg, to, mediaUrl, mediaBuffer, fileName, replyToMessageId, accountId } = params;
 
-  console.log(`[feishu] sendMediaFeishu called: to=${to}, mediaUrl=${mediaUrl}, fileName=${fileName}, accountId=${accountId}`);
-
   let buffer: Buffer;
   let name: string;
 
   if (mediaBuffer) {
     buffer = mediaBuffer;
     name = fileName ?? "file";
-    console.log(`[feishu] Using provided buffer, size=${buffer.length} bytes`);
   } else if (mediaUrl) {
-    console.log(`[feishu] Processing mediaUrl: ${mediaUrl}`);
     if (isLocalPath(mediaUrl)) {
       // Local file path - read directly
       const filePath = mediaUrl.startsWith("~")
         ? mediaUrl.replace("~", process.env.HOME ?? "")
         : mediaUrl.replace("file://", "");
 
-      console.log(`[feishu] Local file path detected: ${filePath}`);
       if (!fs.existsSync(filePath)) {
         throw new Error(`Local file not found: ${filePath}`);
       }
       buffer = fs.readFileSync(filePath);
       name = fileName ?? path.basename(filePath);
-      console.log(`[feishu] Read file: ${name}, size=${buffer.length} bytes`);
     } else {
       // Remote URL - fetch
-      console.log(`[feishu] Remote URL detected, fetching...`);
       const response = await fetch(mediaUrl);
       if (!response.ok) {
         throw new Error(`Failed to fetch media from URL: ${response.status}`);
       }
       buffer = Buffer.from(await response.arrayBuffer());
       name = fileName ?? (path.basename(new URL(mediaUrl).pathname) || "file");
-      console.log(`[feishu] Fetched remote file: ${name}, size=${buffer.length} bytes`);
     }
   } else {
     throw new Error("Either mediaUrl or mediaBuffer must be provided");
@@ -524,16 +516,12 @@ export async function sendMediaFeishu(params: {
   // Determine if it's an image based on extension
   const ext = path.extname(name).toLowerCase();
   const isImage = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".ico", ".tiff"].includes(ext);
-  console.log(`[feishu] File extension: ${ext}, isImage=${isImage}`);
 
   if (isImage) {
-    console.log(`[feishu] Uploading as image...`);
     const { imageKey } = await uploadImageFeishu({ cfg, image: buffer, accountId });
-    console.log(`[feishu] Image uploaded: imageKey=${imageKey}`);
     return sendImageFeishu({ cfg, to, imageKey, replyToMessageId, accountId });
   } else {
     const fileType = detectFileType(name);
-    console.log(`[feishu] Uploading as file: fileType=${fileType}`);
     const { fileKey } = await uploadFileFeishu({
       cfg,
       file: buffer,
@@ -541,7 +529,6 @@ export async function sendMediaFeishu(params: {
       fileType,
       accountId,
     });
-    console.log(`[feishu] File uploaded: fileKey=${fileKey}`);
     return sendFileFeishu({ cfg, to, fileKey, replyToMessageId, accountId });
   }
 }

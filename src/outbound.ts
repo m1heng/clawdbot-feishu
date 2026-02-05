@@ -21,14 +21,10 @@ export const feishuOutbound: ChannelOutboundAdapter = {
     // Upload and send media if URL provided
     if (mediaUrl) {
       try {
-        console.log(`[feishu] Uploading media: ${mediaUrl}`);
         const result = await sendMediaFeishu({ cfg, to, mediaUrl, accountId });
-        console.log(`[feishu] Upload successful: messageId=${result.messageId}, chatId=${result.chatId}`);
         return { channel: "feishu", ...result };
       } catch (err) {
-        // Log the error for debugging
-        console.error(`[feishu] sendMediaFeishu failed:`, err);
-        console.error(`[feishu] Error stack:`, err instanceof Error ? err.stack : "No stack");
+        console.error(`[feishu] sendMediaFeishu failed:`, err instanceof Error ? err.message : String(err));
         // Fallback to URL link if upload fails
         const fallbackText = `📎 ${mediaUrl}`;
         const result = await sendMessageFeishu({ cfg, to, text: fallbackText, accountId });
