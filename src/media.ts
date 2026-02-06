@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { Readable } from "stream";
+import { execFileSync } from "child_process";
 
 export type DownloadImageResult = {
   buffer: Buffer;
@@ -410,6 +411,70 @@ export async function sendFileFeishu(params: {
 }
 
 /**
+ * Send an audio/video message using a file_key.
+ * Note: For file_type=mp4/opus uploads, Feishu expects msg_type="media".
+ */
+export async function sendMediaMessageFeishu(params: {
+  cfg: ClawdbotConfig;
+  to: string;
+  fileKey: string;
+  replyToMessageId?: string;
+  accountId?: string;
+}): Promise<SendMediaResult> {
+  const { cfg, to, fileKey, replyToMessageId, accountId } = params;
+  const account = resolveFeishuAccount({ cfg, accountId });
+  if (!account.configured) {
+    throw new Error(`Feishu account "${account.accountId}" not configured`);
+  }
+
+  const client = createFeishuClient(account);
+  const receiveId = normalizeFeishuTarget(to);
+  if (!receiveId) {
+    throw new Error(`Invalid Feishu target: ${to}`);
+  }
+
+  const receiveIdType = resolveReceiveIdType(receiveId);
+  const content = JSON.stringify({ file_key: fileKey });
+
+  if (replyToMessageId) {
+    const response = await client.im.message.reply({
+      path: { message_id: replyToMessageId },
+      data: {
+        content,
+        msg_type: "media",
+      },
+    });
+
+    if (response.code !== 0) {
+      throw new Error(`Feishu media reply failed: ${response.msg || `code ${response.code}`}`);
+    }
+
+    return {
+      messageId: response.data?.message_id ?? "unknown",
+      chatId: receiveId,
+    };
+  }
+
+  const response = await client.im.message.create({
+    params: { receive_id_type: receiveIdType },
+    data: {
+      receive_id: receiveId,
+      content,
+      msg_type: "media",
+    },
+  });
+
+  if (response.code !== 0) {
+    throw new Error(`Feishu media send failed: ${response.msg || `code ${response.code}`}`);
+  }
+
+  return {
+    messageId: response.data?.message_id ?? "unknown",
+    chatId: receiveId,
+  };
+}
+
+/**
  * Helper to detect file type from extension
  */
 export function detectFileType(
@@ -458,6 +523,34 @@ function isLocalPath(urlOrPath: string): boolean {
 }
 
 /**
+ * Try to probe media duration (ms) using ffprobe.
+ * Feishu requires duration for some audio/video uploads.
+ */
+function probeDurationMs(filePath: string): number | undefined {
+  try {
+    const out = execFileSync(
+      "ffprobe",
+      [
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=nw=1:nk=1",
+        filePath,
+      ],
+      { encoding: "utf8" },
+    ).trim();
+
+    const seconds = Number.parseFloat(out);
+    if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+    return Math.round(seconds * 1000);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Upload and send media (image or file) from URL, local path, or buffer
  */
 export async function sendMediaFeishu(params: {
@@ -473,6 +566,7 @@ export async function sendMediaFeishu(params: {
 
   let buffer: Buffer;
   let name: string;
+  let localFilePath: string | undefined;
 
   if (mediaBuffer) {
     buffer = mediaBuffer;
@@ -487,6 +581,8 @@ export async function sendMediaFeishu(params: {
       if (!fs.existsSync(filePath)) {
         throw new Error(`Local file not found: ${filePath}`);
       }
+
+      localFilePath = filePath;
       buffer = fs.readFileSync(filePath);
       name = fileName ?? path.basename(filePath);
     } else {
@@ -509,15 +605,28 @@ export async function sendMediaFeishu(params: {
   if (isImage) {
     const { imageKey } = await uploadImageFeishu({ cfg, image: buffer, accountId });
     return sendImageFeishu({ cfg, to, imageKey, replyToMessageId, accountId });
-  } else {
-    const fileType = detectFileType(name);
-    const { fileKey } = await uploadFileFeishu({
-      cfg,
-      file: buffer,
-      fileName: name,
-      fileType,
-      accountId,
-    });
-    return sendFileFeishu({ cfg, to, fileKey, replyToMessageId, accountId });
   }
+
+  const fileType = detectFileType(name);
+
+  const duration =
+    (fileType === "mp4" || fileType === "opus") && localFilePath
+      ? probeDurationMs(localFilePath)
+      : undefined;
+
+  const { fileKey } = await uploadFileFeishu({
+    cfg,
+    // Prefer streaming from disk when we have a local file.
+    file: localFilePath ?? buffer,
+    fileName: name,
+    fileType,
+    duration,
+    accountId,
+  });
+
+  if (fileType === "mp4" || fileType === "opus") {
+    return sendMediaMessageFeishu({ cfg, to, fileKey, replyToMessageId, accountId });
+  }
+
+  return sendFileFeishu({ cfg, to, fileKey, replyToMessageId, accountId });
 }
