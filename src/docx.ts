@@ -79,13 +79,42 @@ function cleanBlocksForInsert(blocks: any[]): { cleaned: any[]; skipped: string[
 // ============ Core Functions ============
 
 async function convertMarkdown(client: Lark.Client, markdown: string) {
+  // Ensure the content is properly encoded as UTF-8
+  // Normalize unicode characters to avoid encoding issues
+  const normalized = markdown.normalize("NFC");
+
   const res = await client.docx.document.convert({
-    data: { content_type: "markdown", content: markdown },
+    data: { content_type: "markdown", content: normalized },
   });
-  if (res.code !== 0) throw new Error(res.msg);
+
+  if (res.code !== 0) {
+    // Provide more detailed error information
+    const errorInfo = {
+      code: res.code,
+      msg: res.msg,
+      content_length: normalized.length,
+      content_preview: normalized.slice(0, 100),
+    };
+    console.error("[feishu_doc] convert failed:", errorInfo);
+    throw new Error(`Markdown conversion failed: ${res.msg} (code: ${res.code})`);
+  }
+
+  // IMPORTANT: The blocks array is NOT in correct order!
+  // We need to use first_level_block_ids to get the correct order.
+  const blocks = res.data?.blocks ?? [];
+  const firstLevelIds = res.data?.first_level_block_ids ?? [];
+
+  // Create a map for quick lookup
+  const blockMap = new Map(blocks.map((b) => [b.block_id, b]));
+
+  // Reorder blocks according to first_level_block_ids
+  const orderedBlocks = firstLevelIds
+    .map((id) => blockMap.get(id))
+    .filter((b) => b !== undefined);
+
   return {
-    blocks: res.data?.blocks ?? [],
-    firstLevelBlockIds: res.data?.first_level_block_ids ?? [],
+    blocks: orderedBlocks,
+    firstLevelBlockIds: firstLevelIds,
   };
 }
 
