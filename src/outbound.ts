@@ -1,7 +1,15 @@
 import type { ChannelOutboundAdapter } from "openclaw/plugin-sdk";
 import { getFeishuRuntime } from "./runtime.js";
-import { sendMessageFeishu } from "./send.js";
+import { sendMessageFeishu, sendMarkdownCardFeishu } from "./send.js";
 import { sendMediaFeishu } from "./media.js";
+import type { FeishuConfig } from "./types.js";
+import { resolveFeishuAccount } from "./accounts.js";
+
+function shouldUseCard(text: string): boolean {
+  if (/```[\s\S]*?```/.test(text)) return true;
+  if (/\|.+\|[\r\n]+\|[-:| ]+\|/.test(text)) return true;
+  return false;
+}
 
 export const feishuOutbound: ChannelOutboundAdapter = {
   deliveryMode: "direct",
@@ -9,13 +17,34 @@ export const feishuOutbound: ChannelOutboundAdapter = {
   chunkerMode: "markdown",
   textChunkLimit: 4000,
   sendText: async ({ cfg, to, text, accountId }) => {
-    const result = await sendMessageFeishu({ cfg, to, text, accountId });
+    const account = resolveFeishuAccount({ cfg, accountId });
+    const feishuCfg = account.config as FeishuConfig | undefined;
+    const renderMode = feishuCfg?.renderMode ?? "auto";
+    const useCard =
+      renderMode === "card" || (renderMode === "auto" && shouldUseCard(text ?? ""));
+
+    if (useCard) {
+      const result = await sendMarkdownCardFeishu({ cfg, to, text: text ?? "", accountId });
+      return { channel: "feishu", ...result };
+    }
+
+    const result = await sendMessageFeishu({ cfg, to, text: text ?? "", accountId });
     return { channel: "feishu", ...result };
   },
   sendMedia: async ({ cfg, to, text, mediaUrl, accountId }) => {
     // Send text first if provided
     if (text?.trim()) {
-      await sendMessageFeishu({ cfg, to, text, accountId });
+      const account = resolveFeishuAccount({ cfg, accountId });
+      const feishuCfg = account.config as FeishuConfig | undefined;
+      const renderMode = feishuCfg?.renderMode ?? "auto";
+      const useCard =
+        renderMode === "card" || (renderMode === "auto" && shouldUseCard(text ?? ""));
+
+      if (useCard) {
+        await sendMarkdownCardFeishu({ cfg, to, text, accountId });
+      } else {
+        await sendMessageFeishu({ cfg, to, text, accountId });
+      }
     }
 
     // Upload and send media if URL provided
