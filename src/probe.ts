@@ -3,7 +3,17 @@ import { createFeishuClient, type FeishuClientCredentials } from "./client.js";
 
 // Cache for probe results to avoid API rate limits
 // Default TTL: 15 minutes (900000 ms)
-const PROBE_CACHE_TTL_MS = 15 * 60 * 1000;
+// Can be customized via environment variable: FEISHU_PROBE_CACHE_TTL_MINUTES
+const PROBE_CACHE_TTL_MS = (() => {
+  const envTtl = process.env.FEISHU_PROBE_CACHE_TTL_MINUTES;
+  if (envTtl) {
+    const minutes = parseInt(envTtl, 10);
+    if (!isNaN(minutes) && minutes > 0) {
+      return minutes * 60 * 1000;
+    }
+  }
+  return 15 * 60 * 1000; // Default: 15 minutes
+})();
 
 interface ProbeCacheEntry {
   result: FeishuProbeResult;
