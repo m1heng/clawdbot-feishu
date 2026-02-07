@@ -189,7 +189,9 @@ function parseMessageContent(content: string, messageType: string): string {
 function checkBotMentioned(event: FeishuMessageEvent, botOpenId?: string): boolean {
   const mentions = event.message.mentions ?? [];
   if (mentions.length === 0) return false;
-  if (!botOpenId) return mentions.length > 0;
+  // If botOpenId is not available, we cannot reliably determine if bot was mentioned
+  // Return false to avoid responding to mentions of other users
+  if (!botOpenId) return false;
   return mentions.some((m) => m.id.open_id === botOpenId);
 }
 
@@ -500,11 +502,11 @@ export async function handleFeishuMessage(params: {
   accountId?: string;
 }): Promise<void> {
   const { cfg, event, botOpenId, runtime, chatHistories, accountId } = params;
-  
+
   // Resolve account with merged config
   const account = resolveFeishuAccount({ cfg, accountId });
   const feishuCfg = account.config;
-  
+
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
 
