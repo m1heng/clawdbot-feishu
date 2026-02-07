@@ -54,6 +54,38 @@ const BLOCK_TYPE_NAMES: Record<number, string> = {
 // Block types that cannot be created via documentBlockChildren.create API
 const UNSUPPORTED_CREATE_TYPES = new Set([31, 32]);
 
+/**
+ * Reorder blocks according to firstLevelBlockIds from convertMarkdown API.
+ * The API returns blocks as an unordered array; firstLevelBlockIds provides
+ * the correct document order. Blocks not in the ordering list are appended at the end.
+ */
+function reorderBlocks(blocks: any[], firstLevelBlockIds: string[]): any[] {
+  if (!firstLevelBlockIds || firstLevelBlockIds.length === 0) return blocks;
+  
+  const blockMap = new Map<string, any>();
+  for (const block of blocks) {
+    if (block.block_id) {
+      blockMap.set(block.block_id, block);
+    }
+  }
+  
+  const ordered: any[] = [];
+  for (const id of firstLevelBlockIds) {
+    const block = blockMap.get(id);
+    if (block) {
+      ordered.push(block);
+      blockMap.delete(id);
+    }
+  }
+  
+  // Append any remaining blocks not in the ordering list
+  for (const block of blockMap.values()) {
+    ordered.push(block);
+  }
+  
+  return ordered;
+}
+
 /** Clean blocks for insertion (remove unsupported types and read-only fields) */
 function cleanBlocksForInsert(blocks: any[]): { cleaned: any[]; skipped: string[] } {
   const skipped: string[] = [];
@@ -259,12 +291,17 @@ async function createDoc(client: Lark.Client, title: string, folderToken?: strin
 async function writeDoc(client: Lark.Client, docToken: string, markdown: string) {
   const deleted = await clearDocumentContent(client, docToken);
 
-  const { blocks } = await convertMarkdown(client, markdown);
+  const { blocks, firstLevelBlockIds } = await convertMarkdown(client, markdown);
   if (blocks.length === 0) {
     return { success: true, blocks_deleted: deleted, blocks_added: 0, images_processed: 0 };
   }
 
-  const { children: inserted, skipped } = await insertBlocks(client, docToken, blocks);
+  // Reorder blocks according to firstLevelBlockIds to maintain correct document order.
+  // The convertMarkdown API returns blocks in an unordered map; firstLevelBlockIds
+  // provides the correct top-level ordering.
+  const orderedBlocks = reorderBlocks(blocks, firstLevelBlockIds);
+
+  const { children: inserted, skipped } = await insertBlocks(client, docToken, orderedBlocks);
   const imagesProcessed = await processImages(client, docToken, markdown, inserted);
 
   return {
@@ -279,12 +316,15 @@ async function writeDoc(client: Lark.Client, docToken: string, markdown: string)
 }
 
 async function appendDoc(client: Lark.Client, docToken: string, markdown: string) {
-  const { blocks } = await convertMarkdown(client, markdown);
+  const { blocks, firstLevelBlockIds } = await convertMarkdown(client, markdown);
   if (blocks.length === 0) {
     throw new Error("Content is empty");
   }
 
-  const { children: inserted, skipped } = await insertBlocks(client, docToken, blocks);
+  // Reorder blocks according to firstLevelBlockIds (same fix as writeDoc)
+  const orderedBlocks = reorderBlocks(blocks, firstLevelBlockIds);
+
+  const { children: inserted, skipped } = await insertBlocks(client, docToken, orderedBlocks);
   const imagesProcessed = await processImages(client, docToken, markdown, inserted);
 
   return {
