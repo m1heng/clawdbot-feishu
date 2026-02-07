@@ -23,7 +23,7 @@ export {
   sendFileFeishu,
   sendMediaFeishu,
 } from "./src/media.js";
-export { probeFeishu } from "./src/probe.js";
+export { probeFeishu, clearProbeCache } from "./src/probe.js";
 export {
   addReactionFeishu,
   removeReactionFeishu,
