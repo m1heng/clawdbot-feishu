@@ -27,6 +27,30 @@ import {
 import { maybeCreateDynamicAgent } from "./dynamic-agent.js";
 import type { DynamicAgentCreationConfig } from "./types.js";
 
+// --- 消息去重机制 ---
+// 防止 WebSocket 重连或飞书重发消息时重复处理同一条消息
+// 使用 6 小时 TTL，覆盖大部分延迟重发的场景
+const MESSAGE_DEDUP_TTL_MS = 6 * 60 * 60 * 1000; // 6 小时
+const processedMessageIds = new Map<string, number>(); // messageId -> timestamp
+
+function isMessageAlreadyProcessed(messageId: string): boolean {
+  const now = Date.now();
+  
+  // 清理过期条目
+  for (const [id, timestamp] of processedMessageIds) {
+    if (now - timestamp > MESSAGE_DEDUP_TTL_MS) {
+      processedMessageIds.delete(id);
+    }
+  }
+  
+  if (processedMessageIds.has(messageId)) {
+    return true;
+  }
+  
+  processedMessageIds.set(messageId, now);
+  return false;
+}
+
 // --- Permission error extraction ---
 // Extract permission grant URL from Feishu API error response.
 type PermissionError = {
@@ -507,6 +531,13 @@ export async function handleFeishuMessage(params: {
   
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
+
+  // --- 消息去重检查 ---
+  const messageId = event.message.message_id;
+  if (isMessageAlreadyProcessed(messageId)) {
+    log(`feishu: 跳过重复消息 ${messageId}`);
+    return;
+  }
 
   let ctx = parseFeishuMessageEvent(event, botOpenId);
   const isGroup = ctx.chatType === "group";
