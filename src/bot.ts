@@ -27,7 +27,7 @@ import {
 // --- Message deduplication ---
 // Prevent duplicate processing when WebSocket reconnects or Feishu redelivers messages.
 const DEDUP_TTL_MS = 30 * 60 * 1000; // 30 minutes
-const DEDUP_MAX_SIZE = 10_000;
+const DEDUP_MAX_SIZE = 1_000;
 const DEDUP_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // cleanup every 5 minutes
 const processedMessageIds = new Map<string, number>(); // messageId -> timestamp
 let lastCleanupTime = Date.now();
