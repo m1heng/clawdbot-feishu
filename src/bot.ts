@@ -18,7 +18,7 @@ import {
 } from "./policy.js";
 import { createFeishuReplyDispatcher } from "./reply-dispatcher.js";
 import { getMessageFeishu } from "./send.js";
-import { downloadImageFeishu, downloadMessageResourceFeishu } from "./media.js";
+import { downloadImageFeishu, downloadMessageResourceFeishu, speechToText } from "./media.js";
 import {
   extractMentionTargets,
   extractMessageBody,
@@ -487,6 +487,39 @@ function buildFeishuMediaPayload(
   };
 }
 
+/**
+ * Process audio message and convert speech to text.
+ * Updates ctx.content with transcribed text if message is audio type.
+ */
+async function processAudioIfNeeded(params: {
+  messageType: string;
+  mediaList: FeishuMediaInfo[];
+  ctx: FeishuMessageContext;
+  accountId: string;
+  log: (...args: any[]) => void;
+}): Promise<void> {
+  const { messageType, mediaList, ctx, accountId, log } = params;
+
+  if (messageType !== "audio" || mediaList.length === 0) {
+    return;
+  }
+
+  const audioPath = mediaList[0].path;
+  log(`feishu[${accountId}]: converting audio to text: ${audioPath}`);
+
+
+  const transcribedText = await speechToText(audioPath, accountId).catch((error) => {
+    return `**audio transcribed fail**: ${error}`
+  });
+  if (transcribedText) {
+    ctx.content = `[Audio Message] ${transcribedText}`;
+    log(`feishu[${accountId}]: audio transcribed: ${transcribedText.slice(0, 100)}...`);
+  } else {
+    ctx.content = "[Audio Message] (transcription failed with empty response)";
+  }
+
+}
+
 export function parseFeishuMessageEvent(
   event: FeishuMessageEvent,
   botOpenId?: string,
@@ -531,11 +564,11 @@ export async function handleFeishuMessage(params: {
   accountId?: string;
 }): Promise<void> {
   const { cfg, event, botOpenId, runtime, chatHistories, accountId } = params;
-  
+
   // Resolve account with merged config
   const account = resolveFeishuAccount({ cfg, accountId });
   const feishuCfg = account.config;
-  
+
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
 
@@ -738,6 +771,15 @@ export async function handleFeishuMessage(params: {
       accountId: account.accountId,
     });
     const mediaPayload = buildFeishuMediaPayload(mediaList);
+
+    // Handle audio message: convert speech to text
+    await processAudioIfNeeded({
+      messageType: event.message.message_type,
+      mediaList,
+      ctx,
+      accountId: account.accountId,
+      log,
+    });
 
     // Fetch quoted/replied message content if parentId exists
     let quotedContent: string | undefined;

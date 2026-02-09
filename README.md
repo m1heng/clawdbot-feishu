@@ -50,6 +50,7 @@ openclaw plugins update feishu
 | `im:message:update` | Edit | Update/edit sent messages |
 | `im:message:recall` | Recall | Recall sent messages |
 | `im:message.reactions:read` | Reactions | View message reactions |
+| `speech_to_text:speech`| Audio | Understand Feishu Audio Messages |
 
 #### Tool Permissions
 
@@ -319,6 +320,7 @@ openclaw plugins update feishu
 | `im:message:update` | 编辑 | 更新/编辑已发送消息 |
 | `im:message:recall` | 撤回 | 撤回已发送消息 |
 | `im:message.reactions:read` | 表情 | 查看消息表情回复 |
+| `speech_to_text:speech`| 语音 | 理解语音消息 |
 
 #### 工具权限
 
