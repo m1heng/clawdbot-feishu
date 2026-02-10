@@ -1,4 +1,4 @@
-# Contributing to clawd-feishu
+# Contributing to clawdbot-feishu
 
 [English](#english) | [中文](#中文)
 
