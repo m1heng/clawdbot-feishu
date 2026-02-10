@@ -64,7 +64,13 @@ npx tsc --noEmit
 - `wiki.ts` / `wiki-schema.ts` - Wiki space/node operations (`feishu_wiki`)
 - `drive.ts` / `drive-schema.ts` - Drive file/folder operations (`feishu_drive`)
 - `perm.ts` / `perm-schema.ts` - Drive permission member operations (`feishu_perm`)
-- `bitable.ts` - Bitable URL parsing and CRUD helpers (`feishu_bitable`)
+- `bitable.ts` - Bitable tools entry export
+- `bitable-tools/` - Bitable modular implementation:
+  - `register.ts` tool registration + shared wrapper (`feishu_bitable_*`)
+  - `schemas.ts` tool parameter schemas
+  - `actions.ts` Feishu Bitable API operations
+  - `meta.ts` URL parsing + app/table metadata resolution
+  - `common.ts` shared types/formatting/error helpers
 
 **Supporting Utilities:**
 - `targets.ts` - Normalize `user:xxx`/`chat:xxx` target formats
