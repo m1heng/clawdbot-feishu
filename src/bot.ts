@@ -27,6 +27,37 @@ import {
 import { maybeCreateDynamicAgent } from "./dynamic-agent.js";
 import type { DynamicAgentCreationConfig } from "./types.js";
 
+// --- Message deduplication ---
+// Prevent duplicate processing when WebSocket reconnects or Feishu redelivers messages.
+const DEDUP_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const DEDUP_MAX_SIZE = 1_000;
+const DEDUP_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // cleanup every 5 minutes
+const processedMessageIds = new Map<string, number>(); // messageId -> timestamp
+let lastCleanupTime = Date.now();
+
+function tryRecordMessage(messageId: string): boolean {
+  const now = Date.now();
+
+  // Throttled cleanup: evict expired entries at most once per interval
+  if (now - lastCleanupTime > DEDUP_CLEANUP_INTERVAL_MS) {
+    for (const [id, ts] of processedMessageIds) {
+      if (now - ts > DEDUP_TTL_MS) processedMessageIds.delete(id);
+    }
+    lastCleanupTime = now;
+  }
+
+  if (processedMessageIds.has(messageId)) return false;
+
+  // Evict oldest entries if cache is full
+  if (processedMessageIds.size >= DEDUP_MAX_SIZE) {
+    const first = processedMessageIds.keys().next().value!;
+    processedMessageIds.delete(first);
+  }
+
+  processedMessageIds.set(messageId, now);
+  return true;
+}
+
 // --- Permission error extraction ---
 // Extract permission grant URL from Feishu API error response.
 type PermissionError = {
@@ -34,6 +65,20 @@ type PermissionError = {
   message: string;
   grantUrl?: string;
 };
+
+function decodeHtmlEntities(raw: string): string {
+  return raw
+    .replace(/&amp;/gi, "&")
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"');
+}
+
+function extractFirstUrl(raw: string): string | undefined {
+  if (!raw) return undefined;
+  const decoded = decodeHtmlEntities(raw);
+  const urlMatch = decoded.match(/https?:\/\/[^\s"'<>]+/i);
+  return urlMatch?.[0];
+}
 
 function extractPermissionError(err: unknown): PermissionError | null {
   if (!err || typeof err !== "object") return null;
@@ -52,10 +97,12 @@ function extractPermissionError(err: unknown): PermissionError | null {
   // Feishu permission error code: 99991672
   if (feishuErr.code !== 99991672) return null;
 
-  // Extract the grant URL from the error message (contains the direct link)
   const msg = feishuErr.msg ?? "";
-  const urlMatch = msg.match(/https:\/\/[^\s,]+\/app\/[^\s,]+/);
-  const grantUrl = urlMatch?.[0];
+  const grantUrlFromMsg = extractFirstUrl(msg);
+  const grantUrlFromViolations = feishuErr.error?.permission_violations
+    ?.map((item) => extractFirstUrl(item.uri ?? ""))
+    .find((url): url is string => Boolean(url));
+  const grantUrl = grantUrlFromMsg ?? grantUrlFromViolations;
 
   return {
     code: feishuErr.code,
@@ -510,6 +557,13 @@ export async function handleFeishuMessage(params: {
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
 
+  // Dedup check: skip if this message was already processed
+  const messageId = event.message.message_id;
+  if (!tryRecordMessage(messageId)) {
+    log(`feishu: skipping duplicate message ${messageId}`);
+    return;
+  }
+
   let ctx = parseFeishuMessageEvent(event, botOpenId);
   const isGroup = ctx.chatType === "group";
 
@@ -647,7 +701,7 @@ export async function handleFeishuMessage(params: {
       channel: "feishu",
       accountId: account.accountId,
       peer: {
-        kind: isGroup ? "group" : "dm",
+        kind: isGroup ? "group" : "direct",
         id: peerId,
       },
     });

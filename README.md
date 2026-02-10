@@ -115,7 +115,9 @@ The `feishu_bitable` tools support both URL formats:
 
 In the Feishu Open Platform console, go to **Events & Callbacks**:
 
-1. **Event configuration**: Select **Long connection** (recommended)
+1. **Event configuration**: Select the subscription mode matching your `connectionMode`:
+   - **Long connection** — for `connectionMode: "websocket"` (recommended, no public URL needed)
+   - **Request URL** — for `connectionMode: "webhook"` (requires a publicly accessible URL)
 2. **Add event subscriptions**:
 
 | Event | Description |
@@ -145,8 +147,6 @@ channels:
     domain: "feishu"  # or "https://open.xxx.cn" for private deployment
     # Connection mode: "websocket" (recommended) or "webhook"
     connectionMode: "websocket"
-    # Webhook path (default: "/feishu/events")
-    webhookPath: "/feishu/events"
     # DM policy: "pairing" | "open" | "allowlist"
     dmPolicy: "pairing"
     # Group policy: "open" | "allowlist" | "disabled"
@@ -158,6 +158,45 @@ channels:
     # Render mode for bot replies: "auto" | "raw" | "card"
     renderMode: "auto"
 ```
+
+#### Connection Mode
+
+Two connection modes are available for receiving events from Feishu:
+
+| Mode | Description |
+|------|-------------|
+| `websocket` | (Default, recommended) Long-polling WebSocket connection. No public URL required, works behind NAT/firewall. Best for local development and most deployments. |
+| `webhook` | HTTP server that receives event callbacks. Requires a publicly accessible URL. Suitable for server deployments behind a reverse proxy (e.g. Nginx). |
+
+**WebSocket mode** (default, no extra config needed):
+
+```yaml
+channels:
+  feishu:
+    connectionMode: "websocket"  # or just omit this line
+```
+
+In Feishu console: Events & Callbacks → select **Long connection**.
+
+**Webhook mode**:
+
+```yaml
+channels:
+  feishu:
+    connectionMode: "webhook"
+    webhookPort: 3000               # HTTP server port (default: 3000)
+    webhookPath: "/feishu/events"   # Event callback path (default: "/feishu/events")
+    encryptKey: "your_encrypt_key"           # From Feishu console → Events & Callbacks → Encrypt Key
+    verificationToken: "your_verify_token"   # From Feishu console → Events & Callbacks → Verification Token
+```
+
+In Feishu console: Events & Callbacks → select **Request URL** → set the URL to:
+
+```
+https://your-domain.com/feishu/events
+```
+
+> **Note:** The Request URL must be HTTPS and publicly accessible. For local development, you can use tools like [ngrok](https://ngrok.com) to create a tunnel: `ngrok http 3000`, then use the generated URL.
 
 #### Render Mode
 
@@ -241,9 +280,12 @@ The bot automatically detects @mentions in your message and includes them in its
 
 Check the following:
 1. Have you configured **event subscriptions**? (See Event Subscriptions section)
-2. Is the event configuration set to **long connection**?
+2. Does the event subscription mode match your `connectionMode`?
+   - `websocket` → **Long connection** in Feishu console
+   - `webhook` → **Request URL** in Feishu console (URL must be reachable)
 3. Did you add the `im.message.receive_v1` event?
 4. Are the permissions approved?
+5. For webhook mode: is your server running and the URL publicly accessible?
 
 #### 403 error when sending messages
 
@@ -384,7 +426,9 @@ openclaw plugins update feishu
 
 在飞书开放平台的应用后台，进入 **事件与回调** 页面：
 
-1. **事件配置方式**：选择 **使用长连接接收事件**（推荐）
+1. **事件配置方式**：根据你的 `connectionMode` 选择对应的订阅方式：
+   - **使用长连接接收事件** — 对应 `connectionMode: "websocket"`（推荐，无需公网地址）
+   - **使用请求地址接收事件** — 对应 `connectionMode: "webhook"`（需要公网可访问的 URL）
 2. **添加事件订阅**，勾选以下事件：
 
 | 事件 | 说明 |
@@ -414,8 +458,6 @@ channels:
     domain: "feishu"  # 私有化部署可用 "https://open.xxx.cn"
     # 连接模式: "websocket" (推荐) 或 "webhook"
     connectionMode: "websocket"
-    # Webhook 路径 (默认: "/feishu/events")
-    webhookPath: "/feishu/events"
     # 私聊策略: "pairing" | "open" | "allowlist"
     dmPolicy: "pairing"
     # 群聊策略: "open" | "allowlist" | "disabled"
@@ -427,6 +469,45 @@ channels:
     # 回复渲染模式: "auto" | "raw" | "card"
     renderMode: "auto"
 ```
+
+#### 连接模式
+
+支持两种从飞书接收事件的连接模式：
+
+| 模式 | 说明 |
+|------|------|
+| `websocket` | （默认，推荐）长连接 WebSocket 模式。无需公网地址，可在 NAT/防火墙后使用。适合本地开发和大部分部署场景。 |
+| `webhook` | HTTP 服务器接收事件回调。需要公网可访问的 URL。适合通过反向代理（如 Nginx）部署的服务器环境。 |
+
+**WebSocket 模式**（默认，无需额外配置）：
+
+```yaml
+channels:
+  feishu:
+    connectionMode: "websocket"  # 或直接省略此行
+```
+
+飞书控制台：事件与回调 → 选择 **使用长连接接收事件**。
+
+**Webhook 模式**：
+
+```yaml
+channels:
+  feishu:
+    connectionMode: "webhook"
+    webhookPort: 3000               # HTTP 服务端口（默认: 3000）
+    webhookPath: "/feishu/events"   # 事件回调路径（默认: "/feishu/events"）
+    encryptKey: "your_encrypt_key"           # 飞书控制台 → 事件与回调 → Encrypt Key
+    verificationToken: "your_verify_token"   # 飞书控制台 → 事件与回调 → Verification Token
+```
+
+飞书控制台：事件与回调 → 选择 **使用请求地址接收事件** → 填入请求地址：
+
+```
+https://your-domain.com/feishu/events
+```
+
+> **提示：** 请求地址必须是 HTTPS 且公网可访问。本地开发时，可使用 [ngrok](https://ngrok.com) 等工具创建隧道：`ngrok http 3000`，然后使用生成的地址。
 
 #### 渲染模式
 
@@ -510,9 +591,12 @@ session:
 
 检查以下配置：
 1. 是否配置了 **事件订阅**？（见上方事件订阅章节）
-2. 事件配置方式是否选择了 **长连接**？
+2. 事件订阅方式是否与 `connectionMode` 匹配？
+   - `websocket` → 飞书控制台选择 **使用长连接接收事件**
+   - `webhook` → 飞书控制台选择 **使用请求地址接收事件**（URL 必须可访问）
 3. 是否添加了 `im.message.receive_v1` 事件？
 4. 相关权限是否已申请并审核通过？
+5. 如果使用 webhook 模式：服务是否正在运行？URL 是否公网可访问？
 
 #### 返回消息时 403 错误
 
