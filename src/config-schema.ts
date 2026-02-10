@@ -78,6 +78,8 @@ const UserAuthConfigSchema = z
     callbackPort: z.number().int().positive().optional(),
     callbackHost: z.string().optional(),
     callbackPath: z.string().optional(),
+    /** "http" or "https". If unset: localhost uses http, other hosts use https. Set to "http" for remote servers without HTTPS. */
+    callbackProtocol: z.enum(["http", "https"]).optional(),
     scopes: z.array(z.string()).optional(),
     tokenStorePath: z.string().optional(),
   })

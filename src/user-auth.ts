@@ -9,6 +9,8 @@ export interface UserAuthConfig {
   enabled?: boolean;
   callbackPort?: number; // default: 16688
   callbackHost?: string; // default: localhost
+  /** "http" or "https". If not set: localhost/127.0.0.1 use http, otherwise https. Set to "http" for remote servers without HTTPS. */
+  callbackProtocol?: "http" | "https";
   callbackPath?: string; // default: /feishu/user-auth/callback
   scopes?: string[];
   tokenStorePath?: string; // file path for token persistence
@@ -75,8 +77,10 @@ export function buildAuthorizeUrl(
   const callbackPath = config.callbackPath ?? DEFAULT_CALLBACK_PATH;
   const scopes = config.scopes ?? DEFAULT_SCOPES;
 
-  // Build redirect_uri
-  const protocol = host === "localhost" || host === "127.0.0.1" ? "http" : "https";
+  // Build redirect_uri: use callbackProtocol if set, else http for localhost only
+  const protocol =
+    config.callbackProtocol ??
+    (host === "localhost" || host === "127.0.0.1" ? "http" : "https");
   const redirectUri = `${protocol}://${host}:${port}${callbackPath}`;
 
   // Build state
@@ -165,7 +169,9 @@ export function startAuthCallbackServer(
 
     // Exchange code for token
     try {
-      const protocol = host === "localhost" || host === "127.0.0.1" ? "http" : "https";
+      const protocol =
+        config.callbackProtocol ??
+        (host === "localhost" || host === "127.0.0.1" ? "http" : "https");
       const redirectUri = `${protocol}://${host}:${port}${callbackPath}`;
       const baseUrl = resolveApiBaseUrl(account.domain);
 
