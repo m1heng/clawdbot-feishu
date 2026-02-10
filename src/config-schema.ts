@@ -68,6 +68,23 @@ const DynamicAgentCreationSchema = z
   .optional();
 
 /**
+ * User OAuth authentication configuration.
+ * When enabled, allows per-user OAuth tokens for APIs that require user identity
+ * (e.g., document search, minutes transcript).
+ */
+const UserAuthConfigSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    callbackPort: z.number().int().positive().optional(),
+    callbackHost: z.string().optional(),
+    callbackPath: z.string().optional(),
+    scopes: z.array(z.string()).optional(),
+    tokenStorePath: z.string().optional(),
+  })
+  .strict()
+  .optional();
+
+/**
  * Feishu tools configuration.
  * Controls which tool categories are enabled.
  *
@@ -82,6 +99,9 @@ const FeishuToolsConfigSchema = z
     drive: z.boolean().optional(), // Cloud storage operations (default: true)
     perm: z.boolean().optional(), // Permission management (default: false, sensitive)
     scopes: z.boolean().optional(), // App scopes diagnostic (default: true)
+    minutes: z.boolean().optional(), // Minutes transcript (default: false, requires user auth)
+    search: z.boolean().optional(), // Document/wiki search (default: false, requires user auth)
+    userAuth: z.boolean().optional(), // User OAuth management (default: false)
   })
   .strict()
   .optional();
@@ -143,6 +163,7 @@ export const FeishuAccountConfigSchema = z
     heartbeat: ChannelHeartbeatVisibilitySchema,
     renderMode: RenderModeSchema,
     tools: FeishuToolsConfigSchema,
+    userAuth: UserAuthConfigSchema,
   })
   .strict();
 
@@ -178,6 +199,8 @@ export const FeishuConfigSchema = z
     heartbeat: ChannelHeartbeatVisibilitySchema,
     renderMode: RenderModeSchema, // raw = plain text (default), card = interactive card with markdown
     tools: FeishuToolsConfigSchema,
+    // User OAuth authentication
+    userAuth: UserAuthConfigSchema,
     // Dynamic agent creation for DM users
     dynamicAgentCreation: DynamicAgentCreationSchema,
     // Multi-account configuration
