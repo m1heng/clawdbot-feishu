@@ -66,6 +66,20 @@ type PermissionError = {
   grantUrl?: string;
 };
 
+function decodeHtmlEntities(raw: string): string {
+  return raw
+    .replace(/&amp;/gi, "&")
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"');
+}
+
+function extractFirstUrl(raw: string): string | undefined {
+  if (!raw) return undefined;
+  const decoded = decodeHtmlEntities(raw);
+  const urlMatch = decoded.match(/https?:\/\/[^\s"'<>]+/i);
+  return urlMatch?.[0];
+}
+
 function extractPermissionError(err: unknown): PermissionError | null {
   if (!err || typeof err !== "object") return null;
 
@@ -83,10 +97,12 @@ function extractPermissionError(err: unknown): PermissionError | null {
   // Feishu permission error code: 99991672
   if (feishuErr.code !== 99991672) return null;
 
-  // Extract the grant URL from the error message (contains the direct link)
   const msg = feishuErr.msg ?? "";
-  const urlMatch = msg.match(/https:\/\/[^\s,]+\/app\/[^\s,]+/);
-  const grantUrl = urlMatch?.[0];
+  const grantUrlFromMsg = extractFirstUrl(msg);
+  const grantUrlFromViolations = feishuErr.error?.permission_violations
+    ?.map((item) => extractFirstUrl(item.uri ?? ""))
+    .find((url): url is string => Boolean(url));
+  const grantUrl = grantUrlFromMsg ?? grantUrlFromViolations;
 
   return {
     code: feishuErr.code,
