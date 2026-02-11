@@ -3,7 +3,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { listEnabledFeishuAccounts } from "./accounts.js";
 import { resolveToolsConfig } from "./tools-config.js";
 import { userTokenStore } from "./user-token.js";
-import { buildAuthorizeUrl, startAuthCallbackServer, getNonceFilePath, type UserAuthConfig } from "./user-auth.js";
+import { buildAuthorizeUrl, startAuthCallbackServer, type UserAuthConfig } from "./user-auth.js";
 import { createAuthFileLogger, getAuthLogFilePath } from "./user-auth-logger.js";
 import { setAuthLogger } from "./feishu-auth-debug.js";
 import { sendCardFeishu } from "./send.js";
@@ -58,10 +58,6 @@ export function registerFeishuUserAuthTools(api: OpenClawPluginApi) {
     userTokenStore.reinitialize(tokenStorePath);
   }
   const actualTokenPath = userTokenStore.getFilePath();
-  // Resolve nonce file path ONCE here — it will be passed explicitly to both
-  // buildAuthorizeUrl (save nonce) and startAuthCallbackServer (consume nonce),
-  // ensuring they always use the exact same path, regardless of module caching.
-  const nonceFilePath = getNonceFilePath();
 
   const port = userAuthCfg.callbackPort ?? 16688;
   const host = userAuthCfg.callbackHost ?? "localhost";
@@ -73,7 +69,6 @@ export function registerFeishuUserAuthTools(api: OpenClawPluginApi) {
 
   authLogger.info("feishu_user_auth tool registered", {
     tokenStorePathActual: actualTokenPath,
-    nonceFilePath,
     authLogFilePath: logFilePathAbsolute,
     callbackHost: host,
     callbackPort: port,
@@ -85,9 +80,8 @@ export function registerFeishuUserAuthTools(api: OpenClawPluginApi) {
   api.logger.info?.("[UserAuth] 路径汇总 (paths):");
   api.logger.info?.(`  Token 存储路径 (token store): ${actualTokenPath}`);
   api.logger.info?.(`  授权日志路径 (auth log file): ${logFilePathAbsolute}`);
-  api.logger.info?.(`  Nonce 文件路径 (nonce file): ${nonceFilePath}`);
 
-  startAuthCallbackServer(firstAccount, userAuthCfg, nonceFilePath, authLogger);
+  startAuthCallbackServer(firstAccount, userAuthCfg, authLogger);
 
   api.registerTool(
     {
@@ -103,42 +97,40 @@ export function registerFeishuUserAuthTools(api: OpenClawPluginApi) {
         try {
           switch (p.action) {
             case "authorize": {
-              const url = buildAuthorizeUrl(p.open_id, firstAccount, userAuthCfg, nonceFilePath, authLogger);
+              const url = buildAuthorizeUrl(p.open_id, firstAccount, userAuthCfg, authLogger);
               let dmSent = false;
               try {
                 // Send as interactive card with button so Feishu does not
                 // parse/truncate the accounts.feishu.cn URL.
+                // Use v1 card format (no schema 2.0) because v2 does not support the "action" tag.
                 const authCard = {
-                  schema: "2.0",
                   config: { wide_screen_mode: true },
                   header: {
                     title: { tag: "plain_text", content: "飞书授权请求" },
                     template: "blue",
                   },
-                  body: {
-                    elements: [
-                      {
-                        tag: "markdown",
-                        content: "请点击下方按钮完成授权（10分钟内有效）",
-                      },
-                      {
-                        tag: "action",
-                        actions: [
-                          {
-                            tag: "button",
-                            text: { tag: "plain_text", content: "点击授权" },
-                            type: "primary",
-                            multi_url: {
-                              url,
-                              pc_url: "",
-                              android_url: "",
-                              ios_url: "",
-                            },
+                  elements: [
+                    {
+                      tag: "markdown",
+                      content: "请点击下方按钮完成授权（10分钟内有效）",
+                    },
+                    {
+                      tag: "action",
+                      actions: [
+                        {
+                          tag: "button",
+                          text: { tag: "plain_text", content: "点击授权" },
+                          type: "primary",
+                          multi_url: {
+                            url,
+                            pc_url: "",
+                            android_url: "",
+                            ios_url: "",
                           },
-                        ],
-                      },
-                    ],
-                  },
+                        },
+                      ],
+                    },
+                  ],
                 };
                 await sendCardFeishu({
                   cfg: api.config!,

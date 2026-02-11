@@ -1,7 +1,5 @@
 import http from "node:http";
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import { userTokenStore, resolveApiBaseUrl, resolveAuthorizeBaseUrl, type UserTokenInfo } from "./user-token.js";
 import type { ResolvedFeishuAccount } from "./types.js";
 
@@ -70,202 +68,118 @@ function logError(
   (logger as { error: (msg: string, detail?: Record<string, unknown>) => void }).error(msg, detail);
 }
 
-// ============ CSRF Nonce Management (file-persisted for restart / multi-instance) ============
+// ============ HMAC-Signed State (stateless, no file I/O) ============
 
-/** Nonce expiry time: 10 minutes */
-const NONCE_TTL_MS = 10 * 60 * 1000;
+/** State expiry time: 10 minutes */
+const STATE_TTL_MS = 10 * 60 * 1000;
 
-const NONCE_FILE_NAME = "feishu-pending-nonces.json";
-
-/**
- * Resolve the nonce file path. Uses the actual resolved token store file path
- * so the nonce file sits alongside the token file.
- */
-export function getNonceFilePath(): string {
-  const tokenFilePath = userTokenStore.getFilePath();
-  const dir = path.dirname(tokenFilePath);
-  return path.join(dir, NONCE_FILE_NAME);
-}
-
-type NonceEntry = { openId: string; accountId: string; createdAt: number };
-
-function loadPendingNonces(filePath: string, logger?: UserAuthLogger): Map<string, NonceEntry> {
-  const absPath = path.resolve(filePath);
-  try {
-    const exists = fs.existsSync(absPath);
-    if (!exists) {
-      logInfo(logger, "[Nonce] loadPendingNonces: file not found, returning empty", { filePath: absPath });
-      return new Map();
-    }
-    // Check if path is a directory (safeguard)
-    const stat = fs.statSync(absPath);
-    if (stat.isDirectory()) {
-      logError(logger, "[Nonce] loadPendingNonces: path is a directory, not a file!", { filePath: absPath });
-      return new Map();
-    }
-    const raw = fs.readFileSync(absPath, "utf-8");
-    const data = JSON.parse(raw) as Record<string, NonceEntry>;
-    const map = new Map(Object.entries(data));
-    logInfo(logger, "[Nonce] loadPendingNonces: loaded", {
-      filePath: absPath,
-      count: map.size,
-      nonces: [...map.keys()].map((k) => k.slice(0, 8) + "...").join(", ") || "(empty)",
-    });
-    return map;
-  } catch (err) {
-    logError(logger, "[Nonce] loadPendingNonces: failed to read/parse", {
-      filePath: absPath,
-      error: formatErr(err),
-    });
-    return new Map();
-  }
-}
-
-function savePendingNonces(filePath: string, map: Map<string, NonceEntry>, logger?: UserAuthLogger): void {
-  const absPath = path.resolve(filePath);
-  try {
-    const dir = path.dirname(absPath);
-    if (!fs.existsSync(dir)) {
-      logInfo(logger, "[Nonce] savePendingNonces: creating directory", { dir });
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    const data = Object.fromEntries(map);
-    fs.writeFileSync(absPath, JSON.stringify(data, null, 2), "utf-8");
-
-    // Verify the write succeeded by checking file exists and re-reading
-    const verifyExists = fs.existsSync(absPath);
-    const verifySize = verifyExists ? fs.statSync(absPath).size : 0;
-    logInfo(logger, "[Nonce] savePendingNonces: written", {
-      filePath: absPath,
-      count: map.size,
-      fileExists: verifyExists,
-      fileSize: verifySize,
-    });
-  } catch (err) {
-    logError(logger, "[Nonce] savePendingNonces: FAILED to write nonce file", {
-      filePath: absPath,
-      error: formatErr(err),
-    });
-  }
-}
-
-function generateNonce(): string {
-  return crypto.randomBytes(16).toString("hex");
+/** Payload embedded in the OAuth state parameter. */
+interface StatePayload {
+  openId: string;
+  accountId: string;
+  ts: number; // Date.now() when created
 }
 
 /**
- * Add a nonce (persisted to file so callback works after restart or on another instance).
- * @param nonceFilePath - Absolute path to the nonce file (resolved once at registration).
+ * Create an HMAC-SHA256 hex signature over the payload.
  */
-function addPendingNonce(
-  nonceFilePath: string,
-  nonce: string,
-  openId: string,
-  accountId: string,
-  logger?: UserAuthLogger,
-): void {
-  logInfo(logger, "[Nonce] addPendingNonce: start", {
-    noncePrefix: nonce.slice(0, 8) + "...",
-    openId,
-    accountId,
-    nonceFilePath,
-  });
-
-  const map = loadPendingNonces(nonceFilePath, logger);
-  const now = Date.now();
-  // Remove expired entries before adding
-  let expiredCount = 0;
-  for (const [n, info] of map) {
-    if (now - info.createdAt > NONCE_TTL_MS) {
-      map.delete(n);
-      expiredCount++;
-    }
-  }
-  if (expiredCount > 0) {
-    logInfo(logger, "[Nonce] addPendingNonce: cleaned expired nonces", { expiredCount });
-  }
-  map.set(nonce, { openId, accountId, createdAt: now });
-  savePendingNonces(nonceFilePath, map, logger);
-
-  logInfo(logger, "[Nonce] addPendingNonce: done", {
-    noncePrefix: nonce.slice(0, 8) + "...",
-    totalNonces: map.size,
-    nonceFilePath,
-  });
+function signState(payload: StatePayload, secret: string): string {
+  const data = JSON.stringify({ openId: payload.openId, accountId: payload.accountId, ts: payload.ts });
+  return crypto.createHmac("sha256", secret).update(data).digest("hex");
 }
 
 /**
- * Consume a nonce: validate, remove from store, return openId/accountId.
- * Returns null if nonce missing or expired.
- * @param nonceFilePath - Absolute path to the nonce file (resolved once at registration).
+ * Build a signed state string (base64url-encoded JSON with HMAC signature).
  */
-function consumePendingNonce(
-  nonceFilePath: string,
-  nonce: string,
+function buildSignedState(openId: string, accountId: string, secret: string): string {
+  const payload: StatePayload = { openId, accountId, ts: Date.now() };
+  const sig = signState(payload, secret);
+  return Buffer.from(JSON.stringify({ ...payload, sig })).toString("base64url");
+}
+
+/**
+ * Verify a signed state string. Returns the payload if valid, null otherwise.
+ * Checks: JSON parseable, HMAC signature matches, timestamp within TTL.
+ */
+function verifyState(
+  stateRaw: string,
+  secret: string,
   logger?: UserAuthLogger,
 ): { openId: string; accountId: string } | null {
-  logInfo(logger, "[Nonce] consumePendingNonce: start", {
-    noncePrefix: nonce.slice(0, 8) + "...",
-    nonceFilePath,
-  });
+  let parsed: StatePayload & { sig?: string };
+  try {
+    parsed = JSON.parse(Buffer.from(stateRaw, "base64url").toString("utf-8"));
+  } catch (err) {
+    logError(logger, "[State] Failed to decode state", err);
+    return null;
+  }
 
-  const map = loadPendingNonces(nonceFilePath, logger);
-  logInfo(logger, "[Nonce] consumePendingNonce: loaded nonces", {
-    count: map.size,
-    nonces: [...map.keys()].map((k) => k.slice(0, 8) + "...").join(", ") || "(none)",
-    lookingFor: nonce.slice(0, 8) + "...",
-    found: map.has(nonce),
-  });
-
-  const info = map.get(nonce);
-  if (!info) {
-    logError(logger, "[Nonce] consumePendingNonce: nonce NOT FOUND in file", {
-      noncePrefix: nonce.slice(0, 8) + "...",
-      nonceFilePath,
-      storedNonceCount: map.size,
-      storedNoncePrefixes: [...map.keys()].map((k) => k.slice(0, 8) + "...").join(", ") || "(none)",
-      hint: "Nonce was never saved, or saved to a different file. Check addPendingNonce logs above.",
+  if (!parsed.openId || !parsed.accountId || !parsed.ts || !parsed.sig) {
+    logError(logger, "[State] Missing required fields in state", {
+      hasOpenId: Boolean(parsed.openId),
+      hasAccountId: Boolean(parsed.accountId),
+      hasTs: Boolean(parsed.ts),
+      hasSig: Boolean(parsed.sig),
     });
     return null;
   }
-  const now = Date.now();
-  if (now - info.createdAt > NONCE_TTL_MS) {
-    logError(logger, "[Nonce] consumePendingNonce: nonce EXPIRED", {
-      noncePrefix: nonce.slice(0, 8) + "...",
-      createdAt: new Date(info.createdAt).toISOString(),
-      expiredAgoMs: now - info.createdAt - NONCE_TTL_MS,
+
+  // Verify HMAC signature
+  const payload: StatePayload = { openId: parsed.openId, accountId: parsed.accountId, ts: parsed.ts };
+  const expectedSig = signState(payload, secret);
+  const sigValid = crypto.timingSafeEqual(
+    Buffer.from(parsed.sig, "hex"),
+    Buffer.from(expectedSig, "hex"),
+  );
+
+  if (!sigValid) {
+    logError(logger, "[State] HMAC signature mismatch — state was tampered or signed with a different secret", {
+      openId: parsed.openId,
     });
-    map.delete(nonce);
-    savePendingNonces(nonceFilePath, map, logger);
     return null;
   }
-  map.delete(nonce);
-  savePendingNonces(nonceFilePath, map, logger);
-  logInfo(logger, "[Nonce] consumePendingNonce: SUCCESS", {
-    noncePrefix: nonce.slice(0, 8) + "...",
-    openId: info.openId,
-    accountId: info.accountId,
+
+  // Check timestamp
+  const age = Date.now() - parsed.ts;
+  if (age > STATE_TTL_MS) {
+    logError(logger, "[State] State expired", {
+      openId: parsed.openId,
+      createdAt: new Date(parsed.ts).toISOString(),
+      ageMs: age,
+      ttlMs: STATE_TTL_MS,
+    });
+    return null;
+  }
+
+  if (age < 0) {
+    logError(logger, "[State] State timestamp is in the future — clock skew?", {
+      openId: parsed.openId,
+      ts: parsed.ts,
+      now: Date.now(),
+    });
+    return null;
+  }
+
+  logInfo(logger, "[State] Verified OK", {
+    openId: parsed.openId,
+    accountId: parsed.accountId,
+    ageSeconds: Math.round(age / 1000),
   });
-  return { openId: info.openId, accountId: info.accountId };
+  return { openId: parsed.openId, accountId: parsed.accountId };
 }
 
 // ============ OAuth URL Builder ============
 
 /**
  * Build the OAuth authorize URL for a user.
- * The state parameter encodes openId, accountId, and a CSRF nonce.
- * @param nonceFilePath - Absolute path to the nonce file (resolved once at registration).
+ * The state parameter is HMAC-signed (stateless, no file I/O).
  */
 export function buildAuthorizeUrl(
   openId: string,
   account: ResolvedFeishuAccount,
   config: UserAuthConfig,
-  nonceFilePath: string,
   logger?: UserAuthLogger,
 ): string {
-  const nonce = generateNonce();
-  addPendingNonce(nonceFilePath, nonce, openId, account.accountId, logger);
-
   const host = config.callbackHost ?? DEFAULT_CALLBACK_HOST;
   const port = config.callbackPort ?? DEFAULT_CALLBACK_PORT;
   const callbackPath = config.callbackPath ?? DEFAULT_CALLBACK_PATH;
@@ -277,10 +191,14 @@ export function buildAuthorizeUrl(
     (host === "localhost" || host === "127.0.0.1" ? "http" : "https");
   const redirectUri = `${protocol}://${host}:${port}${callbackPath}`;
 
-  // Build state
-  const state = Buffer.from(
-    JSON.stringify({ openId, accountId: account.accountId, nonce }),
-  ).toString("base64url");
+  // Build HMAC-signed state (no file I/O needed)
+  const state = buildSignedState(openId, account.accountId, account.appSecret!);
+
+  logInfo(logger, "[Auth] Built authorize URL", {
+    openId,
+    redirectUri,
+    stateLength: state.length,
+  });
 
   // Build authorize URL
   const baseUrl = resolveAuthorizeBaseUrl(account.domain);
@@ -300,12 +218,11 @@ let callbackServer: http.Server | null = null;
 /**
  * Start the OAuth callback HTTP server.
  * Handles the redirect from Feishu OAuth, exchanges code for token, stores it.
- * @param nonceFilePath - Absolute path to the nonce file (resolved once at registration).
+ * State verification is stateless (HMAC signature), no file I/O needed.
  */
 export function startAuthCallbackServer(
   account: ResolvedFeishuAccount,
   config: UserAuthConfig,
-  nonceFilePath: string,
   logger?: { info?: (...args: any[]) => void; error?: (...args: any[]) => void },
 ): http.Server {
   if (callbackServer) {
@@ -315,14 +232,12 @@ export function startAuthCallbackServer(
   const port = config.callbackPort ?? DEFAULT_CALLBACK_PORT;
   const callbackPath = config.callbackPath ?? DEFAULT_CALLBACK_PATH;
   const host = config.callbackHost ?? DEFAULT_CALLBACK_HOST;
-
-  // Log the resolved nonce file path that this callback server will use
-  logInfo(logger, "Callback server will use nonce file", { nonceFilePath });
+  const appSecret = account.appSecret!;
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
-    logInfo(logger, "[STEP 1/5] Received callback request", {
+    logInfo(logger, "[STEP 1/4] Received callback request", {
       method: req.method,
       path: url.pathname,
       pathMatch: url.pathname === callbackPath,
@@ -338,7 +253,7 @@ export function startAuthCallbackServer(
     const code = url.searchParams.get("code");
     const stateRaw = url.searchParams.get("state");
 
-    logInfo(logger, "[STEP 1/5] Callback query params", {
+    logInfo(logger, "[STEP 1/4] Callback query params", {
       hasCode: Boolean(code),
       codeLength: code?.length ?? 0,
       hasState: Boolean(stateRaw),
@@ -346,54 +261,25 @@ export function startAuthCallbackServer(
     });
 
     if (!code || !stateRaw) {
-      logError(logger, "[STEP 1/5] Missing code or state in callback");
+      logError(logger, "[STEP 1/4] Missing code or state in callback");
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       res.end(errorHtml("Missing code or state parameter"));
       return;
     }
 
-    // Decode and validate state
-    let stateData: { openId: string; accountId: string; nonce: string };
-    try {
-      stateData = JSON.parse(Buffer.from(stateRaw, "base64url").toString("utf-8"));
-      logInfo(logger, "[STEP 2/5] Decoded state", {
-        openId: stateData.openId,
-        accountId: stateData.accountId,
-        noncePrefix: stateData.nonce?.slice(0, 8) + "...",
-      });
-    } catch (decodeErr) {
-      logError(logger, "[STEP 2/5] State decode failed", decodeErr);
-      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(errorHtml("Invalid state parameter"));
-      return;
-    }
-
-    // Validate and consume nonce (CSRF protection). Uses the nonceFilePath captured at server creation time.
-    const consumed = consumePendingNonce(nonceFilePath, stateData.nonce, logger);
-    if (!consumed) {
-      logError(logger, "[STEP 3/5] Invalid or expired nonce — see [Nonce] logs above for detailed diagnosis", {
-        openId: stateData.openId,
-        noncePrefix: stateData.nonce?.slice(0, 8) + "...",
-        nonceFilePath,
-        tokenStoreFilePath: userTokenStore.getFilePath(),
-      });
+    // Verify HMAC-signed state (stateless — no file I/O)
+    const verified = verifyState(stateRaw, appSecret, logger);
+    if (!verified) {
+      logError(logger, "[STEP 2/4] State verification failed — see [State] logs above for details");
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       res.end(errorHtml("Invalid or expired authorization request. Please try again."));
       return;
     }
 
-    // Use consumed openId/accountId (must match state for sanity)
-    if (consumed.openId !== stateData.openId || consumed.accountId !== stateData.accountId) {
-      logError(logger, "[STEP 3/5] State mismatch after consume", {
-        consumedOpenId: consumed.openId,
-        stateOpenId: stateData.openId,
-        consumedAccountId: consumed.accountId,
-        stateAccountId: stateData.accountId,
-      });
-      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(errorHtml("State mismatch. Please try again."));
-      return;
-    }
+    logInfo(logger, "[STEP 2/4] State verified", {
+      openId: verified.openId,
+      accountId: verified.accountId,
+    });
 
     // Exchange code for token
     const protocol =
@@ -402,10 +288,10 @@ export function startAuthCallbackServer(
     const redirectUri = `${protocol}://${host}:${port}${callbackPath}`;
     const baseUrl = resolveApiBaseUrl(account.domain);
 
-    logInfo(logger, "[STEP 4/5] Exchanging code for token", {
+    logInfo(logger, "[STEP 3/4] Exchanging code for token", {
       redirectUri,
       tokenUrl: `${baseUrl}/open-apis/authen/v2/oauth/token`,
-      openId: stateData.openId,
+      openId: verified.openId,
     });
 
     try {
@@ -430,7 +316,7 @@ export function startAuthCallbackServer(
         scope?: string;
       };
 
-      logInfo(logger, "[STEP 4/5] Token API response", {
+      logInfo(logger, "[STEP 3/4] Token API response", {
         httpStatus: tokenResponse.status,
         code: tokenResult.code,
         msg: tokenResult.msg,
@@ -440,8 +326,8 @@ export function startAuthCallbackServer(
       });
 
       if (tokenResult.code !== 0 || !tokenResult.access_token) {
-        logError(logger, "[STEP 4/5] Token exchange failed", {
-          openId: stateData.openId,
+        logError(logger, "[STEP 3/4] Token exchange failed", {
+          openId: verified.openId,
           code: tokenResult.code,
           msg: tokenResult.msg ?? "unknown",
         });
@@ -458,10 +344,10 @@ export function startAuthCallbackServer(
         scope: tokenResult.scope,
       };
 
-      userTokenStore.setToken(stateData.openId, tokenInfo);
+      userTokenStore.setToken(verified.openId, tokenInfo);
 
-      logInfo(logger, "[STEP 5/5] Token stored", {
-        openId: stateData.openId,
+      logInfo(logger, "[STEP 4/4] Token stored", {
+        openId: verified.openId,
         tokenStorePath: userTokenStore.getFilePath(),
         expiresAt: new Date(tokenInfo.expires_at).toISOString(),
         hasRefreshToken: Boolean(tokenInfo.refresh_token),
@@ -470,7 +356,7 @@ export function startAuthCallbackServer(
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(successHtml());
     } catch (err) {
-      logError(logger, "[STEP 4/5] Token exchange exception", err);
+      logError(logger, "[STEP 3/4] Token exchange exception", err);
       res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
       res.end(errorHtml("Internal server error during token exchange"));
     }
