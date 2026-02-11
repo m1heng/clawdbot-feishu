@@ -1,5 +1,7 @@
 import http from "node:http";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { userTokenStore, resolveApiBaseUrl, resolveAuthorizeBaseUrl, type UserTokenInfo } from "./user-token.js";
 import type { ResolvedFeishuAccount } from "./types.js";
 
@@ -31,25 +33,121 @@ const DEFAULT_SCOPES = [
   "docx:document:readonly",
 ];
 
-// ============ CSRF Nonce Management ============
+// ============ Logging Helpers ============
 
-/** Pending auth nonces for CSRF protection (one-time use) */
-const pendingNonces = new Map<string, { openId: string; accountId: string; createdAt: number }>();
+type UserAuthLogger = { info?: (...args: unknown[]) => void; error?: (...args: unknown[]) => void };
+
+/** Serialize error for logging (message + code + stack). Ensures logger always gets a string. */
+function formatErr(err: unknown): string {
+  if (err instanceof Error) {
+    const code = (err as NodeJS.ErrnoException).code;
+    const part = [err.message, code ? `code=${code}` : "", err.stack].filter(Boolean).join(" | ");
+    return part;
+  }
+  return String(err);
+}
+
+function logInfo(logger: UserAuthLogger | undefined, msg: string, detail?: Record<string, unknown>): void {
+  if (!logger?.info) return;
+  const line = detail ? `${msg} ${JSON.stringify(detail)}` : msg;
+  logger.info("[UserAuth]", line);
+}
+
+function logError(logger: UserAuthLogger | undefined, msg: string, err?: unknown): void {
+  if (!logger?.error) return;
+  const line = err !== undefined ? `${msg} ${formatErr(err)}` : msg;
+  logger.error("[UserAuth]", line);
+}
+
+// ============ CSRF Nonce Management (file-persisted for restart / multi-instance) ============
 
 /** Nonce expiry time: 10 minutes */
 const NONCE_TTL_MS = 10 * 60 * 1000;
+
+const DEFAULT_NONCE_FILE = ".feishu-pending-nonces.json";
+
+function getNonceFilePath(config: UserAuthConfig): string {
+  if (config.tokenStorePath) {
+    return path.join(path.dirname(config.tokenStorePath), "feishu-pending-nonces.json");
+  }
+  return path.resolve(DEFAULT_NONCE_FILE);
+}
+
+type NonceEntry = { openId: string; accountId: string; createdAt: number };
+
+function loadPendingNonces(filePath: string): Map<string, NonceEntry> {
+  try {
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const data = JSON.parse(raw) as Record<string, NonceEntry>;
+      return new Map(Object.entries(data));
+    }
+  } catch {
+    // ignore
+  }
+  return new Map();
+}
+
+function savePendingNonces(filePath: string, map: Map<string, NonceEntry>): void {
+  try {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const data = Object.fromEntries(map);
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+  } catch {
+    // best effort
+  }
+}
 
 function generateNonce(): string {
   return crypto.randomBytes(16).toString("hex");
 }
 
-function cleanExpiredNonces(): void {
+/** Add a nonce (persisted to file so callback works after restart or on another instance). */
+function addPendingNonce(
+  config: UserAuthConfig,
+  nonce: string,
+  openId: string,
+  accountId: string,
+): void {
+  const filePath = getNonceFilePath(config);
+  const map = loadPendingNonces(filePath);
   const now = Date.now();
-  for (const [nonce, info] of pendingNonces) {
+  // Remove expired entries before adding
+  for (const [n, info] of map) {
     if (now - info.createdAt > NONCE_TTL_MS) {
-      pendingNonces.delete(nonce);
+      map.delete(n);
     }
   }
+  map.set(nonce, { openId, accountId, createdAt: now });
+  savePendingNonces(filePath, map);
+}
+
+/**
+ * Consume a nonce: validate, remove from store, return openId/accountId.
+ * Returns null if nonce missing or expired.
+ */
+function consumePendingNonce(
+  config: UserAuthConfig,
+  nonce: string,
+): { openId: string; accountId: string } | null {
+  const filePath = getNonceFilePath(config);
+  const map = loadPendingNonces(filePath);
+  const info = map.get(nonce);
+  if (!info) {
+    return null;
+  }
+  const now = Date.now();
+  if (now - info.createdAt > NONCE_TTL_MS) {
+    map.delete(nonce);
+    savePendingNonces(filePath, map);
+    return null;
+  }
+  map.delete(nonce);
+  savePendingNonces(filePath, map);
+  return { openId: info.openId, accountId: info.accountId };
 }
 
 // ============ OAuth URL Builder ============
@@ -63,14 +161,8 @@ export function buildAuthorizeUrl(
   account: ResolvedFeishuAccount,
   config: UserAuthConfig,
 ): string {
-  cleanExpiredNonces();
-
   const nonce = generateNonce();
-  pendingNonces.set(nonce, {
-    openId,
-    accountId: account.accountId,
-    createdAt: Date.now(),
-  });
+  addPendingNonce(config, nonce, openId, account.accountId);
 
   const host = config.callbackHost ?? DEFAULT_CALLBACK_HOST;
   const port = config.callbackPort ?? DEFAULT_CALLBACK_PORT;
@@ -123,6 +215,12 @@ export function startAuthCallbackServer(
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
+    logInfo(logger, "Incoming request", {
+      method: req.method,
+      path: url.pathname,
+      pathMatch: url.pathname === callbackPath,
+    });
+
     // Only handle the callback path
     if (url.pathname !== callbackPath) {
       res.writeHead(404, { "Content-Type": "text/plain" });
@@ -133,7 +231,15 @@ export function startAuthCallbackServer(
     const code = url.searchParams.get("code");
     const stateRaw = url.searchParams.get("state");
 
+    logInfo(logger, "Callback query params", {
+      hasCode: Boolean(code),
+      codeLength: code?.length ?? 0,
+      hasState: Boolean(stateRaw),
+      stateLength: stateRaw?.length ?? 0,
+    });
+
     if (!code || !stateRaw) {
+      logError(logger, "Missing code or state in callback");
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       res.end(errorHtml("Missing code or state parameter"));
       return;
@@ -143,38 +249,62 @@ export function startAuthCallbackServer(
     let stateData: { openId: string; accountId: string; nonce: string };
     try {
       stateData = JSON.parse(Buffer.from(stateRaw, "base64url").toString("utf-8"));
-    } catch {
+      logInfo(logger, "State decoded", {
+        openId: stateData.openId,
+        accountId: stateData.accountId,
+        noncePrefix: stateData.nonce?.slice(0, 8) + "...",
+      });
+    } catch (decodeErr) {
+      logError(logger, "State decode failed", decodeErr);
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       res.end(errorHtml("Invalid state parameter"));
       return;
     }
 
-    // Validate nonce (CSRF protection)
-    const nonceInfo = pendingNonces.get(stateData.nonce);
-    if (!nonceInfo) {
+    // Validate and consume nonce (CSRF protection). File-persisted so it works after restart / multi-instance.
+    const consumed = consumePendingNonce(config, stateData.nonce);
+    if (!consumed) {
+      const filePath = getNonceFilePath(config);
+      const map = loadPendingNonces(filePath);
+      logError(logger, "Invalid or expired nonce", {
+        openId: stateData.openId,
+        noncePrefix: stateData.nonce?.slice(0, 8) + "...",
+        pendingNoncesCount: map.size,
+        nonceFilePath: filePath,
+        hint: "Process may have restarted before callback, or request is older than 10 minutes. Nonces are now file-persisted to avoid this.",
+      });
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       res.end(errorHtml("Invalid or expired authorization request. Please try again."));
       return;
     }
 
-    // Consume nonce (one-time use)
-    pendingNonces.delete(stateData.nonce);
-
-    // Verify nonce matches
-    if (nonceInfo.openId !== stateData.openId || nonceInfo.accountId !== stateData.accountId) {
+    // Use consumed openId/accountId (must match state for sanity)
+    if (consumed.openId !== stateData.openId || consumed.accountId !== stateData.accountId) {
+      logError(logger, "State mismatch after consume", {
+        consumedOpenId: consumed.openId,
+        stateOpenId: stateData.openId,
+        consumedAccountId: consumed.accountId,
+        stateAccountId: stateData.accountId,
+      });
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       res.end(errorHtml("State mismatch. Please try again."));
       return;
     }
 
     // Exchange code for token
-    try {
-      const protocol =
-        config.callbackProtocol ??
-        (host === "localhost" || host === "127.0.0.1" ? "http" : "https");
-      const redirectUri = `${protocol}://${host}:${port}${callbackPath}`;
-      const baseUrl = resolveApiBaseUrl(account.domain);
+    const protocol =
+      config.callbackProtocol ??
+      (host === "localhost" || host === "127.0.0.1" ? "http" : "https");
+    const redirectUri = `${protocol}://${host}:${port}${callbackPath}`;
+    const baseUrl = resolveApiBaseUrl(account.domain);
 
+    logInfo(logger, "Exchanging code for token", {
+      redirectUri,
+      tokenUrl: `${baseUrl}/open-apis/authen/v2/oauth/token`,
+      openId: stateData.openId,
+    });
+
+    try {
       const tokenResponse = await fetch(`${baseUrl}/open-apis/authen/v2/oauth/token`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -196,10 +326,19 @@ export function startAuthCallbackServer(
         scope?: string;
       };
 
+      logInfo(logger, "Token API response", {
+        httpStatus: tokenResponse.status,
+        code: tokenResult.code,
+        msg: tokenResult.msg,
+        hasAccessToken: Boolean(tokenResult.access_token),
+        hasRefreshToken: Boolean(tokenResult.refresh_token),
+        expiresIn: tokenResult.expires_in,
+      });
+
       if (tokenResult.code !== 0 || !tokenResult.access_token) {
-        logger?.error?.(
-          `[UserAuth] Token exchange failed for ${stateData.openId}:`,
-          tokenResult.msg ?? "unknown error",
+        logError(
+          logger,
+          `Token exchange failed for openId=${stateData.openId} code=${tokenResult.code} msg=${tokenResult.msg ?? "unknown"}`,
         );
         res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
         res.end(errorHtml(`Authorization failed: ${tokenResult.msg ?? "unknown error"}`));
@@ -216,27 +355,39 @@ export function startAuthCallbackServer(
 
       userTokenStore.setToken(stateData.openId, tokenInfo);
 
-      logger?.info?.(
-        `[UserAuth] Authorization successful for user ${stateData.openId}, ` +
-          `token expires at ${new Date(tokenInfo.expires_at).toLocaleString()}`,
-      );
+      logInfo(logger, "Authorization successful", {
+        openId: stateData.openId,
+        expiresAt: new Date(tokenInfo.expires_at).toISOString(),
+        hasRefreshToken: Boolean(tokenInfo.refresh_token),
+      });
 
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(successHtml());
     } catch (err) {
-      logger?.error?.("[UserAuth] Token exchange error:", err);
+      logError(logger, "Token exchange exception", err);
       res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
       res.end(errorHtml("Internal server error during token exchange"));
     }
   });
 
   const listenHost = host === "localhost" ? "127.0.0.1" : "0.0.0.0";
+  const protocol =
+    config.callbackProtocol ??
+    (host === "localhost" || host === "127.0.0.1" ? "http" : "https");
+  const redirectUri = `${protocol}://${host}${port === 80 || port === 443 ? "" : `:${port}`}${callbackPath}`;
+
   server.listen(port, listenHost, () => {
-    logger?.info?.(`[UserAuth] Callback server started on ${listenHost}:${port}`);
+    logInfo(logger, "Callback server started", {
+      listenHost,
+      port,
+      callbackPath,
+      redirectUri,
+      hint: "Ensure this redirect_uri is whitelisted in Feishu Open Platform (OAuth redirect URL)",
+    });
   });
 
   server.on("error", (err) => {
-    logger?.error?.("[UserAuth] Callback server error:", err);
+    logError(logger, "Callback server error (e.g. port in use, permission denied)", err);
   });
 
   callbackServer = server;
