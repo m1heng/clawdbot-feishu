@@ -193,16 +193,31 @@ export class UserTokenStore {
 
   /**
    * Get token info for a user. Returns null if missing or expired.
+   * If not found in memory, reloads from disk (handles cross-context writes).
    */
   getToken(openId: string): UserTokenInfo | null {
-    const info = this.tokens.get(openId);
+    let info = this.tokens.get(openId);
     if (!info) {
-      log("info", "[TokenStore] getToken: not found", {
+      // Token not in memory — reload from disk in case another context/process saved it
+      log("info", "[TokenStore] getToken: not in memory, reloading from disk", {
         openId,
         filePath: this.getFilePath(),
-        storedOpenIds: [...this.tokens.keys()].join(", ") || "(empty)",
+        storedOpenIdsBefore: [...this.tokens.keys()].join(", ") || "(empty)",
       });
-      return null;
+      this.load();
+      info = this.tokens.get(openId);
+      if (!info) {
+        log("info", "[TokenStore] getToken: still not found after disk reload", {
+          openId,
+          filePath: this.getFilePath(),
+          storedOpenIdsAfter: [...this.tokens.keys()].join(", ") || "(empty)",
+        });
+        return null;
+      }
+      log("info", "[TokenStore] getToken: found after disk reload", {
+        openId,
+        filePath: this.getFilePath(),
+      });
     }
     const now = Date.now();
     if (info.expires_at <= now) {
@@ -347,7 +362,18 @@ export class UserTokenStore {
     });
 
     // Check if current token is still valid (with 5-minute buffer)
-    const info = this.tokens.get(openId);
+    let info = this.tokens.get(openId);
+
+    // If not in memory, reload from disk (another context may have saved it)
+    if (!info) {
+      log("info", "[TokenStore] getValidAccessToken: not in memory, reloading from disk", {
+        openId,
+        filePath: this.getFilePath(),
+      });
+      this.load();
+      info = this.tokens.get(openId);
+    }
+
     if (info && info.expires_at > Date.now() + 5 * 60 * 1000) {
       log("info", "[TokenStore] getValidAccessToken: token valid, returning", {
         openId,
@@ -364,7 +390,7 @@ export class UserTokenStore {
         hasRefreshToken: Boolean(info.refresh_token),
       });
     } else {
-      log("info", "[TokenStore] getValidAccessToken: no token found for this openId", {
+      log("info", "[TokenStore] getValidAccessToken: no token found for this openId (even after disk reload)", {
         openId,
         storedOpenIds: [...this.tokens.keys()].join(", ") || "(empty)",
       });
