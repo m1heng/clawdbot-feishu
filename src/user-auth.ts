@@ -8,7 +8,9 @@ import type { ResolvedFeishuAccount } from "./types.js";
 export interface UserAuthConfig {
   enabled?: boolean;
   callbackPort?: number; // default: 16688
-  callbackHost?: string; // default: localhost
+  callbackHost?: string; // default: localhost — used in redirect_uri (the public-facing hostname)
+  /** Actual address the HTTP server binds to. Default: "127.0.0.1" if callbackHost is localhost, otherwise "0.0.0.0". Set to "127.0.0.1" to restrict to loopback only even with a public callbackHost (use a reverse proxy). */
+  callbackListenHost?: string;
   /** "http" or "https". If not set: localhost/127.0.0.1 use http, otherwise https. Set to "http" for remote servers without HTTPS. */
   callbackProtocol?: "http" | "https";
   callbackPath?: string; // default: /feishu/user-auth/callback
@@ -225,8 +227,11 @@ export function startAuthCallbackServer(
   config: UserAuthConfig,
   logger?: { info?: (...args: any[]) => void; error?: (...args: any[]) => void },
 ): http.Server {
+  // If a previous server instance exists, close it first to avoid EADDRINUSE
   if (callbackServer) {
-    return callbackServer;
+    logInfo(logger, "Closing existing callback server before restarting");
+    try { callbackServer.close(); } catch { /* ignore */ }
+    callbackServer = null;
   }
 
   const port = config.callbackPort ?? DEFAULT_CALLBACK_PORT;
@@ -362,7 +367,7 @@ export function startAuthCallbackServer(
     }
   });
 
-  const listenHost = host === "localhost" ? "127.0.0.1" : "0.0.0.0";
+  const listenHost = config.callbackListenHost ?? (host === "localhost" ? "127.0.0.1" : "0.0.0.0");
   const protocol =
     config.callbackProtocol ??
     (host === "localhost" || host === "127.0.0.1" ? "http" : "https");
