@@ -75,40 +75,76 @@ function logError(
 /** Nonce expiry time: 10 minutes */
 const NONCE_TTL_MS = 10 * 60 * 1000;
 
-const DEFAULT_NONCE_FILE = ".feishu-pending-nonces.json";
+const NONCE_FILE_NAME = "feishu-pending-nonces.json";
 
-export function getNonceFilePath(config: UserAuthConfig): string {
+export function getNonceFilePath(_config: UserAuthConfig): string {
   // Use the actual resolved token file path so nonce file sits alongside the token file,
   // even if tokenStorePath was a directory that got resolved.
   const tokenFilePath = userTokenStore.getFilePath();
-  return path.join(path.dirname(tokenFilePath), "feishu-pending-nonces.json");
+  const dir = path.dirname(tokenFilePath);
+  const result = path.join(dir, NONCE_FILE_NAME);
+  return result;
 }
 
 type NonceEntry = { openId: string; accountId: string; createdAt: number };
 
-function loadPendingNonces(filePath: string): Map<string, NonceEntry> {
+function loadPendingNonces(filePath: string, logger?: UserAuthLogger): Map<string, NonceEntry> {
+  const absPath = path.resolve(filePath);
   try {
-    if (fs.existsSync(filePath)) {
-      const raw = fs.readFileSync(filePath, "utf-8");
-      const data = JSON.parse(raw) as Record<string, NonceEntry>;
-      return new Map(Object.entries(data));
+    const exists = fs.existsSync(absPath);
+    if (!exists) {
+      logInfo(logger, "[Nonce] loadPendingNonces: file not found, returning empty", { filePath: absPath });
+      return new Map();
     }
-  } catch {
-    // ignore
+    // Check if path is a directory (safeguard)
+    const stat = fs.statSync(absPath);
+    if (stat.isDirectory()) {
+      logError(logger, "[Nonce] loadPendingNonces: path is a directory, not a file!", { filePath: absPath });
+      return new Map();
+    }
+    const raw = fs.readFileSync(absPath, "utf-8");
+    const data = JSON.parse(raw) as Record<string, NonceEntry>;
+    const map = new Map(Object.entries(data));
+    logInfo(logger, "[Nonce] loadPendingNonces: loaded", {
+      filePath: absPath,
+      count: map.size,
+      nonces: [...map.keys()].map((k) => k.slice(0, 8) + "...").join(", ") || "(empty)",
+    });
+    return map;
+  } catch (err) {
+    logError(logger, "[Nonce] loadPendingNonces: failed to read/parse", {
+      filePath: absPath,
+      error: formatErr(err),
+    });
+    return new Map();
   }
-  return new Map();
 }
 
-function savePendingNonces(filePath: string, map: Map<string, NonceEntry>): void {
+function savePendingNonces(filePath: string, map: Map<string, NonceEntry>, logger?: UserAuthLogger): void {
+  const absPath = path.resolve(filePath);
   try {
-    const dir = path.dirname(filePath);
+    const dir = path.dirname(absPath);
     if (!fs.existsSync(dir)) {
+      logInfo(logger, "[Nonce] savePendingNonces: creating directory", { dir });
       fs.mkdirSync(dir, { recursive: true });
     }
     const data = Object.fromEntries(map);
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
-  } catch {
-    // best effort
+    fs.writeFileSync(absPath, JSON.stringify(data, null, 2), "utf-8");
+
+    // Verify the write succeeded by checking file exists and re-reading
+    const verifyExists = fs.existsSync(absPath);
+    const verifySize = verifyExists ? fs.statSync(absPath).size : 0;
+    logInfo(logger, "[Nonce] savePendingNonces: written", {
+      filePath: absPath,
+      count: map.size,
+      fileExists: verifyExists,
+      fileSize: verifySize,
+    });
+  } catch (err) {
+    logError(logger, "[Nonce] savePendingNonces: FAILED to write nonce file", {
+      filePath: absPath,
+      error: formatErr(err),
+    });
   }
 }
 
@@ -122,18 +158,38 @@ function addPendingNonce(
   nonce: string,
   openId: string,
   accountId: string,
+  logger?: UserAuthLogger,
 ): void {
   const filePath = getNonceFilePath(config);
-  const map = loadPendingNonces(filePath);
+  logInfo(logger, "[Nonce] addPendingNonce: start", {
+    noncePrefix: nonce.slice(0, 8) + "...",
+    openId,
+    accountId,
+    nonceFilePath: filePath,
+    tokenStoreFilePath: userTokenStore.getFilePath(),
+  });
+
+  const map = loadPendingNonces(filePath, logger);
   const now = Date.now();
   // Remove expired entries before adding
+  let expiredCount = 0;
   for (const [n, info] of map) {
     if (now - info.createdAt > NONCE_TTL_MS) {
       map.delete(n);
+      expiredCount++;
     }
   }
+  if (expiredCount > 0) {
+    logInfo(logger, "[Nonce] addPendingNonce: cleaned expired nonces", { expiredCount });
+  }
   map.set(nonce, { openId, accountId, createdAt: now });
-  savePendingNonces(filePath, map);
+  savePendingNonces(filePath, map, logger);
+
+  logInfo(logger, "[Nonce] addPendingNonce: done", {
+    noncePrefix: nonce.slice(0, 8) + "...",
+    totalNonces: map.size,
+    nonceFilePath: filePath,
+  });
 }
 
 /**
@@ -143,21 +199,52 @@ function addPendingNonce(
 function consumePendingNonce(
   config: UserAuthConfig,
   nonce: string,
+  logger?: UserAuthLogger,
 ): { openId: string; accountId: string } | null {
   const filePath = getNonceFilePath(config);
-  const map = loadPendingNonces(filePath);
+  logInfo(logger, "[Nonce] consumePendingNonce: start", {
+    noncePrefix: nonce.slice(0, 8) + "...",
+    nonceFilePath: filePath,
+    tokenStoreFilePath: userTokenStore.getFilePath(),
+  });
+
+  const map = loadPendingNonces(filePath, logger);
+  logInfo(logger, "[Nonce] consumePendingNonce: loaded nonces", {
+    count: map.size,
+    nonces: [...map.keys()].map((k) => k.slice(0, 8) + "...").join(", ") || "(none)",
+    lookingFor: nonce.slice(0, 8) + "...",
+    found: map.has(nonce),
+  });
+
   const info = map.get(nonce);
   if (!info) {
+    logError(logger, "[Nonce] consumePendingNonce: nonce NOT FOUND in file", {
+      noncePrefix: nonce.slice(0, 8) + "...",
+      nonceFilePath: filePath,
+      storedNonceCount: map.size,
+      storedNoncePrefixes: [...map.keys()].map((k) => k.slice(0, 8) + "...").join(", ") || "(none)",
+      hint: "Nonce was never saved, or saved to a different file. Check addPendingNonce logs above.",
+    });
     return null;
   }
   const now = Date.now();
   if (now - info.createdAt > NONCE_TTL_MS) {
+    logError(logger, "[Nonce] consumePendingNonce: nonce EXPIRED", {
+      noncePrefix: nonce.slice(0, 8) + "...",
+      createdAt: new Date(info.createdAt).toISOString(),
+      expiredAgoMs: now - info.createdAt - NONCE_TTL_MS,
+    });
     map.delete(nonce);
-    savePendingNonces(filePath, map);
+    savePendingNonces(filePath, map, logger);
     return null;
   }
   map.delete(nonce);
-  savePendingNonces(filePath, map);
+  savePendingNonces(filePath, map, logger);
+  logInfo(logger, "[Nonce] consumePendingNonce: SUCCESS", {
+    noncePrefix: nonce.slice(0, 8) + "...",
+    openId: info.openId,
+    accountId: info.accountId,
+  });
   return { openId: info.openId, accountId: info.accountId };
 }
 
@@ -171,9 +258,10 @@ export function buildAuthorizeUrl(
   openId: string,
   account: ResolvedFeishuAccount,
   config: UserAuthConfig,
+  logger?: UserAuthLogger,
 ): string {
   const nonce = generateNonce();
-  addPendingNonce(config, nonce, openId, account.accountId);
+  addPendingNonce(config, nonce, openId, account.accountId, logger);
 
   const host = config.callbackHost ?? DEFAULT_CALLBACK_HOST;
   const port = config.callbackPort ?? DEFAULT_CALLBACK_PORT;
@@ -273,16 +361,14 @@ export function startAuthCallbackServer(
     }
 
     // Validate and consume nonce (CSRF protection). File-persisted so it works after restart / multi-instance.
-    const consumed = consumePendingNonce(config, stateData.nonce);
+    const consumed = consumePendingNonce(config, stateData.nonce, logger);
     if (!consumed) {
       const filePath = getNonceFilePath(config);
-      const map = loadPendingNonces(filePath);
-      logError(logger, "[STEP 3/5] Invalid or expired nonce", {
+      logError(logger, "[STEP 3/5] Invalid or expired nonce — see [Nonce] logs above for detailed diagnosis", {
         openId: stateData.openId,
         noncePrefix: stateData.nonce?.slice(0, 8) + "...",
-        pendingNoncesCount: map.size,
         nonceFilePath: filePath,
-        hint: "Process may have restarted before callback, or request is older than 10 minutes. Nonces are now file-persisted to avoid this.",
+        tokenStoreFilePath: userTokenStore.getFilePath(),
       });
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       res.end(errorHtml("Invalid or expired authorization request. Please try again."));

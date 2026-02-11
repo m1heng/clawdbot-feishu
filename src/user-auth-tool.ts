@@ -100,7 +100,7 @@ export function registerFeishuUserAuthTools(api: OpenClawPluginApi) {
         try {
           switch (p.action) {
             case "authorize": {
-              const url = buildAuthorizeUrl(p.open_id, firstAccount, userAuthCfg);
+              const url = buildAuthorizeUrl(p.open_id, firstAccount, userAuthCfg, authLogger);
               const messageText = `请点击以下链接完成授权（10分钟内有效）：\n${url}`;
               let dmSent = false;
               try {
