@@ -197,41 +197,44 @@ export class UserTokenStore {
    */
   getToken(openId: string): UserTokenInfo | null {
     let info = this.tokens.get(openId);
-    if (!info) {
-      // Token not in memory — reload from disk in case another context/process saved it
-      log("info", "[TokenStore] getToken: not in memory, reloading from disk", {
+    const now = Date.now();
+    const needsReload = !info || info.expires_at <= now;
+
+    // Reload from disk if token is missing OR expired — another context
+    // (e.g. the OAuth callback server) may have saved a fresh token.
+    if (needsReload) {
+      log("info", "[TokenStore] getToken: reloading from disk (token missing or expired)", {
         openId,
         filePath: this.getFilePath(),
-        storedOpenIdsBefore: [...this.tokens.keys()].join(", ") || "(empty)",
+        reason: !info ? "not_in_memory" : "expired",
+        memoryExpiresAt: info ? new Date(info.expires_at).toISOString() : null,
       });
       this.load();
       info = this.tokens.get(openId);
-      if (!info) {
-        log("info", "[TokenStore] getToken: still not found after disk reload", {
-          openId,
-          filePath: this.getFilePath(),
-          storedOpenIdsAfter: [...this.tokens.keys()].join(", ") || "(empty)",
-        });
-        return null;
-      }
-      log("info", "[TokenStore] getToken: found after disk reload", {
+    }
+
+    if (!info) {
+      log("info", "[TokenStore] getToken: not found (even after disk reload)", {
         openId,
         filePath: this.getFilePath(),
-      });
-    }
-    const now = Date.now();
-    if (info.expires_at <= now) {
-      log("info", "[TokenStore] getToken: token expired", {
-        openId,
-        expiredAt: new Date(info.expires_at).toISOString(),
-        expiredAgoMs: now - info.expires_at,
+        storedOpenIds: [...this.tokens.keys()].join(", ") || "(empty)",
       });
       return null;
     }
+
+    if (info.expires_at <= Date.now()) {
+      log("info", "[TokenStore] getToken: token expired (even after disk reload)", {
+        openId,
+        expiredAt: new Date(info.expires_at).toISOString(),
+        expiredAgoMs: Date.now() - info.expires_at,
+      });
+      return null;
+    }
+
     log("info", "[TokenStore] getToken: found valid token", {
       openId,
       expiresAt: new Date(info.expires_at).toISOString(),
-      remainingMs: info.expires_at - now,
+      remainingMs: info.expires_at - Date.now(),
     });
     return info;
   }
@@ -363,12 +366,16 @@ export class UserTokenStore {
 
     // Check if current token is still valid (with 5-minute buffer)
     let info = this.tokens.get(openId);
+    const needsRefresh = !info || info.expires_at <= Date.now() + 5 * 60 * 1000;
 
-    // If not in memory, reload from disk (another context may have saved it)
-    if (!info) {
-      log("info", "[TokenStore] getValidAccessToken: not in memory, reloading from disk", {
+    // Reload from disk if token is missing OR expired/expiring — another context
+    // (e.g. the OAuth callback server) may have saved a fresh token to disk.
+    if (needsRefresh) {
+      log("info", "[TokenStore] getValidAccessToken: reloading from disk (token missing or expired)", {
         openId,
         filePath: this.getFilePath(),
+        reason: !info ? "not_in_memory" : "expired_or_expiring",
+        memoryExpiresAt: info ? new Date(info.expires_at).toISOString() : null,
       });
       this.load();
       info = this.tokens.get(openId);
@@ -384,13 +391,13 @@ export class UserTokenStore {
     }
 
     if (info) {
-      log("info", "[TokenStore] getValidAccessToken: token expired or expiring soon", {
+      log("info", "[TokenStore] getValidAccessToken: token expired or expiring soon (even after disk reload)", {
         openId,
         expiresAt: new Date(info.expires_at).toISOString(),
         hasRefreshToken: Boolean(info.refresh_token),
       });
     } else {
-      log("info", "[TokenStore] getValidAccessToken: no token found for this openId (even after disk reload)", {
+      log("info", "[TokenStore] getValidAccessToken: no token found (even after disk reload)", {
         openId,
         storedOpenIds: [...this.tokens.keys()].join(", ") || "(empty)",
       });
