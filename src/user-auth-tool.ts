@@ -1,8 +1,11 @@
+import path from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { listEnabledFeishuAccounts } from "./accounts.js";
 import { resolveToolsConfig } from "./tools-config.js";
 import { userTokenStore } from "./user-token.js";
-import { buildAuthorizeUrl, startAuthCallbackServer, type UserAuthConfig } from "./user-auth.js";
+import { buildAuthorizeUrl, startAuthCallbackServer, getNonceFilePath, type UserAuthConfig } from "./user-auth.js";
+import { createAuthFileLogger, getAuthLogFilePath } from "./user-auth-logger.js";
+import { sendMessageFeishu } from "./send.js";
 import { FeishuUserAuthSchema, type FeishuUserAuthParams } from "./user-auth-schema.js";
 
 // ============ Helpers ============
@@ -35,22 +38,50 @@ export function registerFeishuUserAuthTools(api: OpenClawPluginApi) {
     return;
   }
 
-  // Resolve userAuth config
-  const userAuthCfg: UserAuthConfig = (firstAccount.config as any).userAuth ?? {};
+  const userAuthCfg: UserAuthConfig = (firstAccount.config as Record<string, unknown>).userAuth as
+    | UserAuthConfig
+    | undefined
+    ?? {};
 
-  // Initialize token store with custom path if configured
-  if (userAuthCfg.tokenStorePath) {
-    // Re-initialize the store with the custom path
-    const { UserTokenStore } = require("./user-token.js") as typeof import("./user-token.js");
-    const store = new UserTokenStore(userAuthCfg.tokenStorePath);
-    // Copy tokens to singleton (the singleton is what tools use)
-    // This is a workaround since the singleton is already created
-    Object.assign(userTokenStore, { filePath: userAuthCfg.tokenStorePath });
-    userTokenStore.load();
+  // Resolve paths and create file logger (log file next to token store or in system temp dir)
+  const tokenStorePath = userAuthCfg.tokenStorePath
+    ? path.resolve(userAuthCfg.tokenStorePath)
+    : undefined;
+  const logFilePath = getAuthLogFilePath(tokenStorePath);
+  const logFilePathAbsolute = path.resolve(logFilePath);
+  const authLogger = createAuthFileLogger(logFilePathAbsolute, api.logger);
+
+  // Initialize token store to configured path so tokens save where user expects
+  if (tokenStorePath) {
+    userTokenStore.reinitialize(tokenStorePath);
   }
+  const actualTokenPath = userTokenStore.getFilePath();
+  const nonceFilePath = getNonceFilePath(userAuthCfg);
 
-  // Start the callback server
-  startAuthCallbackServer(firstAccount, userAuthCfg, api.logger);
+  const port = userAuthCfg.callbackPort ?? 16688;
+  const host = userAuthCfg.callbackHost ?? "localhost";
+  const protocol =
+    userAuthCfg.callbackProtocol ??
+    (host === "localhost" || host === "127.0.0.1" ? "http" : "https");
+  const callbackPath = userAuthCfg.callbackPath ?? "/feishu/user-auth/callback";
+  const redirectUri = `${protocol}://${host}:${port}${callbackPath}`;
+
+  authLogger.info("feishu_user_auth tool registered", {
+    tokenStorePathActual: actualTokenPath,
+    nonceFilePath,
+    authLogFilePath: logFilePathAbsolute,
+    callbackHost: host,
+    callbackPort: port,
+    callbackProtocol: protocol,
+    redirectUri,
+    hint: "Ensure redirect_uri is whitelisted in Feishu Open Platform (OAuth redirect URL)",
+  });
+
+  api.logger.info?.(
+    `[UserAuth] 日志文件路径 (auth log file): ${logFilePathAbsolute}`,
+  );
+
+  startAuthCallbackServer(firstAccount, userAuthCfg, authLogger);
 
   api.registerTool(
     {
@@ -67,9 +98,30 @@ export function registerFeishuUserAuthTools(api: OpenClawPluginApi) {
           switch (p.action) {
             case "authorize": {
               const url = buildAuthorizeUrl(p.open_id, firstAccount, userAuthCfg);
+              const messageText = `请点击以下链接完成授权（10分钟内有效）：\n${url}`;
+              let dmSent = false;
+              try {
+                await sendMessageFeishu({
+                  cfg: api.config!,
+                  to: p.open_id,
+                  text: messageText,
+                  accountId: firstAccount.accountId,
+                });
+                dmSent = true;
+                authLogger.info("Authorize link sent to user via Feishu DM", {
+                  openId: p.open_id,
+                });
+              } catch (dmErr) {
+                authLogger.error("Failed to send authorize link via DM (returning URL in tool result)", {
+                  openId: p.open_id,
+                  error: dmErr instanceof Error ? dmErr.message : String(dmErr),
+                });
+              }
+
               return json({
                 authorize_url: url,
                 message: `Please open the following URL to authorize: ${url}`,
+                dm_sent: dmSent,
               });
             }
             case "status": {
@@ -92,7 +144,7 @@ export function registerFeishuUserAuthTools(api: OpenClawPluginApi) {
               });
             }
             default:
-              return json({ error: `Unknown action: ${(p as any).action}` });
+              return json({ error: `Unknown action: ${(p as { action: string }).action}` });
           }
         } catch (err) {
           return json({ error: err instanceof Error ? err.message : String(err) });

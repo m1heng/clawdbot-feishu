@@ -49,14 +49,25 @@ function formatErr(err: unknown): string {
 
 function logInfo(logger: UserAuthLogger | undefined, msg: string, detail?: Record<string, unknown>): void {
   if (!logger?.info) return;
-  const line = detail ? `${msg} ${JSON.stringify(detail)}` : msg;
-  logger.info("[UserAuth]", line);
+  (logger as { info: (msg: string, detail?: Record<string, unknown>) => void }).info(msg, detail);
 }
 
-function logError(logger: UserAuthLogger | undefined, msg: string, err?: unknown): void {
+function logError(
+  logger: UserAuthLogger | undefined,
+  msg: string,
+  detailOrErr?: Record<string, unknown> | unknown,
+): void {
   if (!logger?.error) return;
-  const line = err !== undefined ? `${msg} ${formatErr(err)}` : msg;
-  logger.error("[UserAuth]", line);
+  const detail: Record<string, unknown> | undefined =
+    detailOrErr === undefined
+      ? undefined
+      : typeof detailOrErr === "object" &&
+        detailOrErr !== null &&
+        !(detailOrErr instanceof Error) &&
+        !Array.isArray(detailOrErr)
+      ? (detailOrErr as Record<string, unknown>)
+      : { error: formatErr(detailOrErr) };
+  (logger as { error: (msg: string, detail?: Record<string, unknown>) => void }).error(msg, detail);
 }
 
 // ============ CSRF Nonce Management (file-persisted for restart / multi-instance) ============
@@ -66,7 +77,7 @@ const NONCE_TTL_MS = 10 * 60 * 1000;
 
 const DEFAULT_NONCE_FILE = ".feishu-pending-nonces.json";
 
-function getNonceFilePath(config: UserAuthConfig): string {
+export function getNonceFilePath(config: UserAuthConfig): string {
   if (config.tokenStorePath) {
     return path.join(path.dirname(config.tokenStorePath), "feishu-pending-nonces.json");
   }
@@ -215,7 +226,7 @@ export function startAuthCallbackServer(
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
-    logInfo(logger, "Incoming request", {
+    logInfo(logger, "[STEP 1/5] Received callback request", {
       method: req.method,
       path: url.pathname,
       pathMatch: url.pathname === callbackPath,
@@ -231,7 +242,7 @@ export function startAuthCallbackServer(
     const code = url.searchParams.get("code");
     const stateRaw = url.searchParams.get("state");
 
-    logInfo(logger, "Callback query params", {
+    logInfo(logger, "[STEP 1/5] Callback query params", {
       hasCode: Boolean(code),
       codeLength: code?.length ?? 0,
       hasState: Boolean(stateRaw),
@@ -239,7 +250,7 @@ export function startAuthCallbackServer(
     });
 
     if (!code || !stateRaw) {
-      logError(logger, "Missing code or state in callback");
+      logError(logger, "[STEP 1/5] Missing code or state in callback");
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       res.end(errorHtml("Missing code or state parameter"));
       return;
@@ -249,13 +260,13 @@ export function startAuthCallbackServer(
     let stateData: { openId: string; accountId: string; nonce: string };
     try {
       stateData = JSON.parse(Buffer.from(stateRaw, "base64url").toString("utf-8"));
-      logInfo(logger, "State decoded", {
+      logInfo(logger, "[STEP 2/5] Decoded state", {
         openId: stateData.openId,
         accountId: stateData.accountId,
         noncePrefix: stateData.nonce?.slice(0, 8) + "...",
       });
     } catch (decodeErr) {
-      logError(logger, "State decode failed", decodeErr);
+      logError(logger, "[STEP 2/5] State decode failed", decodeErr);
       res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
       res.end(errorHtml("Invalid state parameter"));
       return;
@@ -266,7 +277,7 @@ export function startAuthCallbackServer(
     if (!consumed) {
       const filePath = getNonceFilePath(config);
       const map = loadPendingNonces(filePath);
-      logError(logger, "Invalid or expired nonce", {
+      logError(logger, "[STEP 3/5] Invalid or expired nonce", {
         openId: stateData.openId,
         noncePrefix: stateData.nonce?.slice(0, 8) + "...",
         pendingNoncesCount: map.size,
@@ -280,7 +291,7 @@ export function startAuthCallbackServer(
 
     // Use consumed openId/accountId (must match state for sanity)
     if (consumed.openId !== stateData.openId || consumed.accountId !== stateData.accountId) {
-      logError(logger, "State mismatch after consume", {
+      logError(logger, "[STEP 3/5] State mismatch after consume", {
         consumedOpenId: consumed.openId,
         stateOpenId: stateData.openId,
         consumedAccountId: consumed.accountId,
@@ -298,7 +309,7 @@ export function startAuthCallbackServer(
     const redirectUri = `${protocol}://${host}:${port}${callbackPath}`;
     const baseUrl = resolveApiBaseUrl(account.domain);
 
-    logInfo(logger, "Exchanging code for token", {
+    logInfo(logger, "[STEP 4/5] Exchanging code for token", {
       redirectUri,
       tokenUrl: `${baseUrl}/open-apis/authen/v2/oauth/token`,
       openId: stateData.openId,
@@ -326,7 +337,7 @@ export function startAuthCallbackServer(
         scope?: string;
       };
 
-      logInfo(logger, "Token API response", {
+      logInfo(logger, "[STEP 4/5] Token API response", {
         httpStatus: tokenResponse.status,
         code: tokenResult.code,
         msg: tokenResult.msg,
@@ -336,10 +347,11 @@ export function startAuthCallbackServer(
       });
 
       if (tokenResult.code !== 0 || !tokenResult.access_token) {
-        logError(
-          logger,
-          `Token exchange failed for openId=${stateData.openId} code=${tokenResult.code} msg=${tokenResult.msg ?? "unknown"}`,
-        );
+        logError(logger, "[STEP 4/5] Token exchange failed", {
+          openId: stateData.openId,
+          code: tokenResult.code,
+          msg: tokenResult.msg ?? "unknown",
+        });
         res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
         res.end(errorHtml(`Authorization failed: ${tokenResult.msg ?? "unknown error"}`));
         return;
@@ -355,7 +367,7 @@ export function startAuthCallbackServer(
 
       userTokenStore.setToken(stateData.openId, tokenInfo);
 
-      logInfo(logger, "Authorization successful", {
+      logInfo(logger, "[STEP 5/5] Token stored", {
         openId: stateData.openId,
         expiresAt: new Date(tokenInfo.expires_at).toISOString(),
         hasRefreshToken: Boolean(tokenInfo.refresh_token),
@@ -364,7 +376,7 @@ export function startAuthCallbackServer(
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(successHtml());
     } catch (err) {
-      logError(logger, "Token exchange exception", err);
+      logError(logger, "[STEP 4/5] Token exchange exception", err);
       res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
       res.end(errorHtml("Internal server error during token exchange"));
     }

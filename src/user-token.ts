@@ -49,7 +49,23 @@ export class UserTokenStore {
   }
 
   /**
-   * Load tokens from disk. Called once on construction.
+   * Return the current token store file path (absolute).
+   */
+  getFilePath(): string {
+    return path.resolve(this.filePath);
+  }
+
+  /**
+   * Reinitialize the store to use a new file path (e.g. from config tokenStorePath).
+   * Loads tokens from the new path; does not clear in-memory state until load() runs.
+   */
+  reinitialize(newFilePath: string): void {
+    this.filePath = path.resolve(newFilePath);
+    this.load();
+  }
+
+  /**
+   * Load tokens from disk. Called once on construction and from reinitialize().
    */
   load(): void {
     try {
