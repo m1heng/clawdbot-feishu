@@ -574,19 +574,19 @@ function convertAudioToPcmBase64(audio_path: string): Promise<string> {
  * Converts audio to PCM and encodes as base64, then waits for next steps.
  */
 export async function speechToText(
-  audio_path: string,
-  accountId?: string,
+  audioPath: string,
+  accountId: string,
 ): Promise<string> {
-  const client = getFeishuClient(accountId ?? "default");
+  const client = getFeishuClient(accountId);
   if (!client) {
-    throw new Error(`Feishu client not found for account "${accountId ?? "default"}"`);
+    throw new Error(`Feishu client not found for account "${accountId}"`);
   }
 
   // Convert audio to PCM (16kHz, 16-bit, mono) and get base64
-  const pcmBase64 = await convertAudioToPcmBase64(audio_path);
+  const pcmBase64 = await convertAudioToPcmBase64(audioPath);
 
 
-  // speech api special requirement, don't reuse
+  // speech_to_text api special requirement, don't reuse
   function _generateRandomId(length: number): string {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     let result = "";
