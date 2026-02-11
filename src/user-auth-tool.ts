@@ -6,7 +6,7 @@ import { userTokenStore } from "./user-token.js";
 import { buildAuthorizeUrl, startAuthCallbackServer, getNonceFilePath, type UserAuthConfig } from "./user-auth.js";
 import { createAuthFileLogger, getAuthLogFilePath } from "./user-auth-logger.js";
 import { setAuthLogger } from "./feishu-auth-debug.js";
-import { sendMessageFeishu } from "./send.js";
+import { sendCardFeishu } from "./send.js";
 import { FeishuUserAuthSchema, type FeishuUserAuthParams } from "./user-auth-schema.js";
 
 // ============ Helpers ============
@@ -104,21 +104,54 @@ export function registerFeishuUserAuthTools(api: OpenClawPluginApi) {
           switch (p.action) {
             case "authorize": {
               const url = buildAuthorizeUrl(p.open_id, firstAccount, userAuthCfg, nonceFilePath, authLogger);
-              const messageText = `请点击以下链接完成授权（10分钟内有效）：\n${url}`;
               let dmSent = false;
               try {
-                await sendMessageFeishu({
+                // Send as interactive card with button so Feishu does not
+                // parse/truncate the accounts.feishu.cn URL.
+                const authCard = {
+                  schema: "2.0",
+                  config: { wide_screen_mode: true },
+                  header: {
+                    title: { tag: "plain_text", content: "飞书授权请求" },
+                    template: "blue",
+                  },
+                  body: {
+                    elements: [
+                      {
+                        tag: "markdown",
+                        content: "请点击下方按钮完成授权（10分钟内有效）",
+                      },
+                      {
+                        tag: "action",
+                        actions: [
+                          {
+                            tag: "button",
+                            text: { tag: "plain_text", content: "点击授权" },
+                            type: "primary",
+                            multi_url: {
+                              url,
+                              pc_url: "",
+                              android_url: "",
+                              ios_url: "",
+                            },
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                };
+                await sendCardFeishu({
                   cfg: api.config!,
                   to: p.open_id,
-                  text: messageText,
+                  card: authCard,
                   accountId: firstAccount.accountId,
                 });
                 dmSent = true;
-                authLogger.info("Authorize link sent to user via Feishu DM", {
+                authLogger.info("Authorize card sent to user via Feishu DM", {
                   openId: p.open_id,
                 });
               } catch (dmErr) {
-                authLogger.error("Failed to send authorize link via DM (returning URL in tool result)", {
+                authLogger.error("Failed to send authorize card via DM (returning URL in tool result)", {
                   openId: p.open_id,
                   error: dmErr instanceof Error ? dmErr.message : String(dmErr),
                 });
