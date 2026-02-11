@@ -78,10 +78,10 @@ const NONCE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_NONCE_FILE = ".feishu-pending-nonces.json";
 
 export function getNonceFilePath(config: UserAuthConfig): string {
-  if (config.tokenStorePath) {
-    return path.join(path.dirname(config.tokenStorePath), "feishu-pending-nonces.json");
-  }
-  return path.resolve(DEFAULT_NONCE_FILE);
+  // Use the actual resolved token file path so nonce file sits alongside the token file,
+  // even if tokenStorePath was a directory that got resolved.
+  const tokenFilePath = userTokenStore.getFilePath();
+  return path.join(path.dirname(tokenFilePath), "feishu-pending-nonces.json");
 }
 
 type NonceEntry = { openId: string; accountId: string; createdAt: number };

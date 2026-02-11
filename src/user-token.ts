@@ -46,6 +46,50 @@ function log(level: "info" | "error", msg: string, detail?: Record<string, unkno
 const DEFAULT_TOKEN_FILE = ".feishu-user-tokens.json";
 
 /**
+ * If the given path is an existing directory, append the default token filename.
+ * This prevents EISDIR errors when the user configures a directory instead of a file.
+ */
+function resolveTokenFilePath(inputPath: string): string {
+  const abs = path.resolve(inputPath);
+  try {
+    if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) {
+      const resolved = path.join(abs, DEFAULT_TOKEN_FILE);
+      log("info", "[TokenStore] resolveTokenFilePath: path is a directory, appending default filename", {
+        input: abs,
+        resolved,
+      });
+      return resolved;
+    }
+  } catch {
+    // statSync can fail for broken symlinks etc. – fall through to return as-is
+  }
+  // Also handle cases where path looks like a directory (trailing slash) but doesn't exist yet
+  if (abs.endsWith(path.sep) || abs.endsWith("/")) {
+    return path.join(abs, DEFAULT_TOKEN_FILE);
+  }
+  // If the path has no extension and no filename-like component, treat it as a directory
+  const basename = path.basename(abs);
+  if (!basename.includes(".")) {
+    // Could be a directory that doesn't exist yet – check if parent exists and is a directory
+    const parent = path.dirname(abs);
+    try {
+      if (fs.existsSync(parent) && fs.statSync(parent).isDirectory()) {
+        // The path itself doesn't have an extension – likely intended as a directory
+        const resolved = path.join(abs, DEFAULT_TOKEN_FILE);
+        log("info", "[TokenStore] resolveTokenFilePath: path has no extension, treating as directory", {
+          input: abs,
+          resolved,
+        });
+        return resolved;
+      }
+    } catch {
+      // fall through
+    }
+  }
+  return abs;
+}
+
+/**
  * File-persisted multi-user token store.
  * Keyed by open_id. Supports token refresh via Feishu OAuth v2.
  */
@@ -54,7 +98,7 @@ export class UserTokenStore {
   private filePath: string;
 
   constructor(filePath?: string) {
-    this.filePath = filePath ?? path.resolve(DEFAULT_TOKEN_FILE);
+    this.filePath = resolveTokenFilePath(filePath ?? path.resolve(DEFAULT_TOKEN_FILE));
     this.load();
   }
 
@@ -71,7 +115,7 @@ export class UserTokenStore {
    */
   reinitialize(newFilePath: string): void {
     const oldPath = this.filePath;
-    this.filePath = path.resolve(newFilePath);
+    this.filePath = resolveTokenFilePath(path.resolve(newFilePath));
     log("info", "[TokenStore] reinitialize", {
       oldPath,
       newPath: this.filePath,

@@ -68,12 +68,26 @@ export function createAuthFileLogger(
 }
 
 /**
- * Resolve the auth log file path: same directory as token store, or system temp dir.
- * When tokenStorePath is set, log is next to it. Otherwise use os.tmpdir() so the path is easy to find.
+ * Resolve the auth log file path: same directory as the token store file, or system temp dir.
+ * When tokenStorePath is set, we check if it's a directory and handle accordingly.
  */
 export function getAuthLogFilePath(tokenStorePath: string | undefined): string {
   if (tokenStorePath) {
-    return path.join(path.dirname(path.resolve(tokenStorePath)), DEFAULT_AUTH_LOG_FILE);
+    const resolved = path.resolve(tokenStorePath);
+    // If the path is an existing directory or looks like one (no extension), put log inside it
+    try {
+      if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+        return path.join(resolved, DEFAULT_AUTH_LOG_FILE);
+      }
+    } catch {
+      // fall through
+    }
+    if (!path.basename(resolved).includes(".")) {
+      // No extension – treat as directory
+      return path.join(resolved, DEFAULT_AUTH_LOG_FILE);
+    }
+    // tokenStorePath is a file – put log next to it
+    return path.join(path.dirname(resolved), DEFAULT_AUTH_LOG_FILE);
   }
   return path.join(os.tmpdir(), DEFAULT_AUTH_LOG_FILE);
 }
