@@ -66,7 +66,7 @@ export async function maybeCreateDynamicAgent(params: {
           agentId,
           match: {
             channel: "feishu",
-            peer: { kind: "dm", id: senderOpenId },
+            peer: { kind: "direct", id: senderOpenId },
           },
         },
       ],
@@ -108,7 +108,7 @@ export async function maybeCreateDynamicAgent(params: {
         agentId,
         match: {
           channel: "feishu",
-          peer: { kind: "dm", id: senderOpenId },
+          peer: { kind: "direct", id: senderOpenId },
         },
       },
     ],
