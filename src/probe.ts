@@ -1,26 +1,47 @@
 import type { FeishuProbeResult } from "./types.js";
 import { createFeishuClient, type FeishuClientCredentials } from "./client.js";
 
+const DECIMAL_RADIX = 10;
+const MINUTES_TO_MS = 60 * 1000;
+const MIN_VALID_TTL_MINUTES = 0;
+const DEFAULT_SUCCESS_CACHE_TTL_MINUTES = 15;
+const DEFAULT_ERROR_CACHE_TTL_MINUTES = 5;
+const FEISHU_API_SUCCESS_CODE = 0;
+const SUCCESS_CACHE_TTL_ENV_KEY = "FEISHU_PROBE_CACHE_TTL_MINUTES";
+const ERROR_CACHE_TTL_ENV_KEY = "FEISHU_PROBE_ERROR_CACHE_TTL_MINUTES";
+
 // Cache for probe results to avoid API rate limits
-// Default TTL: 15 minutes (900000 ms)
+// Success TTL default: 15 minutes (900000 ms)
 // Can be customized via environment variable: FEISHU_PROBE_CACHE_TTL_MINUTES
-const PROBE_CACHE_TTL_MS = (() => {
-  const envTtl = process.env.FEISHU_PROBE_CACHE_TTL_MINUTES;
+// Error TTL default: 5 minutes (300000 ms)
+// Can be customized via environment variable: FEISHU_PROBE_ERROR_CACHE_TTL_MINUTES
+function resolveCacheTtlMs(envKey: string, defaultMinutes: number): number {
+  const envTtl = process.env[envKey];
   if (envTtl) {
-    const minutes = parseInt(envTtl, 10);
-    if (!isNaN(minutes) && minutes > 0) {
-      return minutes * 60 * 1000;
+    const minutes = parseInt(envTtl, DECIMAL_RADIX);
+    if (!isNaN(minutes) && minutes > MIN_VALID_TTL_MINUTES) {
+      return minutes * MINUTES_TO_MS;
     }
   }
-  return 15 * 60 * 1000; // Default: 15 minutes
-})();
+  return defaultMinutes * MINUTES_TO_MS;
+}
+
+const PROBE_CACHE_TTL_MS = resolveCacheTtlMs(
+  SUCCESS_CACHE_TTL_ENV_KEY,
+  DEFAULT_SUCCESS_CACHE_TTL_MINUTES,
+);
 
 interface ProbeCacheEntry {
   result: FeishuProbeResult;
   timestamp: number;
+  ttlMs: number;
 }
 
 const probeCache = new Map<string, ProbeCacheEntry>();
+const PROBE_ERROR_CACHE_TTL_MS = resolveCacheTtlMs(
+  ERROR_CACHE_TTL_ENV_KEY,
+  DEFAULT_ERROR_CACHE_TTL_MINUTES,
+);
 
 function getCacheKey(creds: FeishuClientCredentials): string {
   return `${creds.appId}:${creds.domain || "feishu"}`;
@@ -32,7 +53,7 @@ function getCachedResult(creds: FeishuClientCredentials): FeishuProbeResult | nu
   if (!cached) return null;
   
   const now = Date.now();
-  if (now - cached.timestamp > PROBE_CACHE_TTL_MS) {
+  if (now - cached.timestamp > cached.ttlMs) {
     // Cache expired
     probeCache.delete(key);
     return null;
@@ -43,9 +64,11 @@ function getCachedResult(creds: FeishuClientCredentials): FeishuProbeResult | nu
 
 function setCachedResult(creds: FeishuClientCredentials, result: FeishuProbeResult): void {
   const key = getCacheKey(creds);
+  const ttlMs = result.ok ? PROBE_CACHE_TTL_MS : PROBE_ERROR_CACHE_TTL_MS;
   probeCache.set(key, {
     result,
     timestamp: Date.now(),
+    ttlMs,
   });
 }
 
@@ -88,13 +111,13 @@ export async function probeFeishu(creds?: FeishuClientCredentials): Promise<Feis
       data: {},
     });
 
-    if (response.code !== 0) {
+    if (response.code !== FEISHU_API_SUCCESS_CODE) {
       const result: FeishuProbeResult = {
         ok: false,
         appId: creds.appId,
         error: `API error: ${response.msg || `code ${response.code}`}`,
       };
-      // Cache error results for a shorter time (5 minutes) to avoid hammering the API
+      // Cache error results with error TTL to avoid hammering the API
       setCachedResult(creds, result);
       return result;
     }
@@ -117,7 +140,7 @@ export async function probeFeishu(creds?: FeishuClientCredentials): Promise<Feis
       appId: creds.appId,
       error: err instanceof Error ? err.message : String(err),
     };
-    // Cache error results for a shorter time (5 minutes)
+    // Cache error results with error TTL
     setCachedResult(creds, result);
     return result;
   }
