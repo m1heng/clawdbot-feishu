@@ -19,15 +19,18 @@ export async function maybeCreateDynamicAgent(params: {
   runtime: PluginRuntime;
   senderOpenId: string;
   dynamicCfg: DynamicAgentCreationConfig;
+  accountId?: string;
   log: (msg: string) => void;
 }): Promise<MaybeCreateDynamicAgentResult> {
-  const { cfg, runtime, senderOpenId, dynamicCfg, log } = params;
+  const { cfg, runtime, senderOpenId, dynamicCfg, accountId, log } = params;
 
   // Check if there's already a binding for this user
   const existingBindings = cfg.bindings ?? [];
   const hasBinding = existingBindings.some(
     (b) =>
       b.match?.channel === "feishu" &&
+      (!accountId || b.match?.accountId === accountId) &&
+      // NOTE: In OpenClaw routing, DM peer kind is "dm" (not "direct").
       b.match?.peer?.kind === "dm" &&
       b.match?.peer?.id === senderOpenId,
   );
@@ -66,6 +69,7 @@ export async function maybeCreateDynamicAgent(params: {
           agentId,
           match: {
             channel: "feishu",
+            ...(accountId ? { accountId } : {}),
             peer: { kind: "dm", id: senderOpenId },
           },
         },
@@ -108,6 +112,7 @@ export async function maybeCreateDynamicAgent(params: {
         agentId,
         match: {
           channel: "feishu",
+          ...(accountId ? { accountId } : {}),
           peer: { kind: "dm", id: senderOpenId },
         },
       },

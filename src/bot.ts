@@ -716,6 +716,7 @@ export async function handleFeishuMessage(params: {
           runtime,
           senderOpenId: ctx.senderOpenId,
           dynamicCfg,
+          accountId: account.accountId,
           log: (msg) => log(msg),
         });
         if (result.created) {
