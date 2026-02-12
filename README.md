@@ -334,6 +334,18 @@ openclaw plugins install ./feishu-0.1.3.tgz
 openclaw plugins install @m1heng-clawd/feishu
 ```
 
+#### Windows 安装报错 `spawn npm ENOENT`
+
+如果 `openclaw plugins install` 失败，可以手动安装：
+
+```bash
+# 1. 下载插件包
+curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.3.tgz
+
+# 2. 从本地安装
+openclaw plugins install ./feishu-0.1.3.tgz
+```
+
 ### 升级
 
 ```bash
@@ -621,18 +633,6 @@ session:
 #### 消息为什么不是流式输出
 
 飞书 API 有请求频率限制，流式更新消息很容易触发限流。当前采用完整回复后一次性发送的方式，以保证稳定性。
-
-#### Windows 安装报错 `spawn npm ENOENT`
-
-如果 `openclaw plugins install` 失败，可以手动安装：
-
-```bash
-# 1. 下载插件包
-curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.3.tgz
-
-# 2. 从本地安装
-openclaw plugins install ./feishu-0.1.3.tgz
-```
 
 #### 在飞书里找不到机器人
 
