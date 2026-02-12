@@ -288,8 +288,17 @@ async function createDoc(client: Lark.Client, title: string, folderToken?: strin
   };
 }
 
-async function writeDoc(client: Lark.Client, docToken: string, markdown: string) {
+// Maximum content length for a single API call (empirical value based on Feishu API limits)
+const MAX_CONTENT_LENGTH = 50000; // ~50KB
+const MAX_BLOCKS_PER_INSERT = 50; // Maximum blocks per insert API call
+
+export async function writeDoc(client: Lark.Client, docToken: string, markdown: string) {
   const deleted = await clearDocumentContent(client, docToken);
+
+  // Check content length and warn if too long
+  if (markdown.length > MAX_CONTENT_LENGTH) {
+    console.warn(`[feishu_doc] Content length (${markdown.length}) exceeds recommended limit (${MAX_CONTENT_LENGTH}). May cause API errors.`);
+  }
 
   const { blocks, firstLevelBlockIds } = await convertMarkdown(client, markdown);
   if (blocks.length === 0) {
@@ -301,7 +310,8 @@ async function writeDoc(client: Lark.Client, docToken: string, markdown: string)
   // provides the correct top-level ordering.
   const orderedBlocks = reorderBlocks(blocks, firstLevelBlockIds);
 
-  const { children: inserted, skipped } = await insertBlocks(client, docToken, orderedBlocks);
+  // Insert blocks in batches to avoid API limits
+  const { children: inserted, skipped } = await insertBlocksInBatches(client, docToken, orderedBlocks);
   const imagesProcessed = await processImages(client, docToken, markdown, inserted);
 
   return {
@@ -313,6 +323,66 @@ async function writeDoc(client: Lark.Client, docToken: string, markdown: string)
       warning: `Skipped unsupported block types: ${skipped.join(", ")}. Tables are not supported via this API.`,
     }),
   };
+}
+
+/**
+ * Insert blocks in batches to avoid API limits
+ */
+async function insertBlocksInBatches(
+  client: Lark.Client,
+  docToken: string,
+  blocks: any[],
+  parentBlockId?: string,
+): Promise<{ children: any[]; skipped: string[] }> {
+  const allInserted: any[] = [];
+  const allSkipped: string[] = [];
+  const blockId = parentBlockId ?? docToken;
+
+  // Process blocks in batches
+  for (let i = 0; i < blocks.length; i += MAX_BLOCKS_PER_INSERT) {
+    const batch = blocks.slice(i, i + MAX_BLOCKS_PER_INSERT);
+    const { cleaned, skipped } = cleanBlocksForInsert(batch);
+    
+    allSkipped.push(...skipped);
+
+    if (cleaned.length === 0) {
+      continue;
+    }
+
+    try {
+      const res = await client.docx.documentBlockChildren.create({
+        path: { document_id: docToken, block_id: blockId },
+        data: { children: cleaned },
+      });
+      
+      if (res.code !== 0) {
+        // If batch insert fails, try inserting one by one
+        console.warn(`[feishu_doc] Batch insert failed: ${res.msg}. Trying individual inserts...`);
+        for (const block of cleaned) {
+          try {
+            const singleRes = await client.docx.documentBlockChildren.create({
+              path: { document_id: docToken, block_id: blockId },
+              data: { children: [block] },
+            });
+            if (singleRes.code === 0) {
+              allInserted.push(...(singleRes.data?.children ?? []));
+            } else {
+              console.error(`[feishu_doc] Failed to insert block: ${singleRes.msg}`);
+            }
+          } catch (err) {
+            console.error(`[feishu_doc] Error inserting block:`, err);
+          }
+        }
+      } else {
+        allInserted.push(...(res.data?.children ?? []));
+      }
+    } catch (err) {
+      console.error(`[feishu_doc] Error in batch insert:`, err);
+      throw err;
+    }
+  }
+
+  return { children: allInserted, skipped: [...new Set(allSkipped)] };
 }
 
 async function appendDoc(client: Lark.Client, docToken: string, markdown: string) {

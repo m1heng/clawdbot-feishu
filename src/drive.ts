@@ -4,6 +4,7 @@ import { listEnabledFeishuAccounts } from "./accounts.js";
 import type * as Lark from "@larksuiteoapi/node-sdk";
 import { FeishuDriveSchema, type FeishuDriveParams } from "./drive-schema.js";
 import { resolveToolsConfig } from "./tools-config.js";
+import { writeDoc } from "./docx.js";
 
 // ============ Helpers ============
 
@@ -147,6 +148,50 @@ async function deleteFile(client: Lark.Client, fileToken: string, type: string) 
   };
 }
 
+// ============ Import Document Functions ============
+
+/**
+ * Import markdown content as a new Feishu document
+ * Uses create + write approach for reliable content import.
+ * Note: docType parameter is accepted for API compatibility but docx is always used.
+ */
+async function importDocument(
+  client: Lark.Client,
+  title: string,
+  content: string,
+  folderToken?: string,
+  _docType?: "docx" | "doc",
+) {
+  // Step 1: Create empty document
+  const createRes = await client.docx.document.create({
+    data: { title, folder_token: folderToken },
+  });
+  
+  if (createRes.code !== 0) {
+    throw new Error(`Failed to create document: ${createRes.msg}`);
+  }
+
+  const docId = createRes.data?.document?.document_id;
+  if (!docId) {
+    throw new Error("Document created but no document_id returned");
+  }
+
+  // Step 2: Write markdown content to the document
+  // This ensures proper structure preservation using the writeDoc function
+  const writeResult = await writeDoc(client, docId, content);
+
+  return {
+    success: true,
+    document_id: docId,
+    title: title,
+    url: `https://feishu.cn/docx/${docId}`,
+    import_method: "create_and_write",
+    blocks_added: writeResult.blocks_added,
+    images_processed: writeResult.images_processed,
+    ...("warning" in writeResult && { warning: writeResult.warning }),
+  };
+}
+
 // ============ Tool Registration ============
 
 export function registerFeishuDriveTools(api: OpenClawPluginApi) {
@@ -175,7 +220,7 @@ export function registerFeishuDriveTools(api: OpenClawPluginApi) {
       name: "feishu_drive",
       label: "Feishu Drive",
       description:
-        "Feishu cloud storage operations. Actions: list, info, create_folder, move, delete",
+        "Feishu cloud storage operations. Actions: list, info, create_folder, move, delete, import_document. Use 'import_document' to create documents from Markdown with better structure preservation than block-by-block writing.",
       parameters: FeishuDriveSchema,
       async execute(_toolCallId, params) {
         const p = params as FeishuDriveParams;
@@ -192,6 +237,8 @@ export function registerFeishuDriveTools(api: OpenClawPluginApi) {
               return json(await moveFile(client, p.file_token, p.type, p.folder_token));
             case "delete":
               return json(await deleteFile(client, p.file_token, p.type));
+            case "import_document":
+              return json(await importDocument(client, p.title, p.content, p.folder_token, (p as any).doc_type || "docx"));
             default:
               return json({ error: `Unknown action: ${(p as any).action}` });
           }
