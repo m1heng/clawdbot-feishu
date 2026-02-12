@@ -18,7 +18,7 @@ Feishu/Lark (飞书) channel plugin for [OpenClaw](https://github.com/openclaw/o
 openclaw plugins install @m1heng-clawd/feishu
 ```
 
-> [!WARNING]
+> [!IMPORTANT]
 > **Windows Troubleshooting (`spawn npm ENOENT`)**
 >
 > If `openclaw plugins install` fails, install manually:
@@ -335,7 +335,7 @@ Feishu API has rate limits. Streaming updates can easily trigger throttling. We 
 openclaw plugins install @m1heng-clawd/feishu
 ```
 
-> [!WARNING]
+> [!IMPORTANT]
 > **Windows 排错（`spawn npm ENOENT`）**
 >
 > 如果 `openclaw plugins install` 失败，可以手动安装：
