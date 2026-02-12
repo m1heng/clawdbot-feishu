@@ -108,6 +108,51 @@ function cleanBlocksForInsert(blocks: any[]): { cleaned: any[]; skipped: string[
   return { cleaned, skipped };
 }
 
+/**
+ * Neutralize Markdown ordered-list patterns to prevent Feishu's
+ * document.convert API from generating block_type:13 (Ordered) blocks.
+ *
+ * WHY: Feishu auto-renumbers consecutive Ordered blocks by position.
+ *      When content uses numbering as semantic identifiers (e.g. 【01】【02】),
+ *      this auto-renumbering destroys the intended sequence.
+ *
+ * HOW: Convert list-like prefixes into bold text within a paragraph,
+ *      so document.convert produces block_type:2 (Text) instead of 13 (Ordered).
+ *
+ * PATTERNS HANDLED:
+ *   "1. text"    → "**1.** text"     (standard Markdown ordered list)
+ *   "1) text"    → "**1)** text"     (parenthesis numbering)
+ *   "1） text"   → "**1）** text"    (fullwidth parenthesis)
+ *   "【01】text"  → "**【01】** text"  (Chinese bracket numbering)
+ *   "（1）text"   → "**（1）** text"   (Chinese parenthesis numbering)
+ */
+export function neutralizeOrderedMarkers(markdown: string): string {
+  return markdown.replace(
+    /^(\s*)((?:\d+\.\s)|(?:\d+\)\s)|(?:\d+）\s)|(?:【\d+】\s*)|(?:（\d+）\s*))/gm,
+    (_match, indent: string, marker: string) => {
+      const trimmed = marker.trimEnd();
+      return `${indent}**${trimmed}** `;
+    },
+  );
+}
+
+/**
+ * Preprocesses markdown content before sending to Feishu's convert API.
+ * Applies all necessary transformations to avoid Feishu rendering quirks.
+ */
+function preprocessMarkdown(
+  markdown: string,
+  options?: { preserveOrderedLists?: boolean },
+): string {
+  let result = markdown;
+
+  if (!options?.preserveOrderedLists) {
+    result = neutralizeOrderedMarkers(result);
+  }
+
+  return result;
+}
+
 // ============ Core Functions ============
 
 async function convertMarkdown(client: Lark.Client, markdown: string) {
@@ -288,9 +333,10 @@ async function createDoc(client: Lark.Client, title: string, folderToken?: strin
   };
 }
 
-async function writeDoc(client: Lark.Client, docToken: string, markdown: string) {
+async function writeDoc(client: Lark.Client, docToken: string, markdown: string, preserveOrderedLists?: boolean) {
   const deleted = await clearDocumentContent(client, docToken);
 
+  markdown = preprocessMarkdown(markdown, { preserveOrderedLists });
   const { blocks, firstLevelBlockIds } = await convertMarkdown(client, markdown);
   if (blocks.length === 0) {
     return { success: true, blocks_deleted: deleted, blocks_added: 0, images_processed: 0 };
@@ -315,7 +361,8 @@ async function writeDoc(client: Lark.Client, docToken: string, markdown: string)
   };
 }
 
-async function appendDoc(client: Lark.Client, docToken: string, markdown: string) {
+async function appendDoc(client: Lark.Client, docToken: string, markdown: string, preserveOrderedLists?: boolean) {
+  markdown = preprocessMarkdown(markdown, { preserveOrderedLists });
   const { blocks, firstLevelBlockIds } = await convertMarkdown(client, markdown);
   if (blocks.length === 0) {
     throw new Error("Content is empty");
@@ -465,9 +512,9 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
             case "read":
               return json(await readDoc(client, p.doc_token));
             case "write":
-              return json(await writeDoc(client, p.doc_token, p.content));
+              return json(await writeDoc(client, p.doc_token, p.content, (p as any).preserve_ordered_lists));
             case "append":
-              return json(await appendDoc(client, p.doc_token, p.content));
+              return json(await appendDoc(client, p.doc_token, p.content, (p as any).preserve_ordered_lists));
             case "create":
               return json(await createDoc(client, p.title, p.folder_token));
             case "list_blocks":
