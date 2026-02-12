@@ -18,6 +18,17 @@ Feishu/Lark (飞书) channel plugin for [OpenClaw](https://github.com/openclaw/o
 openclaw plugins install @m1heng-clawd/feishu
 ```
 
+> [!WARNING]
+> **Windows Troubleshooting (`spawn npm ENOENT`)**
+> If `openclaw plugins install` fails, install manually:
+> ```bash
+> # 1. Download the package
+> curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.3.tgz
+>
+> # 2. Install from local file
+> openclaw plugins install ./feishu-0.1.3.tgz
+> ```
+
 ### Upgrade
 
 ```bash
@@ -306,18 +317,6 @@ Send `/new` command in the chat.
 
 Feishu API has rate limits. Streaming updates can easily trigger throttling. We use complete-then-send approach for stability.
 
-#### Windows install error `spawn npm ENOENT`
-
-If `openclaw plugins install` fails, install manually:
-
-```bash
-# 1. Download the package
-curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.3.tgz
-
-# 2. Install from local file
-openclaw plugins install ./feishu-0.1.3.tgz
-```
-
 #### Cannot find the bot in Feishu
 
 1. Ensure the app is published (at least to test version)
@@ -334,17 +333,16 @@ openclaw plugins install ./feishu-0.1.3.tgz
 openclaw plugins install @m1heng-clawd/feishu
 ```
 
-#### Windows 安装报错 `spawn npm ENOENT`
-
-如果 `openclaw plugins install` 失败，可以手动安装：
-
-```bash
-# 1. 下载插件包
-curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.3.tgz
-
-# 2. 从本地安装
-openclaw plugins install ./feishu-0.1.3.tgz
-```
+> [!WARNING]
+> **Windows 排错（`spawn npm ENOENT`）**
+> 如果 `openclaw plugins install` 失败，可以手动安装：
+> ```bash
+> # 1. 下载插件包
+> curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.3.tgz
+>
+> # 2. 从本地安装
+> openclaw plugins install ./feishu-0.1.3.tgz
+> ```
 
 ### 升级
 
