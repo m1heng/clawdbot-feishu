@@ -20,7 +20,9 @@ openclaw plugins install @m1heng-clawd/feishu
 
 > [!WARNING]
 > **Windows Troubleshooting (`spawn npm ENOENT`)**
+>
 > If `openclaw plugins install` fails, install manually:
+>
 > ```bash
 > # 1. Download the package
 > curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.3.tgz
@@ -335,7 +337,9 @@ openclaw plugins install @m1heng-clawd/feishu
 
 > [!WARNING]
 > **Windows 排错（`spawn npm ENOENT`）**
+>
 > 如果 `openclaw plugins install` 失败，可以手动安装：
+>
 > ```bash
 > # 1. 下载插件包
 > curl -O https://registry.npmjs.org/@m1heng-clawd/feishu/-/feishu-0.1.3.tgz
