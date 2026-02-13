@@ -35,8 +35,9 @@ const DEDUP_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // cleanup every 5 minutes
 const processedMessageIds = new Map<string, number>(); // messageId -> timestamp
 let lastCleanupTime = Date.now();
 
-function tryRecordMessage(messageId: string): boolean {
+function tryRecordMessage(accountId: string, messageId: string): boolean {
   const now = Date.now();
+  const dedupKey = `${accountId}:${messageId}`;
 
   // Throttled cleanup: evict expired entries at most once per interval
   if (now - lastCleanupTime > DEDUP_CLEANUP_INTERVAL_MS) {
@@ -46,7 +47,7 @@ function tryRecordMessage(messageId: string): boolean {
     lastCleanupTime = now;
   }
 
-  if (processedMessageIds.has(messageId)) return false;
+  if (processedMessageIds.has(dedupKey)) return false;
 
   // Evict oldest entries if cache is full
   if (processedMessageIds.size >= DEDUP_MAX_SIZE) {
@@ -54,7 +55,7 @@ function tryRecordMessage(messageId: string): boolean {
     processedMessageIds.delete(first);
   }
 
-  processedMessageIds.set(messageId, now);
+  processedMessageIds.set(dedupKey, now);
   return true;
 }
 
@@ -557,7 +558,8 @@ export async function handleFeishuMessage(params: {
 
   // Dedup check: skip if this message was already processed
   const messageId = event.message.message_id;
-  if (!tryRecordMessage(messageId)) {
+  const dedupAccountId = accountId || "default"; // 确保有默认值
+  if (!tryRecordMessage(dedupAccountId, messageId)) {
     log(`feishu: skipping duplicate message ${messageId}`);
     return;
   }
