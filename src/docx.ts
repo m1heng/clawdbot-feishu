@@ -52,12 +52,12 @@ const BLOCK_TYPE_NAMES: Record<number, string> = {
 };
 
 // Block types that cannot be created via documentBlockChildren.create API
-const UNSUPPORTED_CREATE_TYPES = new Set([31, 32]);
+const UNSUPPORTED_CREATE_TYPES = new Set([32]);
 
 /**
  * Reorder blocks according to firstLevelBlockIds from convertMarkdown API.
- * The API returns blocks as an unordered array; firstLevelBlockIds provides
- * the correct document order. Blocks not in the ordering list are appended at the end.
+ * The API returns blocks as a flat unordered array across all levels.
+ * firstLevelBlockIds provides the correct top-level document order.
  */
 function reorderBlocks(blocks: any[], firstLevelBlockIds: string[]): any[] {
   if (!firstLevelBlockIds || firstLevelBlockIds.length === 0) return blocks;
@@ -74,16 +74,11 @@ function reorderBlocks(blocks: any[], firstLevelBlockIds: string[]): any[] {
     const block = blockMap.get(id);
     if (block) {
       ordered.push(block);
-      blockMap.delete(id);
     }
   }
-  
-  // Append any remaining blocks not in the ordering list
-  for (const block of blockMap.values()) {
-    ordered.push(block);
-  }
-  
-  return ordered;
+
+  // If mapping unexpectedly fails, fall back to original to avoid hard data loss.
+  return ordered.length > 0 ? ordered : blocks;
 }
 
 /** Clean blocks for insertion (remove unsupported types and read-only fields) */
@@ -99,13 +94,249 @@ function cleanBlocksForInsert(blocks: any[]): { cleaned: any[]; skipped: string[
       return true;
     })
     .map((block) => {
-      if (block.block_type === 31 && block.table?.merge_info) {
-        const { merge_info, ...tableRest } = block.table;
-        return { ...block, table: tableRest };
+      const cleanedBlock = { ...block };
+      delete cleanedBlock.block_id;
+      delete cleanedBlock.parent_id;
+      delete cleanedBlock.children;
+
+      // Table cell IDs and merge metadata are not accepted in create payload.
+      if (cleanedBlock.block_type === 31 && cleanedBlock.table) {
+        const property = cleanedBlock.table.property ?? {};
+        const { merge_info, ...propertyRest } = property;
+        cleanedBlock.table = { property: propertyRest };
       }
-      return block;
+
+      return cleanedBlock;
     });
   return { cleaned, skipped };
+}
+
+function buildBlockMap(blocks: any[]): Map<string, any> {
+  const map = new Map<string, any>();
+  for (const block of blocks) {
+    if (block.block_id) map.set(block.block_id, block);
+  }
+  return map;
+}
+
+type InsertResult = { children: any[]; skipped: string[]; warnings: string[] };
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Known transient/throughput-related Feishu codes observed across endpoints.
+// Code matching is primary; message matching is fallback for undocumented new codes.
+const RETRYABLE_CREATE_ERROR_CODES = new Set<number>([
+  429, // HTTP-like throttle surfaces in some SDK wrappers
+  1254290, // Too many requests
+  1254291, // Write conflict
+  1255040, // Request timeout
+]);
+
+const RETRYABLE_MESSAGE_PATTERNS = [
+  /\brate\b/i,
+  /\bfrequency\b/i,
+  /\btoo many\b/i,
+  /\blimit\b/i,
+  /\bqps\b/i,
+  /频率/u,
+  /限流/u,
+];
+
+function isRetryableCreateError(code?: number, msg?: string) {
+  if (!code || code === 0) return false;
+  if (RETRYABLE_CREATE_ERROR_CODES.has(code)) return true;
+  const text = msg ?? "";
+  return RETRYABLE_MESSAGE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+const CREATE_CHILDREN_RETRY_POLICY = {
+  maxAttempts: 4,
+  baseDelayMs: 250,
+  maxDelayMs: 2500,
+  jitterRatio: 0.2,
+} as const;
+
+function computeBackoffDelayMs(attempt: number, policy = CREATE_CHILDREN_RETRY_POLICY) {
+  const exp = Math.min(policy.maxDelayMs, policy.baseDelayMs * 2 ** (attempt - 1));
+  const jitter = exp * policy.jitterRatio;
+  const min = Math.max(0, exp - jitter);
+  const max = exp + jitter;
+  return Math.round(min + Math.random() * (max - min));
+}
+
+type CreateChildrenPayload = Parameters<Lark.Client["docx"]["documentBlockChildren"]["create"]>[0];
+type CreateChildrenResponse = Awaited<
+  ReturnType<Lark.Client["docx"]["documentBlockChildren"]["create"]>
+>;
+
+async function executeWithBackoff<T>(args: {
+  operationName: string;
+  operation: () => Promise<T>;
+  isSuccess: (result: T) => boolean;
+  shouldRetry: (result: T) => boolean;
+  getMessage: (result: T) => string | undefined;
+  policy?: typeof CREATE_CHILDREN_RETRY_POLICY;
+}): Promise<T> {
+  const policy = args.policy ?? CREATE_CHILDREN_RETRY_POLICY;
+  let lastResult: T | undefined;
+
+  for (let attempt = 1; attempt <= policy.maxAttempts; attempt++) {
+    const result = await args.operation();
+    lastResult = result;
+
+    if (args.isSuccess(result)) return result;
+    if (!args.shouldRetry(result) || attempt === policy.maxAttempts) return result;
+
+    const delayMs = computeBackoffDelayMs(attempt, policy);
+    const msg = args.getMessage(result) ?? "unknown error";
+    console.warn(
+      `[feishu_doc] ${args.operationName} retry ${attempt}/${policy.maxAttempts - 1} after ${delayMs}ms: ${msg}`,
+    );
+    await sleep(delayMs);
+  }
+
+  return lastResult!;
+}
+
+async function createChildrenWithRetry(
+  client: Lark.Client,
+  payload: CreateChildrenPayload,
+  policy = CREATE_CHILDREN_RETRY_POLICY,
+) {
+  return executeWithBackoff<CreateChildrenResponse>({
+    operationName: "docx.documentBlockChildren.create",
+    operation: () => client.docx.documentBlockChildren.create(payload),
+    isSuccess: (res) => res.code === 0,
+    shouldRetry: (res) => isRetryableCreateError(res.code, res.msg),
+    getMessage: (res) => res.msg,
+    policy,
+  });
+}
+
+async function insertTableWithCells(
+  client: Lark.Client,
+  docToken: string,
+  tableBlock: any,
+  blockMap: Map<string, any>,
+  parentBlockId?: string,
+): Promise<InsertResult> {
+  const tableInsert = await insertBlocks(client, docToken, [tableBlock], parentBlockId);
+  const insertedTable = tableInsert.children[0];
+
+  if (!insertedTable || insertedTable.block_type !== 31) {
+    return {
+      children: tableInsert.children,
+      skipped: tableInsert.skipped,
+      warnings: ["Table block was not returned after create; skipped table cell content."],
+    };
+  }
+
+  const srcCells: string[] = tableBlock.table?.cells ?? [];
+  const dstCells: string[] = insertedTable.table?.cells ?? [];
+  if (srcCells.length === 0) {
+    return { children: tableInsert.children, skipped: tableInsert.skipped, warnings: [] };
+  }
+
+  if (dstCells.length === 0) {
+    return {
+      children: tableInsert.children,
+      skipped: tableInsert.skipped,
+      warnings: ["Table created but API did not return generated cells; table content may be empty."],
+    };
+  }
+
+  const copiedChildren: any[] = [];
+  const allSkipped = [...tableInsert.skipped];
+  const warnings: string[] = [];
+  let sourceCellsWithContent = 0;
+  let copiedCellCount = 0;
+
+  const cellCount = Math.min(srcCells.length, dstCells.length);
+  for (let i = 0; i < cellCount; i++) {
+    const srcCellId = srcCells[i];
+    const dstCellId = dstCells[i];
+    const srcCell = blockMap.get(srcCellId);
+    const srcChildIds: string[] = srcCell?.children ?? [];
+    let srcChildBlocks = srcChildIds
+      .map((id) => blockMap.get(id))
+      .filter((b): b is any => Boolean(b));
+
+    // Some convert payloads may carry plain text directly on table_cell.
+    if (srcChildBlocks.length === 0 && srcCell?.text?.elements?.length) {
+      srcChildBlocks = [{ block_type: 2, text: srcCell.text }];
+    }
+    if (srcChildBlocks.length === 0 && srcCell?.table_cell?.text?.elements?.length) {
+      srcChildBlocks = [{ block_type: 2, text: srcCell.table_cell.text }];
+    }
+
+    if (srcChildBlocks.length === 0) continue;
+    sourceCellsWithContent++;
+
+    const cellInsert = await insertBlocksInBatches(client, docToken, srcChildBlocks, dstCellId);
+    copiedChildren.push(...cellInsert.children);
+    allSkipped.push(...cellInsert.skipped);
+    if (cellInsert.children.length > 0) copiedCellCount++;
+  }
+
+  if (srcCells.length !== dstCells.length) {
+    warnings.push(
+      `Table cell count mismatch after create (source=${srcCells.length}, target=${dstCells.length}); content may be partially copied.`,
+    );
+  }
+  if (sourceCellsWithContent > 0 && copiedCellCount < sourceCellsWithContent) {
+    warnings.push(
+      `Copied table cell content for ${copiedCellCount}/${sourceCellsWithContent} non-empty cells.`,
+    );
+  }
+
+  return {
+    children: [...tableInsert.children, ...copiedChildren],
+    skipped: [...new Set(allSkipped)],
+    warnings,
+  };
+}
+
+async function insertBlocksPreservingTables(
+  client: Lark.Client,
+  docToken: string,
+  blocks: any[],
+  blockMap: Map<string, any>,
+  parentBlockId?: string,
+): Promise<InsertResult> {
+  const inserted: any[] = [];
+  const skipped: string[] = [];
+  const warnings: string[] = [];
+  const buffer: any[] = [];
+
+  const flushBuffer = async () => {
+    if (buffer.length === 0) return;
+    const res = await insertBlocksInBatches(client, docToken, buffer, parentBlockId);
+    inserted.push(...res.children);
+    skipped.push(...res.skipped);
+    buffer.length = 0;
+  };
+
+  for (const block of blocks) {
+    if (block.block_type === 31) {
+      await flushBuffer();
+      const tableRes = await insertTableWithCells(client, docToken, block, blockMap, parentBlockId);
+      inserted.push(...tableRes.children);
+      skipped.push(...tableRes.skipped);
+      warnings.push(...tableRes.warnings);
+      continue;
+    }
+    buffer.push(block);
+  }
+
+  await flushBuffer();
+
+  return {
+    children: inserted,
+    skipped: [...new Set(skipped)],
+    warnings: [...new Set(warnings)],
+  };
 }
 
 // ============ Core Functions ============
@@ -134,7 +365,7 @@ async function insertBlocks(
     return { children: [], skipped };
   }
 
-  const res = await client.docx.documentBlockChildren.create({
+  const res = await createChildrenWithRetry(client, {
     path: { document_id: docToken, block_id: blockId },
     data: { children: cleaned },
   });
@@ -309,18 +540,32 @@ export async function writeDoc(client: Lark.Client, docToken: string, markdown: 
   // The convertMarkdown API returns blocks in an unordered map; firstLevelBlockIds
   // provides the correct top-level ordering.
   const orderedBlocks = reorderBlocks(blocks, firstLevelBlockIds);
+  const blockMap = buildBlockMap(blocks);
 
-  // Insert blocks in batches to avoid API limits
-  const { children: inserted, skipped } = await insertBlocksInBatches(client, docToken, orderedBlocks);
+  // Insert blocks while preserving table content when possible.
+  const { children: inserted, skipped, warnings } = await insertBlocksPreservingTables(
+    client,
+    docToken,
+    orderedBlocks,
+    blockMap,
+  );
   const imagesProcessed = await processImages(client, docToken, markdown, inserted);
+
+  const warningParts: string[] = [];
+  if (skipped.length > 0) {
+    warningParts.push(`Skipped unsupported block types: ${skipped.join(", ")}.`);
+  }
+  if (warnings.length > 0) {
+    warningParts.push(...warnings);
+  }
 
   return {
     success: true,
     blocks_deleted: deleted,
     blocks_added: inserted.length,
     images_processed: imagesProcessed,
-    ...(skipped.length > 0 && {
-      warning: `Skipped unsupported block types: ${skipped.join(", ")}. Tables are not supported via this API.`,
+    ...(warningParts.length > 0 && {
+      warning: warningParts.join(" "),
     }),
   };
 }
@@ -350,7 +595,7 @@ async function insertBlocksInBatches(
     }
 
     try {
-      const res = await client.docx.documentBlockChildren.create({
+      const res = await createChildrenWithRetry(client, {
         path: { document_id: docToken, block_id: blockId },
         data: { children: cleaned },
       });
@@ -360,7 +605,7 @@ async function insertBlocksInBatches(
         console.warn(`[feishu_doc] Batch insert failed: ${res.msg}. Trying individual inserts...`);
         for (const block of cleaned) {
           try {
-            const singleRes = await client.docx.documentBlockChildren.create({
+            const singleRes = await createChildrenWithRetry(client, {
               path: { document_id: docToken, block_id: blockId },
               data: { children: [block] },
             });
@@ -394,16 +639,30 @@ async function appendDoc(client: Lark.Client, docToken: string, markdown: string
   // Reorder blocks according to firstLevelBlockIds (same fix as writeDoc)
   const orderedBlocks = reorderBlocks(blocks, firstLevelBlockIds);
 
-  const { children: inserted, skipped } = await insertBlocks(client, docToken, orderedBlocks);
+  const blockMap = buildBlockMap(blocks);
+  const { children: inserted, skipped, warnings } = await insertBlocksPreservingTables(
+    client,
+    docToken,
+    orderedBlocks,
+    blockMap,
+  );
   const imagesProcessed = await processImages(client, docToken, markdown, inserted);
+
+  const warningParts: string[] = [];
+  if (skipped.length > 0) {
+    warningParts.push(`Skipped unsupported block types: ${skipped.join(", ")}.`);
+  }
+  if (warnings.length > 0) {
+    warningParts.push(...warnings);
+  }
 
   return {
     success: true,
     blocks_added: inserted.length,
     images_processed: imagesProcessed,
     block_ids: inserted.map((b: any) => b.block_id),
-    ...(skipped.length > 0 && {
-      warning: `Skipped unsupported block types: ${skipped.join(", ")}. Tables are not supported via this API.`,
+    ...(warningParts.length > 0 && {
+      warning: warningParts.join(" "),
     }),
   };
 }
