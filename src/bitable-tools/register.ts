@@ -201,7 +201,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
   });
 
   // Permission management tools
-  registerBitableTool<AddPermissionParams>(api, getClient, {
+  registerBitableTool<AddPermissionParams>(api, {
     name: "feishu_bitable_add_permission",
     label: "Feishu Bitable Add Permission",
     description: "Add permission to a Bitable app for a user or group. Supports view, edit, or full access permissions.",
@@ -209,7 +209,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     run: (client, params) => addPermission(client, params),
   });
 
-  registerBitableTool<RemovePermissionParams>(api, getClient, {
+  registerBitableTool<RemovePermissionParams>(api, {
     name: "feishu_bitable_remove_permission",
     label: "Feishu Bitable Remove Permission",
     description: "Remove permission from a Bitable app for a user or group.",
@@ -217,7 +217,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     run: (client, params) => removePermission(client, params),
   });
 
-  registerBitableTool<ListPermissionsParams>(api, getClient, {
+  registerBitableTool<ListPermissionsParams>(api, {
     name: "feishu_bitable_list_permissions",
     label: "Feishu Bitable List Permissions",
     description: "List all permissions for a Bitable app.",

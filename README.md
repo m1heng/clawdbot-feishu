@@ -301,7 +301,9 @@ session:
 - **Card render mode**: Optional markdown rendering with syntax highlighting
 - **Document tools**: Read, create, and write Feishu documents with markdown (tables not supported due to API limitations)
 - **Wiki tools**: Navigate knowledge bases, list spaces, get node details, search, create/move/rename nodes
-- **Drive tools**: List folders, get file info, create folders, move/delete files
+- **Drive tools**: List folders, get file info, create folders, move/delete files, and **import_document** with smart permission management
+  - In direct messages: The user who initiated the chat gets **full_access** (可管理) permissions by default
+  - In group messages: All group members get **edit** (可编辑) permissions by default
 - **Bitable tools**: Manage bitable (多维表格) fields and records (read/create/update/delete), supports both `/base/` and `/wiki/` URLs, and permission management
 - **Task tools**: Create, get details, update, and delete tasks via Feishu Task v2 API
 - **@mention forwarding**: When you @mention someone in your message, the bot's reply will automatically @mention them too

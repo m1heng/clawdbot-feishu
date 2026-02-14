@@ -183,9 +183,19 @@ async function importDocument(
   const writeResult = await writeDoc(client, docId, content, mediaMaxBytes);
 
   // Step 3: 权限管理
-  const perm = permissionLevel || "edit";
+  // 根据场景智能设置权限：
+  // - 私聊场景：设置发起聊天的用户拥有"可管理"权限（full_access）
+  // - 群聊场景：设置群组成员均拥有"可编辑"权限（edit）
+  let userPerm: "view" | "edit" | "full_access" = "full_access"; // 默认私聊场景，给用户完全控制权限
+  let groupPerm: "view" | "edit" | "full_access" = "edit"; // 默认群聊场景，给群组编辑权限
   
-  // 如果提供了操作人 ID，添加用户权限
+  // 如果显式指定了权限级别，使用指定的级别
+  if (permissionLevel) {
+    userPerm = permissionLevel;
+    groupPerm = permissionLevel;
+  }
+  
+  // 如果提供了操作人 ID，添加用户权限（私聊或群聊的发起者）
   if (operatorId) {
     try {
       const permResult = await client.drive.permissionMember.create({
@@ -194,12 +204,12 @@ async function importDocument(
         data: {
           member_type: "userid", // 假设是 userid，也可以支持其他类型
           member_id: operatorId,
-          perm: perm as "view" | "edit" | "full_access",
+          perm: userPerm,
         },
       });
       
       if (permResult.code === 0) {
-        console.log(`Successfully added ${perm} permission for user ${operatorId} to document ${docId}`);
+        console.log(`Successfully added ${userPerm} permission for user ${operatorId} to document ${docId}`);
       } else {
         console.warn(`Failed to add user permission: ${permResult.msg}`);
       }
@@ -208,7 +218,7 @@ async function importDocument(
     }
   }
 
-  // 如果提供了群组 token，添加群组权限
+  // 如果提供了群组 token，添加群组权限（群聊场景）
   if (groupToken) {
     try {
       const permResult = await client.drive.permissionMember.create({
@@ -217,12 +227,12 @@ async function importDocument(
         data: {
           member_type: "openchat",
           member_id: groupToken,
-          perm: perm as "view" | "edit" | "full_access",
+          perm: groupPerm,
         },
       });
       
       if (permResult.code === 0) {
-        console.log(`Successfully added ${perm} permission for group ${groupToken} to document ${docId}`);
+        console.log(`Successfully added ${groupPerm} permission for group ${groupToken} to document ${docId}`);
       } else {
         console.warn(`Failed to add group permission: ${permResult.msg}`);
       }
