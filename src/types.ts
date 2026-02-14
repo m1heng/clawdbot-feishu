@@ -36,6 +36,10 @@ export type FeishuMessageContext = {
   parentId?: string;
   content: string;
   contentType: string;
+  /** Media placeholder token (e.g. <media:audio>) when inbound message is media. */
+  placeholder?: string;
+  /** Raw provider payload string (original event.message.content). */
+  rawPayload?: string;
   /** Mention forward targets (excluding the bot itself) */
   mentionTargets?: MentionTarget[];
   /** Extracted message body (after removing @ placeholders) */

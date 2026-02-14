@@ -17,14 +17,15 @@ import {
   isFeishuGroupAllowed,
 } from "./policy.js";
 import { createFeishuReplyDispatcher } from "./reply-dispatcher.js";
-import { getMessageFeishu } from "./send.js";
-import { downloadImageFeishu, downloadMessageResourceFeishu } from "./media.js";
+import { getMessageFeishu, sendMessageFeishu } from "./send.js";
+import { downloadMessageResourceFeishu } from "./media.js";
 import {
   extractMentionTargets,
   extractMessageBody,
   isMentionForwardRequest,
 } from "./mention.js";
 import { maybeCreateDynamicAgent } from "./dynamic-agent.js";
+import { resolveExplicitAudioFailure } from "./audio-transcription-failure.js";
 import type { DynamicAgentCreationConfig } from "./types.js";
 
 // --- Message deduplication ---
@@ -217,20 +218,61 @@ export type FeishuBotAddedEvent = {
   operator_tenant_key?: string;
 };
 
-function parseMessageContent(content: string, messageType: string): string {
+type ParsedFeishuMessageContent = {
+  text: string;
+  placeholder?: string;
+  rawPayload?: string;
+};
+
+function resolveFallbackMimeType(messageType: string): string | undefined {
+  switch (messageType) {
+    case "audio":
+      // Feishu voice messages are typically opus in ogg container.
+      return "audio/ogg; codecs=opus";
+    case "video":
+      return "video/mp4";
+    case "image":
+    case "post":
+      return "image/jpeg";
+    default:
+      return undefined;
+  }
+}
+
+function isGenericMimeType(mime?: string): boolean {
+  if (!mime) return true;
+  const normalized = mime.split(";")[0]?.trim().toLowerCase();
+  return !normalized || normalized === "application/octet-stream";
+}
+
+function parseMessageContent(content: string, messageType: string): ParsedFeishuMessageContent {
+  // Narrow behavior change to audio only:
+  // keep non-audio media payload handling backward-compatible (raw JSON text path).
+  const placeholder = messageType === "audio" ? inferPlaceholder(messageType) : undefined;
   try {
     const parsed = JSON.parse(content);
     if (messageType === "text") {
-      return parsed.text || "";
+      return {
+        text: typeof parsed.text === "string" ? parsed.text : "",
+        rawPayload: content,
+      };
     }
     if (messageType === "post") {
-      // Extract text content from rich text post
+      // Extract text content from rich text post.
       const { textContent } = parsePostContent(content);
-      return textContent;
+      return { text: textContent, rawPayload: content };
     }
-    return content;
+    // Only audio messages use semantic placeholders so core media-understanding can
+    // replace command bodies with transcript outputs.
+    if (placeholder) {
+      return { text: placeholder, placeholder, rawPayload: content };
+    }
+    return { text: content, rawPayload: content };
   } catch {
-    return content;
+    if (placeholder) {
+      return { text: placeholder, placeholder, rawPayload: content };
+    }
+    return { text: content, rawPayload: content };
   }
 }
 
@@ -270,12 +312,12 @@ function parseMediaKeys(
       case "file":
         return { fileKey: parsed.file_key, fileName: parsed.file_name };
       case "audio":
-        return { fileKey: parsed.file_key };
+        return { fileKey: parsed.file_key, fileName: parsed.file_name };
       case "video":
         // Video has both file_key (video) and image_key (thumbnail)
-        return { fileKey: parsed.file_key, imageKey: parsed.image_key };
+        return { fileKey: parsed.file_key, imageKey: parsed.image_key, fileName: parsed.file_name };
       case "sticker":
-        return { fileKey: parsed.file_key };
+        return { fileKey: parsed.file_key, fileName: parsed.file_name };
       default:
         return {};
     }
@@ -320,11 +362,11 @@ function parsePostContent(content: string): {
     }
 
     return {
-      textContent: textContent.trim() || "[富文本消息]",
+      textContent: textContent.trim() || "[rich text message]",
       imageKeys,
     };
   } catch {
-    return { textContent: "[富文本消息]", imageKeys: [] };
+    return { textContent: "[rich text message]", imageKeys: [] };
   }
 }
 
@@ -393,8 +435,14 @@ async function resolveFeishuMediaList(params: {
         });
 
         let contentType = result.contentType;
-        if (!contentType) {
-          contentType = await core.media.detectMime({ buffer: result.buffer });
+        // Feishu may return empty/generic MIME for message resources; normalize here
+        // so media-understanding gets a stable type and extension.
+        if (!contentType || isGenericMimeType(contentType)) {
+          contentType =
+            (await core.media.detectMime({
+              buffer: result.buffer,
+              headerMime: contentType,
+            })) ?? resolveFallbackMimeType("image");
         }
 
         const saved = await core.channel.media.saveMediaBuffer(
@@ -449,9 +497,17 @@ async function resolveFeishuMediaList(params: {
     contentType = result.contentType;
     fileName = result.fileName || mediaKeys.fileName;
 
-    // Detect mime type if not provided
-    if (!contentType) {
-      contentType = await core.media.detectMime({ buffer });
+    // Detect MIME type and apply message-type fallback when needed.
+    if (!contentType || isGenericMimeType(contentType)) {
+      contentType =
+        (await core.media.detectMime({
+          buffer,
+          headerMime: contentType,
+          filePath: fileName,
+        })) ?? resolveFallbackMimeType(messageType);
+    }
+    if (isGenericMimeType(contentType)) {
+      contentType = resolveFallbackMimeType(messageType) ?? contentType;
     }
 
     // Save to disk using core's saveMediaBuffer
@@ -508,9 +564,9 @@ export function parseFeishuMessageEvent(
   event: FeishuMessageEvent,
   botOpenId?: string,
 ): FeishuMessageContext {
-  const rawContent = parseMessageContent(event.message.content, event.message.message_type);
+  const parsedContent = parseMessageContent(event.message.content, event.message.message_type);
   const mentionedBot = checkBotMentioned(event, botOpenId);
-  const content = stripBotMention(rawContent, event.message.mentions);
+  const content = stripBotMention(parsedContent.text, event.message.mentions).trim();
 
   const ctx: FeishuMessageContext = {
     chatId: event.message.chat_id,
@@ -523,6 +579,8 @@ export function parseFeishuMessageEvent(
     parentId: event.message.parent_id || undefined,
     content,
     contentType: event.message.message_type,
+    placeholder: parsedContent.placeholder,
+    rawPayload: parsedContent.rawPayload,
   };
 
   // Detect mention forward request: message mentions bot + at least one other user
@@ -757,6 +815,7 @@ export async function handleFeishuMessage(params: {
       accountId: account.accountId,
     });
     const mediaPayload = buildFeishuMediaPayload(mediaList);
+    const isAudioMessage = event.message.message_type === "audio";
 
     // Fetch quoted/replied message content if parentId exists
     let quotedContent: string | undefined;
@@ -922,6 +981,34 @@ export async function handleFeishuMessage(params: {
     });
 
     markDispatchIdle();
+
+    // Avoid false alarms: if any payload was sent successfully, do not emit an extra
+    // transcription-failed notice even when audio decision metadata is negative.
+    const didSendReply = (counts.final ?? 0) + (counts.tool ?? 0) + (counts.block ?? 0) > 0;
+
+    if (isAudioMessage && !didSendReply) {
+      const audioFailure = resolveExplicitAudioFailure(ctxPayload);
+      if (audioFailure) {
+        log(
+          `feishu[${account.accountId}]: audio transcription not applied; ${audioFailure.debugSummary}`,
+        );
+        try {
+          await sendMessageFeishu({
+            cfg,
+            to: feishuTo,
+            text: audioFailure.notice,
+            replyToMessageId: ctx.messageId,
+            accountId: account.accountId,
+          });
+        } catch (noticeErr) {
+          log(
+            `feishu[${account.accountId}]: failed to send audio failure notice: ${String(
+              noticeErr,
+            )}`,
+          );
+        }
+      }
+    }
 
     if (isGroup && historyKey && chatHistories) {
       clearHistoryEntriesIfEnabled({
