@@ -19,16 +19,18 @@ export async function maybeCreateDynamicAgent(params: {
   runtime: PluginRuntime;
   senderOpenId: string;
   dynamicCfg: DynamicAgentCreationConfig;
+  accountId?: string;
   log: (msg: string) => void;
 }): Promise<MaybeCreateDynamicAgentResult> {
-  const { cfg, runtime, senderOpenId, dynamicCfg, log } = params;
+  const { cfg, runtime, senderOpenId, dynamicCfg, accountId, log } = params;
 
   // Check if there's already a binding for this user
   const existingBindings = cfg.bindings ?? [];
   const hasBinding = existingBindings.some(
     (b) =>
       b.match?.channel === "feishu" &&
-      b.match?.peer?.kind === "dm" &&
+      (!accountId || b.match?.accountId === accountId) &&
+      b.match?.peer?.kind === "direct" &&
       b.match?.peer?.id === senderOpenId,
   );
 
@@ -66,7 +68,8 @@ export async function maybeCreateDynamicAgent(params: {
           agentId,
           match: {
             channel: "feishu",
-            peer: { kind: "dm", id: senderOpenId },
+            ...(accountId ? { accountId } : {}),
+            peer: { kind: "direct", id: senderOpenId },
           },
         },
       ],
@@ -108,7 +111,8 @@ export async function maybeCreateDynamicAgent(params: {
         agentId,
         match: {
           channel: "feishu",
-          peer: { kind: "dm", id: senderOpenId },
+          ...(accountId ? { accountId } : {}),
+          peer: { kind: "direct", id: senderOpenId },
         },
       },
     ],
