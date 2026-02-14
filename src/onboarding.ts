@@ -74,15 +74,21 @@ function upsertFeishuAccountConfig(
   };
 }
 
-function setFeishuDmPolicy(cfg: ClawdbotConfig, dmPolicy: DmPolicy, accountId?: string): ClawdbotConfig {
+function setFeishuDmPolicy(
+  cfg: ClawdbotConfig,
+  dmPolicy: DmPolicy,
+  accountId?: string,
+): ClawdbotConfig {
   const resolvedAccountId = resolveOnboardingAccountId(cfg, accountId);
   const account = resolveFeishuAccount({ cfg, accountId: resolvedAccountId });
+  // Feishu channel config does not support "disabled" as a dmPolicy value.
+  const effectiveDmPolicy = dmPolicy === "disabled" ? "pairing" : dmPolicy;
   const allowFrom =
-    dmPolicy === "open"
+    effectiveDmPolicy === "open"
       ? addWildcardAllowFrom(account.config.allowFrom)?.map((entry) => String(entry))
       : undefined;
   return upsertFeishuAccountConfig(cfg, resolvedAccountId, {
-    dmPolicy,
+    dmPolicy: effectiveDmPolicy,
     ...(allowFrom ? { allowFrom } : {}),
   });
 }
