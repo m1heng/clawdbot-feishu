@@ -726,7 +726,7 @@ export async function handleFeishuMessage(params: {
             cfg: result.updatedCfg,
             channel: "feishu",
             accountId: account.accountId,
-            peer: { kind: "dm", id: ctx.senderOpenId },
+            peer: { kind: "direct", id: ctx.senderOpenId },
           });
           log(`feishu[${account.accountId}]: dynamic agent created, new route: ${route.sessionKey}`);
         }
