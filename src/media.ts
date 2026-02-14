@@ -1,11 +1,13 @@
 import type { ClawdbotConfig } from "openclaw/plugin-sdk";
-import { createFeishuClient } from "./client.js";
+import { createFeishuClient, getFeishuClient } from "./client.js";
 import { resolveFeishuAccount } from "./accounts.js";
 import { resolveReceiveIdType, normalizeFeishuTarget } from "./targets.js";
 import fs from "fs";
 import path from "path";
 import os from "os";
 import { Readable } from "stream";
+import { spawn } from "child_process";
+import ffmpegPath from "ffmpeg-static";
 
 export type DownloadImageResult = {
   buffer: Buffer;
@@ -68,7 +70,7 @@ export async function downloadImageFeishu(params: {
     const tmpPath = path.join(os.tmpdir(), `feishu_img_${Date.now()}_${imageKey}`);
     await responseAny.writeFile(tmpPath);
     buffer = await fs.promises.readFile(tmpPath);
-    await fs.promises.unlink(tmpPath).catch(() => {}); // cleanup
+    await fs.promises.unlink(tmpPath).catch(() => { }); // cleanup
   } else if (typeof responseAny[Symbol.asyncIterator] === "function") {
     // Response is an async iterable
     const chunks: Buffer[] = [];
@@ -150,7 +152,7 @@ export async function downloadMessageResourceFeishu(params: {
     const tmpPath = path.join(os.tmpdir(), `feishu_${Date.now()}_${fileKey}`);
     await responseAny.writeFile(tmpPath);
     buffer = await fs.promises.readFile(tmpPath);
-    await fs.promises.unlink(tmpPath).catch(() => {}); // cleanup
+    await fs.promises.unlink(tmpPath).catch(() => { }); // cleanup
   } else if (typeof responseAny[Symbol.asyncIterator] === "function") {
     // Response is an async iterable
     const chunks: Buffer[] = [];
@@ -520,4 +522,99 @@ export async function sendMediaFeishu(params: {
     });
     return sendFileFeishu({ cfg, to, fileKey, replyToMessageId, accountId });
   }
+}
+
+
+
+/**
+ * Convert audio file to PCM format (16kHz, 16-bit, mono) using ffmpeg.
+ * Returns base64 encoded PCM data. No temporary files are created.
+ */
+function convertAudioToPcmBase64(audio_path: string): Promise<string> {
+  return new Promise(async (resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const _ffmpegPath: string = String(ffmpegPath) ?? ''
+
+    // ffmpeg args: input file, 16000Hz, mono, 16-bit little-endian PCM, output to stdout
+    const ffmpeg = spawn(_ffmpegPath, [
+      "-i", audio_path,
+      "-ar", "16000",
+      "-ac", "1",
+      "-f", "s16le",
+      "-acodec", "pcm_s16le",
+      "-",
+    ]);
+
+    ffmpeg.stdout.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+
+    ffmpeg.stderr.on("data", (data) => {
+      // ffmpeg outputs progress info to stderr, ignore it unless error
+    });
+
+    ffmpeg.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`ffmpeg exited with code ${code}`));
+        return;
+      }
+      const pcmBuffer = Buffer.concat(chunks);
+      const base64Data = pcmBuffer.toString("base64");
+      resolve(base64Data);
+    });
+
+    ffmpeg.on("error", (err) => {
+      reject(new Error(`Failed to spawn ffmpeg: ${err.message}.`));
+    });
+  });
+}
+
+/**
+ * Speech-to-text conversion for audio files.
+ * Converts audio to PCM and encodes as base64, then waits for next steps.
+ */
+export async function speechToText(
+  audioPath: string,
+  accountId: string,
+): Promise<string> {
+  const client = getFeishuClient(accountId);
+  if (!client) {
+    throw new Error(`Feishu client not found for account "${accountId}"`);
+  }
+
+  // Convert audio to PCM (16kHz, 16-bit, mono) and get base64
+  const pcmBase64 = await convertAudioToPcmBase64(audioPath);
+
+
+  // speech_to_text api special requirement, don't reuse
+  function _generateRandomId(length: number): string {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let result = "";
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+  // Generate 16-character random file_id (alphanumeric)
+  const fileId = _generateRandomId(16);
+
+  const response = await client.speech_to_text.speech.fileRecognize({
+    data: {
+      speech: {
+        speech: pcmBase64,
+      },
+      config: {
+        file_id: fileId,
+        format: "pcm",
+        engine_type: "16k_auto",
+      },
+    },
+  });
+
+
+
+  if (response.code !== 0) {
+    throw new Error(`call feishu openapi fail with: ${response.msg}`)
+  }
+  return response.data.recognition_text
 }

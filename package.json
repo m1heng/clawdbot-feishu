@@ -40,7 +40,7 @@
       "order": 70
     },
     "install": {
-      "npmSpec": "@m1heng-clawd/feishu",
+     "npmSpec": "@m1heng-clawd/feishu",
       "localPath": ".",
       "defaultChoice": "npm"
     }
@@ -52,11 +52,18 @@
   },
   "devDependencies": {
     "@types/node": "^25.0.10",
+    "ffmpeg-static": "^5.2.0",
     "openclaw": "2026.1.29",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0"
   },
   "peerDependencies": {
+    "ffmpeg-static": "^5.2.0",
     "openclaw": ">=2026.1.29"
+  },
+  "peerDependenciesMeta": {
+    "ffmpeg-static": {
+      "optional": true
+    }
   }
 }
