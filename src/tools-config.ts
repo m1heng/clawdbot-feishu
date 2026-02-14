@@ -12,6 +12,9 @@ export const DEFAULT_TOOLS_CONFIG: Required<FeishuToolsConfig> = {
   perm: false,
   scopes: true,
   task: true,
+  minutes: false,
+  search: false,
+  userAuth: false,
 };
 
 /**

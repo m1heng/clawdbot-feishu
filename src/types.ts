@@ -68,6 +68,9 @@ export type FeishuToolsConfig = {
   perm?: boolean;
   scopes?: boolean;
   task?: boolean;
+  minutes?: boolean;
+  search?: boolean;
+  userAuth?: boolean;
 };
 
 export type DynamicAgentCreationConfig = {

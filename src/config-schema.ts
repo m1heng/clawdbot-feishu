@@ -68,6 +68,27 @@ const DynamicAgentCreationSchema = z
   .optional();
 
 /**
+ * User OAuth authentication configuration.
+ * When enabled, allows per-user OAuth tokens for APIs that require user identity
+ * (e.g., document search, minutes transcript).
+ */
+const UserAuthConfigSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    callbackPort: z.number().int().positive().optional(),
+    callbackHost: z.string().optional(),
+    /** Actual address to bind the callback HTTP server to. Default: 127.0.0.1 for localhost, 0.0.0.0 otherwise. */
+    callbackListenHost: z.string().optional(),
+    callbackPath: z.string().optional(),
+    /** "http" or "https". If unset: localhost uses http, other hosts use https. Set to "http" for remote servers without HTTPS. */
+    callbackProtocol: z.enum(["http", "https"]).optional(),
+    scopes: z.array(z.string()).optional(),
+    tokenStorePath: z.string().optional(),
+  })
+  .strict()
+  .optional();
+
+/**
  * Feishu tools configuration.
  * Controls which tool categories are enabled.
  *
@@ -84,6 +105,9 @@ const FeishuToolsConfigSchema = z
     perm: z.boolean().optional(), // Permission management (default: false, sensitive)
     scopes: z.boolean().optional(), // App scopes diagnostic (default: true)
     task: z.boolean().optional(), // Task operations (default: true)
+    minutes: z.boolean().optional(), // Minutes transcript (default: false, requires user auth)
+    search: z.boolean().optional(), // Document/wiki search (default: false, requires user auth)
+    userAuth: z.boolean().optional(), // User OAuth management (default: false)
   })
   .strict()
   .optional();
@@ -145,6 +169,7 @@ export const FeishuAccountConfigSchema = z
     heartbeat: ChannelHeartbeatVisibilitySchema,
     renderMode: RenderModeSchema,
     tools: FeishuToolsConfigSchema,
+    userAuth: UserAuthConfigSchema,
   })
   .strict();
 
@@ -180,6 +205,8 @@ export const FeishuConfigSchema = z
     heartbeat: ChannelHeartbeatVisibilitySchema,
     renderMode: RenderModeSchema, // raw = plain text (default), card = interactive card with markdown
     tools: FeishuToolsConfigSchema,
+    // User OAuth authentication
+    userAuth: UserAuthConfigSchema,
     // Dynamic agent creation for DM users
     dynamicAgentCreation: DynamicAgentCreationSchema,
     // Multi-account configuration
