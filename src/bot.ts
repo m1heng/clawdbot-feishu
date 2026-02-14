@@ -207,9 +207,8 @@ function parseMessageContent(content: string, messageType: string): string {
 function checkBotMentioned(event: FeishuMessageEvent, botOpenId?: string): boolean {
   const mentions = event.message.mentions ?? [];
   if (mentions.length === 0) return false;
-  // Fallback for degraded startup/probe scenarios: if botOpenId is unavailable,
-  // keep historical behavior and treat any mention as a mention trigger.
-  if (!botOpenId) return mentions.length > 0;
+  // Keep explicit bot mention semantics: without a resolved botOpenId, do not trigger.
+  if (!botOpenId) return false;
   return mentions.some((m) => m.id.open_id === botOpenId);
 }
 
