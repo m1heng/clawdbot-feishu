@@ -157,6 +157,7 @@ async function importDocument(
   client: Lark.Client,
   title: string,
   content: string,
+  mediaMaxBytes: number,
   folderToken?: string,
   _docType?: "docx" | "doc",
 ) {
@@ -176,7 +177,7 @@ async function importDocument(
 
   // Step 2: Write markdown content to the document
   // This ensures proper structure preservation using the writeDoc function
-  const writeResult = await writeDoc(client, docId, content);
+  const writeResult = await writeDoc(client, docId, content, mediaMaxBytes);
 
   return {
     success: true,
@@ -222,7 +223,8 @@ export function registerFeishuDriveTools(api: OpenClawPluginApi) {
             api,
             toolName: "feishu_drive",
             requiredTool: "drive",
-            run: async ({ client }) => {
+            run: async ({ client, account }) => {
+              const mediaMaxBytes = (account.config?.mediaMaxMb ?? 30) * 1024 * 1024;
               switch (p.action) {
                 case "list":
                   return json(await listFolder(client, p.folder_token));
@@ -240,6 +242,7 @@ export function registerFeishuDriveTools(api: OpenClawPluginApi) {
                       client,
                       p.title,
                       p.content,
+                      mediaMaxBytes,
                       p.folder_token,
                       (p as any).doc_type || "docx",
                     ),
