@@ -160,6 +160,9 @@ async function importDocument(
   mediaMaxBytes: number,
   folderToken?: string,
   _docType?: "docx" | "doc",
+  operatorId?: string,
+  groupToken?: string,
+  permissionLevel?: "view" | "edit" | "full_access",
 ) {
   // Step 1: Create empty document
   const createRes = await client.docx.document.create({
@@ -178,6 +181,55 @@ async function importDocument(
   // Step 2: Write markdown content to the document
   // This ensures proper structure preservation using the writeDoc function
   const writeResult = await writeDoc(client, docId, content, mediaMaxBytes);
+
+  // Step 3: 权限管理
+  const perm = permissionLevel || "edit";
+  
+  // 如果提供了操作人 ID，添加用户权限
+  if (operatorId) {
+    try {
+      const permResult = await client.drive.permissionMember.create({
+        path: { token: docId },
+        params: { type: "docx", need_notification: true },
+        data: {
+          member_type: "userid", // 假设是 userid，也可以支持其他类型
+          member_id: operatorId,
+          perm: perm as "view" | "edit" | "full_access",
+        },
+      });
+      
+      if (permResult.code === 0) {
+        console.log(`Successfully added ${perm} permission for user ${operatorId} to document ${docId}`);
+      } else {
+        console.warn(`Failed to add user permission: ${permResult.msg}`);
+      }
+    } catch (error) {
+      console.warn(`Error adding user permission: ${error}`);
+    }
+  }
+
+  // 如果提供了群组 token，添加群组权限
+  if (groupToken) {
+    try {
+      const permResult = await client.drive.permissionMember.create({
+        path: { token: docId },
+        params: { type: "docx", need_notification: true },
+        data: {
+          member_type: "openchat",
+          member_id: groupToken,
+          perm: perm as "view" | "edit" | "full_access",
+        },
+      });
+      
+      if (permResult.code === 0) {
+        console.log(`Successfully added ${perm} permission for group ${groupToken} to document ${docId}`);
+      } else {
+        console.warn(`Failed to add group permission: ${permResult.msg}`);
+      }
+    } catch (error) {
+      console.warn(`Error adding group permission: ${error}`);
+    }
+  }
 
   return {
     success: true,
@@ -245,6 +297,9 @@ export function registerFeishuDriveTools(api: OpenClawPluginApi) {
                       mediaMaxBytes,
                       p.folder_token,
                       (p as any).doc_type || "docx",
+                      (p as any).operator_id,
+                      (p as any).group_token,
+                      (p as any).permission_level,
                     ),
                   );
                 default:

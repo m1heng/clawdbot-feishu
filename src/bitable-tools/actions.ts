@@ -4,6 +4,84 @@ import type {
   BitableFieldUpdateData,
 } from "./common.js";
 import { formatField, runBitableApiCall } from "./common.js";
+import type { AddPermissionParams, RemovePermissionParams, ListPermissionsParams } from "./schemas.js";
+
+// -------- Permission operations --------
+
+export async function addPermission(
+  client: BitableClient,
+  params: AddPermissionParams,
+) {
+  // 根据 permission 参数确定角色 ID
+  // Feishu Bitable 内置角色：
+  // 1 - 管理员
+  // 2 - 编辑者
+  // 3 - 阅读者
+  let roleId = "2"; // 默认编辑者
+  if (params.permission === "view") {
+    roleId = "3";
+  } else if (params.permission === "full_access") {
+    roleId = "1";
+  }
+
+  const res = await runBitableApiCall("bitable.appRoleMember.batchCreate", () =>
+    client.bitable.appRoleMember.batchCreate({
+      path: { app_token: params.app_token, role_id: roleId },
+      data: {
+        member_list: [
+          {
+            type: params.member_type as "open_id" | "union_id" | "user_id" | "chat_id" | "department_id" | "open_department_id",
+            id: params.member_id,
+          },
+        ],
+      },
+    }),
+  );
+
+  return {
+    success: res.code === 0,
+    message: res.msg,
+  };
+}
+
+export async function removePermission(
+  client: BitableClient,
+  params: RemovePermissionParams,
+) {
+  const res = await runBitableApiCall("bitable.appRoleMember.batchDelete", () =>
+    client.bitable.appRoleMember.batchDelete({
+      path: { app_token: params.app_token, role_id: "2" }, // 默认编辑者角色
+      data: {
+        member_list: [
+          {
+            type: params.member_type as "open_id" | "union_id" | "user_id" | "chat_id" | "department_id" | "open_department_id",
+            id: params.member_id,
+          },
+        ],
+      },
+    }),
+  );
+
+  return {
+    success: res.code === 0,
+    message: res.msg,
+  };
+}
+
+export async function listPermissions(
+  client: BitableClient,
+  params: ListPermissionsParams,
+) {
+  const res = await runBitableApiCall("bitable.appRoleMember.list", () =>
+    client.bitable.appRoleMember.list({
+      path: { app_token: params.app_token, role_id: "2" }, // 默认编辑者角色
+    }),
+  );
+
+  return {
+    permissions: res.data?.items ?? [],
+  };
+}
 
 // -------- Field operations --------
 

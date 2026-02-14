@@ -1,4 +1,43 @@
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
+
+// Permission management
+const PermissionLevel = Type.Union([
+  Type.Literal("view", { description: "View only access" }),
+  Type.Literal("edit", { description: "Edit access" }),
+  Type.Literal("full_access", { description: "Full access" }),
+]);
+
+const MemberType = Type.Union([
+  Type.Literal("user_id", { description: "User ID" }),
+  Type.Literal("open_id", { description: "Open ID" }),
+  Type.Literal("union_id", { description: "Union ID" }),
+  Type.Literal("chat_id", { description: "Group token" }),
+  Type.Literal("department_id", { description: "Department ID" }),
+  Type.Literal("open_department_id", { description: "Open Department ID" }),
+]);
+
+export const AddPermissionSchema = Type.Object({
+  app_token: Type.String({ description: "Bitable app token" }),
+  member_type: MemberType,
+  member_id: Type.String({ description: "Member ID to add" }),
+  permission: PermissionLevel,
+});
+
+export type AddPermissionParams = Static<typeof AddPermissionSchema>;
+
+export const RemovePermissionSchema = Type.Object({
+  app_token: Type.String({ description: "Bitable app token" }),
+  member_type: MemberType,
+  member_id: Type.String({ description: "Member ID to remove" }),
+});
+
+export type RemovePermissionParams = Static<typeof RemovePermissionSchema>;
+
+export const ListPermissionsSchema = Type.Object({
+  app_token: Type.String({ description: "Bitable app token" }),
+});
+
+export type ListPermissionsParams = Static<typeof ListPermissionsSchema>;
 import type {
   BitableFieldCreateData,
   BitableFieldDescription,

@@ -60,6 +60,23 @@ export const FeishuDriveSchema = Type.Union([
       }),
     ),
     doc_type: Type.Optional(DocType),
+    operator_id: Type.Optional(
+      Type.String({
+        description: "User ID to add edit permission automatically. If provided, the user will have edit access to the created document.",
+      }),
+    ),
+    group_token: Type.Optional(
+      Type.String({
+        description: "Group token (chat_id) to give edit permission to all members of the group.",
+      }),
+    ),
+    permission_level: Type.Optional(
+      Type.Union([
+        Type.Literal("view", { description: "View only access" }),
+        Type.Literal("edit", { description: "Edit access (default)" }),
+        Type.Literal("full_access", { description: "Full access" }),
+      ]),
+    ),
   }),
 ]);
 

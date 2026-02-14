@@ -798,6 +798,13 @@ export async function handleFeishuMessage(params: {
 
     const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
 
+    // For drive operations: pass context information
+    // For import_document: automatically pass operator_id and group_token based on context
+    const driveContext = {
+      operator_id: ctx.senderId, // 当前发消息的用户 ID
+      group_token: isGroup ? ctx.chatId : undefined, // 群组消息时传递群组 ID
+    };
+
     // Build message body with quoted content if available
     let messageBody = ctx.content;
     if (quotedContent) {
