@@ -207,7 +207,9 @@ function parseMessageContent(content: string, messageType: string): string {
 function checkBotMentioned(event: FeishuMessageEvent, botOpenId?: string): boolean {
   const mentions = event.message.mentions ?? [];
   if (mentions.length === 0) return false;
-  if (!botOpenId) return false;
+  // Fallback for degraded startup/probe scenarios: if botOpenId is unavailable,
+  // keep historical behavior and treat any mention as a mention trigger.
+  if (!botOpenId) return mentions.length > 0;
   return mentions.some((m) => m.id.open_id === botOpenId);
 }
 
@@ -528,7 +530,7 @@ export async function handleFeishuMessage(params: {
 
   // Dedup check: skip if this message was already processed
   const messageId = event.message.message_id;
-  const dedupAccountId = account.accountId;
+  const dedupAccountId = accountId || "default";
   if (!tryRecordMessage(messageId, dedupAccountId)) {
     log(`feishu: skipping duplicate message ${messageId}`);
     return;
