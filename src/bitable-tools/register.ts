@@ -12,6 +12,9 @@ import {
   listRecords,
   updateField,
   updateRecord,
+  addPermission,
+  removePermission,
+  listPermissions,
 } from "./actions.js";
 import { errorResult, json, type BitableClient } from "./common.js";
 import { getBitableMeta } from "./meta.js";
@@ -38,6 +41,12 @@ import {
   type UpdateFieldParams,
   UpdateRecordSchema,
   type UpdateRecordParams,
+  AddPermissionSchema,
+  type AddPermissionParams,
+  RemovePermissionSchema,
+  type RemovePermissionParams,
+  ListPermissionsSchema,
+  type ListPermissionsParams,
 } from "./schemas.js";
 
 type ToolSpec<P> = {
@@ -191,5 +200,30 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
       batchDeleteRecords(client, app_token, table_id, record_ids),
   });
 
-  api.logger.debug?.("feishu_bitable: Registered 11 bitable tools");
+  // Permission management tools
+  registerBitableTool<AddPermissionParams>(api, {
+    name: "feishu_bitable_add_permission",
+    label: "Feishu Bitable Add Permission",
+    description: "Add permission to a Bitable app for a user or group. Supports view, edit, or full access permissions.",
+    parameters: AddPermissionSchema,
+    run: (client, params) => addPermission(client, params),
+  });
+
+  registerBitableTool<RemovePermissionParams>(api, {
+    name: "feishu_bitable_remove_permission",
+    label: "Feishu Bitable Remove Permission",
+    description: "Remove permission from a Bitable app for a user or group.",
+    parameters: RemovePermissionSchema,
+    run: (client, params) => removePermission(client, params),
+  });
+
+  registerBitableTool<ListPermissionsParams>(api, {
+    name: "feishu_bitable_list_permissions",
+    label: "Feishu Bitable List Permissions",
+    description: "List all permissions for a Bitable app.",
+    parameters: ListPermissionsSchema,
+    run: (client, params) => listPermissions(client, params),
+  });
+
+  api.logger.info?.("feishu_bitable: Registered 14 bitable tools");
 }

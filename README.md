@@ -128,6 +128,29 @@ The `feishu_bitable` tools support both URL formats:
 - `/base/XXX?table=YYY` - Standard bitable URL
 - `/wiki/XXX?table=YYY` - Bitable embedded in wiki (auto-converts to app_token)
 
+#### Bitable Permission Management
+
+The `feishu_bitable` tool now supports permission management operations:
+
+| Tool | Description |
+|------|-------------|
+| `feishu_bitable_add_permission` | Add permission to a Bitable app for a user or group |
+| `feishu_bitable_remove_permission` | Remove permission from a Bitable app for a user or group |
+| `feishu_bitable_list_permissions` | List all permissions for a Bitable app |
+
+**Permission Levels:**
+- `view` - Read-only access (角色 ID: 3)
+- `edit` - Edit access (default, role ID: 2)  
+- `full_access` - Full access (admin, role ID: 1)
+
+**Member Types:**
+- `user_id` - User ID
+- `open_id` - Open ID
+- `union_id` - Union ID
+- `chat_id` - Group token (for group permissions)
+- `department_id` - Department ID
+- `open_department_id` - Open Department ID
+
 #### Event Subscriptions ⚠️
 
 > **This is the most commonly missed configuration!** If the bot can send messages but cannot receive them, check this section.
@@ -278,8 +301,10 @@ session:
 - **Card render mode**: Optional markdown rendering with syntax highlighting
 - **Document tools**: Read, create, and write Feishu documents with markdown (tables not supported due to API limitations)
 - **Wiki tools**: Navigate knowledge bases, list spaces, get node details, search, create/move/rename nodes
-- **Drive tools**: List folders, get file info, create folders, move/delete files
-- **Bitable tools**: Manage bitable (多维表格) fields and records (read/create/update/delete), supports both `/base/` and `/wiki/` URLs
+- **Drive tools**: List folders, get file info, create folders, move/delete files, and **import_document** with smart permission management
+  - In direct messages: The user who initiated the chat gets **full_access** (可管理) permissions by default
+  - In group messages: All group members get **edit** (可编辑) permissions by default
+- **Bitable tools**: Manage bitable (多维表格) fields and records (read/create/update/delete), supports both `/base/` and `/wiki/` URLs, and permission management
 - **Task tools**: Create, get details, update, and delete tasks via Feishu Task v2 API
 - **@mention forwarding**: When you @mention someone in your message, the bot's reply will automatically @mention them too
 - **Permission error notification**: When the bot encounters a Feishu API permission error, it automatically notifies the user with the permission grant URL
@@ -445,6 +470,29 @@ openclaw plugins update feishu
 - `/base/XXX?table=YYY` - 标准多维表格链接
 - `/wiki/XXX?table=YYY` - 嵌入在知识库中的多维表格（自动转换为 app_token）
 
+#### 多维表格权限管理
+
+`feishu_bitable` 工具现在支持权限管理操作：
+
+| 工具 | 说明 |
+|------|------|
+| `feishu_bitable_add_permission` | 为用户或群组添加多维表格权限 |
+| `feishu_bitable_remove_permission` | 为用户或群组移除多维表格权限 |
+| `feishu_bitable_list_permissions` | 列出多维表格的所有权限 |
+
+**权限级别：**
+- `view` - 只读访问（角色 ID: 3）
+- `edit` - 编辑访问（默认，角色 ID: 2）  
+- `full_access` - 完全访问（管理员，角色 ID: 1）
+
+**成员类型：**
+- `user_id` - 用户 ID
+- `open_id` - Open ID
+- `union_id` - Union ID
+- `chat_id` - 群组 token（用于群组权限）
+- `department_id` - 部门 ID
+- `open_department_id` - 开放部门 ID
+
 #### 事件订阅 ⚠️
 
 > **这是最容易遗漏的配置！** 如果机器人能发消息但收不到消息，请检查此项。
@@ -596,7 +644,7 @@ session:
 - **文档工具**：读取、创建、用 Markdown 写入飞书文档（表格因 API 限制不支持）
 - **知识库工具**：浏览知识库、列出空间、获取节点详情、搜索、创建/移动/重命名节点
 - **云空间工具**：列出文件夹、获取文件信息、创建文件夹、移动/删除文件
-- **多维表格工具**：支持多维表格字段与记录的读取/创建/更新/删除，支持 `/base/` 和 `/wiki/` 两种链接格式
+- **多维表格工具**：支持多维表格字段与记录的读取/创建/更新/删除，支持 `/base/` 和 `/wiki/` 两种链接格式，并提供权限管理功能
 - **任务工具**：基于 Task v2 API 支持任务创建、获取详情、更新和删除
 - **@ 转发功能**：在消息中 @ 某人，机器人的回复会自动 @ 该用户
 - **权限错误提示**：当机器人遇到飞书 API 权限错误时，会自动通知用户并提供权限授权链接
