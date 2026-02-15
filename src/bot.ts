@@ -927,6 +927,9 @@ export async function handleFeishuMessage(params: {
       Provider: "feishu" as const,
       Surface: "feishu" as const,
       MessageSid: ctx.messageId,
+      // Propagate topic root_id as MessageThreadId so the session's
+      // deliveryContext carries threadId for outbound routing.
+      MessageThreadId: isGroup && ctx.rootId ? ctx.rootId : undefined,
       Timestamp: Date.now(),
       WasMentioned: ctx.mentionedBot,
       CommandAuthorized: commandAuthorized,
