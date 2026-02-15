@@ -759,6 +759,14 @@ export async function handleFeishuMessage(params: {
       }
     }
 
+    // Fix: Ensure consistent DM session isolation when falling back to generic main
+    if (!isGroup && route.sessionKey === "agent:main:main") {
+      // Force proper isolated DM session format to prevent conflicts
+      const isolatedSessionKey = `agent:main:feishu:dm:${ctx.senderOpenId}`;
+      route.sessionKey = isolatedSessionKey;
+      log(`feishu[${account.accountId}]: fixed generic main session fallback -> ${isolatedSessionKey}`);
+    }
+
     const preview = ctx.content.replace(/\s+/g, " ").slice(0, 160);
     const inboundLabel = isGroup
       ? `Feishu[${account.accountId}] message in group ${ctx.chatId}`

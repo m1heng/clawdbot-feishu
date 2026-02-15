@@ -76,6 +76,11 @@ export function extractMessageBody(text: string, allMentionKeys: string[]): stri
  * Format @mention for text message
  */
 export function formatMentionForText(target: MentionTarget): string {
+  // 机器人使用不同的格式
+  if (target.openId.startsWith('cli_')) {
+    return `<at id="${target.openId}">${target.name}</at>`;
+  }
+  // 人类用户使用标准格式
   return `<at user_id="${target.openId}">${target.name}</at>`;
 }
 
