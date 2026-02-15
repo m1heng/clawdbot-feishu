@@ -243,8 +243,9 @@ function parseMediaKeys(
       case "audio":
         return { fileKey: parsed.file_key };
       case "video":
-        // Video has both file_key (video) and image_key (thumbnail)
-        return { fileKey: parsed.file_key, imageKey: parsed.image_key };
+      case "media":
+        // Video/media has both file_key (video) and image_key (thumbnail)
+        return { fileKey: parsed.file_key, imageKey: parsed.image_key, fileName: parsed.file_name };
       case "sticker":
         return { fileKey: parsed.file_key };
       default:
@@ -311,6 +312,7 @@ function inferPlaceholder(messageType: string): string {
     case "audio":
       return "<media:audio>";
     case "video":
+    case "media":
       return "<media:video>";
     case "sticker":
       return "<media:sticker>";
@@ -335,7 +337,7 @@ async function resolveFeishuMediaList(params: {
   const { cfg, messageId, messageType, content, maxBytes, log, accountId } = params;
 
   // Only process media message types (including post for embedded images)
-  const mediaTypes = ["image", "file", "audio", "video", "sticker", "post"];
+  const mediaTypes = ["image", "file", "audio", "video", "media", "sticker", "post"];
   if (!mediaTypes.includes(messageType)) {
     return [];
   }
@@ -403,7 +405,11 @@ async function resolveFeishuMediaList(params: {
 
     // For message media, always use messageResource API
     // The image.get API is only for images uploaded via im/v1/images, not for message attachments
-    const fileKey = mediaKeys.imageKey || mediaKeys.fileKey;
+    // For video/media messages, prefer file_key (actual video) over image_key (thumbnail)
+    const isVideoType = messageType === "video" || messageType === "media";
+    const fileKey = isVideoType 
+      ? (mediaKeys.fileKey || mediaKeys.imageKey)
+      : (mediaKeys.imageKey || mediaKeys.fileKey);
     if (!fileKey) {
       return [];
     }
