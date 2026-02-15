@@ -912,6 +912,12 @@ export async function handleFeishuMessage(params: {
       });
     }
 
+    // When the message is in a topic thread (has root_id), propagate it as
+    // MessageThreadId so that downstream reply routing (including sub-agent
+    // announces via the outbound adapter) can reply within the same topic
+    // instead of creating a new one.
+    const messageThreadId = isGroup && ctx.rootId ? ctx.rootId : undefined;
+
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       Body: combinedBody,
       RawBody: ctx.content,
@@ -927,6 +933,7 @@ export async function handleFeishuMessage(params: {
       Provider: "feishu" as const,
       Surface: "feishu" as const,
       MessageSid: ctx.messageId,
+      MessageThreadId: messageThreadId,
       Timestamp: Date.now(),
       WasMentioned: ctx.mentionedBot,
       CommandAuthorized: commandAuthorized,
