@@ -6,6 +6,17 @@ export const FeishuDocSchema = Type.Union([
     doc_token: Type.String({ description: "Document token (extract from URL /docx/XXX)" }),
   }),
   Type.Object({
+    action: Type.Literal("list_comments"),
+    doc_token: Type.String({ description: "Document token" }),
+    page_size: Type.Optional(Type.Number({ description: "Number of comments per page (default: 20, max: 100)" })),
+    page_token: Type.Optional(Type.String({ description: "Pagination token for next page" })),
+  }),
+  Type.Object({
+    action: Type.Literal("get_comment"),
+    doc_token: Type.String({ description: "Document token" }),
+    comment_id: Type.String({ description: "Comment ID (from list_comments or block.comment_ids)" }),
+  }),
+  Type.Object({
     action: Type.Literal("write"),
     doc_token: Type.String({ description: "Document token" }),
     content: Type.String({
