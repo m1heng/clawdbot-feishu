@@ -1,12 +1,12 @@
 ---
 name: feishu-doc
 description: |
-  Feishu document read/write operations. Activate when user mentions Feishu docs, cloud docs, or docx links.
+  Feishu document read/write operations + comment management. Activate when user mentions Feishu docs, cloud docs, docx links, or document comments.
 ---
 
 # Feishu Document Tool
 
-Single tool `feishu_doc` with action parameter for all document operations.
+Single tool `feishu_doc` with action parameter for all document operations including comment management.
 
 ## Token Extraction
 
@@ -101,6 +101,48 @@ Returns full block data including tables, images. Use this to read structured co
 { "action": "delete_block", "doc_token": "ABC123def", "block_id": "doxcnXXX" }
 ```
 
+### List Comments
+
+```json
+{ "action": "list_comments", "doc_token": "ABC123def", "page_size": 50 }
+```
+
+Returns all comments for the document. Use `page_token` for pagination. Comments include `is_whole` field to distinguish between whole-document comments (true) and block-level comments (false).
+
+### Get Single Comment
+
+```json
+{ "action": "get_comment", "doc_token": "ABC123def", "comment_id": "comment_xxx" }
+```
+
+### Create Comment
+
+```json
+{ "action": "create_comment", "doc_token": "ABC123def", "content": "Comment text" }
+```
+
+For block-level comment (local to specific block):
+```json
+{ 
+  "action": "create_comment", 
+  "doc_token": "ABC123def", 
+  "content": "Comment text",
+  "block_id": "doxcnXXX"
+}
+```
+
+### List Comment Replies
+
+```json
+{ "action": "list_comment_replies", "doc_token": "ABC123def", "comment_id": "comment_xxx", "page_size": 50 }
+```
+
+### Reply to Comment
+
+```json
+{ "action": "reply_comment", "doc_token": "ABC123def", "comment_id": "comment_xxx", "content": "Reply text" }
+```
+
 ## Reading Workflow
 
 1. Start with `action: "read"` - get plain text + statistics
@@ -121,3 +163,7 @@ channels:
 ## Permissions
 
 Required: `docx:document`, `docx:document:readonly`, `docx:document.block:convert`, `drive:drive`
+
+For comment operations:
+- Read comments: `docx:document.comment:read`
+- Write comments: `docx:document.comment` (optional, for create_comment and reply_comment)

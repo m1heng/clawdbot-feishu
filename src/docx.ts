@@ -164,6 +164,108 @@ async function listAppScopes(client: Lark.Client) {
   };
 }
 
+async function listComments(client: Lark.Client, docToken: string, pageToken?: string, pageSize?: number) {
+  const res = await (client as any).drive.fileComment.list({
+    path: { file_token: docToken },
+    params: {
+      file_type: "docx",
+      page_token: pageToken,
+      page_size: pageSize,
+    },
+  });
+  if (res.code !== 0) throw new Error(res.msg);
+  return {
+    comments: res.data?.items ?? [],
+    page_token: res.data?.page_token,
+    has_more: res.data?.has_more,
+  };
+}
+
+async function createComment(client: Lark.Client, docToken: string, content: string, blockId?: string) {
+  const res = await (client as any).drive.fileComment.create({
+    path: { file_token: docToken },
+    params: {
+      file_type: "docx",
+    },
+    data: {
+      reply_list: {
+        replies: [
+          {
+            content: {
+              elements: [
+                {
+                  text_run: { text: content },
+                  type: "text_run",
+                },
+              ],
+            },
+          },
+        ],
+      },
+      block_id: blockId,
+    },
+  });
+  if (res.code !== 0) throw new Error(res.msg);
+  return {
+    comment_id: res.data?.comment_id,
+    comment: res.data,
+  };
+}
+
+async function getComment(client: Lark.Client, docToken: string, commentId: string) {
+  const res = await (client as any).drive.fileComment.get({
+    path: { file_token: docToken, comment_id: commentId },
+    params: {
+      file_type: "docx",
+    },
+  });
+  if (res.code !== 0) throw new Error(res.msg);
+  return {
+    comment: res.data,
+  };
+}
+
+async function listCommentReplies(client: Lark.Client, docToken: string, commentId: string, pageToken?: string, pageSize?: number) {
+  const res = await (client as any).drive.fileCommentReply.list({
+    path: { file_token: docToken, comment_id: commentId },
+    params: {
+      file_type: "docx",
+      page_token: pageToken,
+      page_size: pageSize,
+    },
+  });
+  if (res.code !== 0) throw new Error(res.msg);
+  return {
+    replies: res.data?.items ?? [],
+    page_token: res.data?.page_token,
+    has_more: res.data?.has_more,
+  };
+}
+
+async function replyComment(client: Lark.Client, docToken: string, commentId: string, content: string) {
+  const res = await (client as any).drive.fileCommentReply.create({
+    path: { file_token: docToken, comment_id: commentId },
+    params: {
+      file_type: "docx",
+    },
+    data: {
+      content: {
+        elements: [
+          {
+            text_run: { text: content },
+            type: "text_run",
+          },
+        ],
+      },
+    },
+  });
+  if (res.code !== 0) throw new Error(res.msg);
+  return {
+    reply_id: res.data?.reply_id,
+    reply: res.data,
+  };
+}
+
 // ============ Tool Registration ============
 
 export function registerFeishuDocTools(api: OpenClawPluginApi) {
@@ -189,7 +291,7 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
         name: "feishu_doc",
         label: "Feishu Doc",
         description:
-          'Feishu document operations. Actions: read, write, append, create, create_and_write, list_blocks, get_block, update_block, delete_block. Use "create_and_write" for atomic create + content write.',
+          'Feishu document operations. Actions: read, write, append, create, create_and_write, list_blocks, get_block, update_block, delete_block, list_comments, create_comment, get_comment, list_comment_replies, reply_comment. Use "create_and_write" for atomic create + content write.',
         parameters: FeishuDocSchema,
         async execute(_toolCallId, params) {
           const p = params as FeishuDocParams;
@@ -200,7 +302,7 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
               requiredTool: "doc",
               run: async ({ client, account }) => {
                 const mediaMaxBytes = (account.config?.mediaMaxMb ?? 30) * 1024 * 1024;
-                switch (p.action) {
+                 switch (p.action) {
                   case "read":
                     return json(await readDoc(client, p.doc_token));
                   case "write":
@@ -227,6 +329,16 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
                     return json(await updateBlock(client, p.doc_token, p.block_id, p.content));
                   case "delete_block":
                     return json(await deleteBlock(client, p.doc_token, p.block_id));
+                  case "list_comments":
+                    return json(await listComments(client, p.doc_token, p.page_token, p.page_size));
+                  case "create_comment":
+                    return json(await createComment(client, p.doc_token, p.content, p.block_id));
+                  case "get_comment":
+                    return json(await getComment(client, p.doc_token, p.comment_id));
+                  case "list_comment_replies":
+                    return json(await listCommentReplies(client, p.doc_token, p.comment_id, p.page_token, p.page_size));
+                  case "reply_comment":
+                    return json(await replyComment(client, p.doc_token, p.comment_id, p.content));
                   default:
                     return json({ error: `Unknown action: ${(p as any).action}` });
                 }

@@ -50,6 +50,36 @@ export const FeishuDocSchema = Type.Union([
     doc_token: Type.String({ description: "Document token" }),
     block_id: Type.String({ description: "Block ID" }),
   }),
+  Type.Object({
+    action: Type.Literal("list_comments"),
+    doc_token: Type.String({ description: "Document token" }),
+    page_token: Type.Optional(Type.String({ description: "Page token for pagination" })),
+    page_size: Type.Optional(Type.Number({ description: "Page size, default 50" })),
+  }),
+  Type.Object({
+    action: Type.Literal("create_comment"),
+    doc_token: Type.String({ description: "Document token" }),
+    content: Type.String({ description: "Comment content" }),
+    block_id: Type.Optional(Type.String({ description: "Block ID for local comment (optional, leave empty for whole document comment)" })),
+  }),
+  Type.Object({
+    action: Type.Literal("get_comment"),
+    doc_token: Type.String({ description: "Document token" }),
+    comment_id: Type.String({ description: "Comment ID" }),
+  }),
+  Type.Object({
+    action: Type.Literal("list_comment_replies"),
+    doc_token: Type.String({ description: "Document token" }),
+    comment_id: Type.String({ description: "Comment ID" }),
+    page_token: Type.Optional(Type.String({ description: "Page token for pagination" })),
+    page_size: Type.Optional(Type.Number({ description: "Page size, default 50" })),
+  }),
+  Type.Object({
+    action: Type.Literal("reply_comment"),
+    doc_token: Type.String({ description: "Document token" }),
+    comment_id: Type.String({ description: "Comment ID to reply to" }),
+    content: Type.String({ description: "Reply content" }),
+  }),
 ]);
 
 export type FeishuDocParams = Static<typeof FeishuDocSchema>;
