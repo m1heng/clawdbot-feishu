@@ -164,6 +164,30 @@ async function listAppScopes(client: Lark.Client) {
   };
 }
 
+/**
+ * Builds comment content structure from plain text
+ * @param content Comment text content
+ * @returns Formatted comment content for Feishu API
+ */
+function buildCommentContent(content: string) {
+  return {
+    elements: [
+      {
+        text_run: { text: content },
+        type: "text_run",
+      },
+    ],
+  };
+}
+
+/**
+ * Lists all comments for a document with pagination support
+ * @param client Feishu API client
+ * @param docToken Document token
+ * @param pageToken Page token for pagination
+ * @param pageSize Page size (default: Feishu API default)
+ * @returns Comments list with pagination info
+ */
 async function listComments(client: Lark.Client, docToken: string, pageToken?: string, pageSize?: number) {
   const res = await (client as any).drive.fileComment.list({
     path: { file_token: docToken },
@@ -173,14 +197,24 @@ async function listComments(client: Lark.Client, docToken: string, pageToken?: s
       page_size: pageSize,
     },
   });
-  if (res.code !== 0) throw new Error(res.msg);
+
+  if (res.code !== 0) throw new Error(res.msg || "Failed to list comments");
+
   return {
-    comments: res.data?.items ?? [],
+    comments: Array.isArray(res.data?.items) ? res.data.items : [],
     page_token: res.data?.page_token,
-    has_more: res.data?.has_more,
+    has_more: Boolean(res.data?.has_more),
   };
 }
 
+/**
+ * Creates a new comment on a document
+ * @param client Feishu API client
+ * @param docToken Document token
+ * @param content Comment text content
+ * @param blockId Optional block ID for block-level comment
+ * @returns Created comment information
+ */
 async function createComment(client: Lark.Client, docToken: string, content: string, blockId?: string) {
   const res = await (client as any).drive.fileComment.create({
     path: { file_token: docToken },
@@ -191,27 +225,33 @@ async function createComment(client: Lark.Client, docToken: string, content: str
       reply_list: {
         replies: [
           {
-            content: {
-              elements: [
-                {
-                  text_run: { text: content },
-                  type: "text_run",
-                },
-              ],
-            },
+            content: buildCommentContent(content),
           },
         ],
       },
       block_id: blockId,
     },
   });
-  if (res.code !== 0) throw new Error(res.msg);
+
+  if (res.code !== 0) throw new Error(res.msg || "Failed to create comment");
+
+  if (!res.data?.comment_id) {
+    throw new Error("Comment creation failed: No comment ID returned");
+  }
+
   return {
-    comment_id: res.data?.comment_id,
+    comment_id: res.data.comment_id,
     comment: res.data,
   };
 }
 
+/**
+ * Gets a single comment by ID
+ * @param client Feishu API client
+ * @param docToken Document token
+ * @param commentId Comment ID to retrieve
+ * @returns Comment details
+ */
 async function getComment(client: Lark.Client, docToken: string, commentId: string) {
   const res = await (client as any).drive.fileComment.get({
     path: { file_token: docToken, comment_id: commentId },
@@ -219,12 +259,27 @@ async function getComment(client: Lark.Client, docToken: string, commentId: stri
       file_type: "docx",
     },
   });
-  if (res.code !== 0) throw new Error(res.msg);
+
+  if (res.code !== 0) throw new Error(res.msg || "Failed to get comment");
+
+  if (!res.data) {
+    throw new Error(`Comment not found: ${commentId}`);
+  }
+
   return {
     comment: res.data,
   };
 }
 
+/**
+ * Lists all replies to a specific comment with pagination support
+ * @param client Feishu API client
+ * @param docToken Document token
+ * @param commentId Comment ID to list replies for
+ * @param pageToken Page token for pagination
+ * @param pageSize Page size (default: Feishu API default)
+ * @returns Replies list with pagination info
+ */
 async function listCommentReplies(client: Lark.Client, docToken: string, commentId: string, pageToken?: string, pageSize?: number) {
   const res = await (client as any).drive.fileCommentReply.list({
     path: { file_token: docToken, comment_id: commentId },
@@ -234,14 +289,24 @@ async function listCommentReplies(client: Lark.Client, docToken: string, comment
       page_size: pageSize,
     },
   });
-  if (res.code !== 0) throw new Error(res.msg);
+
+  if (res.code !== 0) throw new Error(res.msg || "Failed to list comment replies");
+
   return {
-    replies: res.data?.items ?? [],
+    replies: Array.isArray(res.data?.items) ? res.data.items : [],
     page_token: res.data?.page_token,
-    has_more: res.data?.has_more,
+    has_more: Boolean(res.data?.has_more),
   };
 }
 
+/**
+ * Replies to a specific comment
+ * @param client Feishu API client
+ * @param docToken Document token
+ * @param commentId Comment ID to reply to
+ * @param content Reply text content
+ * @returns Reply information
+ */
 async function replyComment(client: Lark.Client, docToken: string, commentId: string, content: string) {
   const res = await (client as any).drive.fileCommentReply.create({
     path: { file_token: docToken, comment_id: commentId },
@@ -249,19 +314,18 @@ async function replyComment(client: Lark.Client, docToken: string, commentId: st
       file_type: "docx",
     },
     data: {
-      content: {
-        elements: [
-          {
-            text_run: { text: content },
-            type: "text_run",
-          },
-        ],
-      },
+      content: buildCommentContent(content),
     },
   });
-  if (res.code !== 0) throw new Error(res.msg);
+
+  if (res.code !== 0) throw new Error(res.msg || "Failed to reply to comment");
+
+  if (!res.data?.reply_id) {
+    throw new Error("Comment reply failed: No reply ID returned");
+  }
+
   return {
-    reply_id: res.data?.reply_id,
+    reply_id: res.data.reply_id,
     reply: res.data,
   };
 }
