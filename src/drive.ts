@@ -52,26 +52,31 @@ async function listFolder(client: Lark.Client, folderToken?: string) {
 }
 
 async function getFileInfo(client: Lark.Client, fileToken: string, folderToken?: string) {
-  // Use list with folder_token to find file info
-  const res = await client.drive.file.list({
-    params: folderToken ? { folder_token: folderToken } : {},
-  });
-  if (res.code !== 0) throw new Error(res.msg);
+  let pageToken: string | undefined;
+  
+  do {
+    const res = await client.drive.file.list({
+      params: folderToken ? { folder_token: folderToken, page_token: pageToken } : { page_token: pageToken },
+    });
+    if (res.code !== 0) throw new Error(res.msg);
 
-  const file = res.data?.files?.find((f) => f.token === fileToken);
-  if (!file) {
-    throw new Error(`File not found: ${fileToken}`);
-  }
+    const file = res.data?.files?.find((f) => f.token === fileToken);
+    if (file) {
+      return {
+        token: file.token,
+        name: file.name,
+        type: file.type,
+        url: file.url,
+        created_time: file.created_time,
+        modified_time: file.modified_time,
+        owner_id: file.owner_id,
+      };
+    }
+    
+    pageToken = res.data?.next_page_token;
+  } while (pageToken);
 
-  return {
-    token: file.token,
-    name: file.name,
-    type: file.type,
-    url: file.url,
-    created_time: file.created_time,
-    modified_time: file.modified_time,
-    owner_id: file.owner_id,
-  };
+  throw new Error(`File not found: ${fileToken}`);
 }
 
 async function createFolder(client: Lark.Client, name: string, folderToken?: string) {
@@ -122,11 +127,20 @@ async function moveFile(
   };
 }
 
-async function deleteFile(client: Lark.Client, fileToken: string, type: string) {
+async function deleteFile(client: Lark.Client, fileToken: string, type?: string) {
+  let effectiveType = type;
+  
+  if (!effectiveType) {
+    console.log(`[feishu_drive.delete] Auto-detecting type for file_token: ${fileToken}`);
+    effectiveType = await getFileType(client, fileToken);
+    console.log(`[feishu_drive.delete] Detected type: ${effectiveType}`);
+  }
+  
+  console.log(`[feishu_drive.delete] Deleting file ${fileToken} with type: ${effectiveType}`);
   const res = await client.drive.file.delete({
     path: { file_token: fileToken },
     params: {
-      type: type as
+      type: effectiveType as
         | "doc"
         | "docx"
         | "sheet"
@@ -143,7 +157,31 @@ async function deleteFile(client: Lark.Client, fileToken: string, type: string) 
   return {
     success: true,
     task_id: res.data?.task_id,
+    type_used: effectiveType,
   };
+}
+
+async function getFileType(client: Lark.Client, fileToken: string): Promise<string> {
+  let pageToken: string | undefined;
+  
+  do {
+    const listRes = await client.drive.file.list({
+      params: pageToken ? { page_token: pageToken } : {},
+    });
+    if (listRes.code !== 0) throw new Error(listRes.msg);
+
+    const file = listRes.data?.files?.find((f) => f.token === fileToken);
+    if (file) {
+      if (!file.type) {
+        throw new Error(`File found but no type for ${fileToken}. Please provide the 'type' parameter explicitly.`);
+      }
+      return file.type;
+    }
+    
+    pageToken = listRes.data?.next_page_token;
+  } while (pageToken);
+
+  throw new Error(`File not found: ${fileToken}. Please provide the 'type' parameter explicitly.`);
 }
 
 // ============ Import Document Functions ============

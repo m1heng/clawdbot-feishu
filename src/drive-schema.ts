@@ -26,7 +26,7 @@ export const FeishuDriveSchema = Type.Union([
   Type.Object({
     action: Type.Literal("info"),
     file_token: Type.String({ description: "File or folder token" }),
-    type: FileType,
+    type: Type.Optional(FileType),
   }),
   Type.Object({
     action: Type.Literal("create_folder"),
@@ -44,7 +44,7 @@ export const FeishuDriveSchema = Type.Union([
   Type.Object({
     action: Type.Literal("delete"),
     file_token: Type.String({ description: "File token to delete" }),
-    type: FileType,
+    type: Type.Optional(FileType),
   }),
   Type.Object({
     action: Type.Literal("import_document"),
