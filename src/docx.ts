@@ -308,25 +308,39 @@ async function listCommentReplies(client: Lark.Client, docToken: string, comment
  * @returns Reply information
  */
 async function replyComment(client: Lark.Client, docToken: string, commentId: string, content: string) {
-  const res = await (client as any).drive.fileCommentReply.create({
-    path: { file_token: docToken, comment_id: commentId },
+  const res = await (client as any).drive.fileComment.create({
+    path: { file_token: docToken },
     params: {
       file_type: "docx",
     },
     data: {
-      content: buildCommentContent(content),
+      comment_id: commentId,
+      reply_list: {
+        replies: [
+          {
+            content: buildCommentContent(content),
+          },
+        ],
+      },
     },
   });
 
   if (res.code !== 0) throw new Error(res.msg || "Failed to reply to comment");
 
-  if (!res.data?.reply_id) {
+  if (!res.data?.comment_id) {
+    throw new Error("Comment reply failed: No comment ID returned");
+  }
+
+  const reply = res.data?.reply_list?.replies?.[0];
+  if (!reply?.reply_id) {
     throw new Error("Comment reply failed: No reply ID returned");
   }
 
   return {
-    reply_id: res.data.reply_id,
-    reply: res.data,
+    comment_id: res.data.comment_id,
+    reply_id: reply.reply_id,
+    comment: res.data,
+    reply: reply,
   };
 }
 
