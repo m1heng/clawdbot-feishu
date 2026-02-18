@@ -121,27 +121,18 @@ Returns all comments for the document. Use `page_token` for pagination. Comments
 { "action": "create_comment", "doc_token": "ABC123def", "content": "Comment text" }
 ```
 
-For block-level comment (local to specific block):
-```json
-{ 
-  "action": "create_comment", 
-  "doc_token": "ABC123def", 
-  "content": "Comment text",
-  "block_id": "doxcnXXX"
-}
-```
-
 ### List Comment Replies
 
 ```json
 { "action": "list_comment_replies", "doc_token": "ABC123def", "comment_id": "comment_xxx", "page_size": 50 }
 ```
 
-### Reply to Comment
+`page_size` should be a positive integer. If omitted, tool defaults to `50`.
 
-```json
-{ "action": "reply_comment", "doc_token": "ABC123def", "comment_id": "comment_xxx", "content": "Reply text" }
-```
+### Comment Write Scope
+
+Current tool provides documented comment write action `create_comment` (global comment creation).
+For replies, use `list_comment_replies` for retrieval; the reply creation endpoint is not exposed in current SDK surface.
 
 ## Reading Workflow
 
@@ -166,4 +157,4 @@ Required: `docx:document`, `docx:document:readonly`, `docx:document.block:conver
 
 For comment operations:
 - Read comments: `docx:document.comment:read`
-- Write comments: `docx:document.comment` (optional, for create_comment and reply_comment)
+- Write comments: `docx:document.comment` (optional, for create_comment)

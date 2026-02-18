@@ -180,6 +180,14 @@ function buildCommentContent(content: string) {
   };
 }
 
+function normalizePageSize(pageSize?: number) {
+  if (pageSize === undefined) return 50;
+  if (!Number.isInteger(pageSize) || pageSize < 1) {
+    throw new Error("page_size must be a positive integer");
+  }
+  return pageSize;
+}
+
 /**
  * Lists all comments for a document with pagination support
  * @param client Feishu API client
@@ -189,12 +197,13 @@ function buildCommentContent(content: string) {
  * @returns Comments list with pagination info
  */
 async function listComments(client: Lark.Client, docToken: string, pageToken?: string, pageSize?: number) {
+  const normalizedPageSize = normalizePageSize(pageSize);
   const res = await (client as any).drive.fileComment.list({
     path: { file_token: docToken },
     params: {
       file_type: "docx",
       page_token: pageToken,
-      page_size: pageSize,
+      page_size: normalizedPageSize,
     },
   });
 
@@ -212,10 +221,9 @@ async function listComments(client: Lark.Client, docToken: string, pageToken?: s
  * @param client Feishu API client
  * @param docToken Document token
  * @param content Comment text content
- * @param blockId Optional block ID for block-level comment
  * @returns Created comment information
  */
-async function createComment(client: Lark.Client, docToken: string, content: string, blockId?: string) {
+async function createComment(client: Lark.Client, docToken: string, content: string) {
   const res = await (client as any).drive.fileComment.create({
     path: { file_token: docToken },
     params: {
@@ -229,7 +237,6 @@ async function createComment(client: Lark.Client, docToken: string, content: str
           },
         ],
       },
-      block_id: blockId,
     },
   });
 
@@ -281,12 +288,13 @@ async function getComment(client: Lark.Client, docToken: string, commentId: stri
  * @returns Replies list with pagination info
  */
 async function listCommentReplies(client: Lark.Client, docToken: string, commentId: string, pageToken?: string, pageSize?: number) {
+  const normalizedPageSize = normalizePageSize(pageSize);
   const res = await (client as any).drive.fileCommentReply.list({
     path: { file_token: docToken, comment_id: commentId },
     params: {
       file_type: "docx",
       page_token: pageToken,
-      page_size: pageSize,
+      page_size: normalizedPageSize,
     },
   });
 
@@ -296,51 +304,6 @@ async function listCommentReplies(client: Lark.Client, docToken: string, comment
     replies: Array.isArray(res.data?.items) ? res.data.items : [],
     page_token: res.data?.page_token,
     has_more: Boolean(res.data?.has_more),
-  };
-}
-
-/**
- * Replies to a specific comment
- * @param client Feishu API client
- * @param docToken Document token
- * @param commentId Comment ID to reply to
- * @param content Reply text content
- * @returns Reply information
- */
-async function replyComment(client: Lark.Client, docToken: string, commentId: string, content: string) {
-  const res = await (client as any).drive.fileComment.create({
-    path: { file_token: docToken },
-    params: {
-      file_type: "docx",
-    },
-    data: {
-      comment_id: commentId,
-      reply_list: {
-        replies: [
-          {
-            content: buildCommentContent(content),
-          },
-        ],
-      },
-    },
-  });
-
-  if (res.code !== 0) throw new Error(res.msg || "Failed to reply to comment");
-
-  if (!res.data?.comment_id) {
-    throw new Error("Comment reply failed: No comment ID returned");
-  }
-
-  const reply = res.data?.reply_list?.replies?.[0];
-  if (!reply?.reply_id) {
-    throw new Error("Comment reply failed: No reply ID returned");
-  }
-
-  return {
-    comment_id: res.data.comment_id,
-    reply_id: reply.reply_id,
-    comment: res.data,
-    reply: reply,
   };
 }
 
@@ -369,7 +332,7 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
         name: "feishu_doc",
         label: "Feishu Doc",
         description:
-          'Feishu document operations. Actions: read, write, append, create, create_and_write, list_blocks, get_block, update_block, delete_block, list_comments, create_comment, get_comment, list_comment_replies, reply_comment. Use "create_and_write" for atomic create + content write.',
+          'Feishu document operations. Actions: read, write, append, create, create_and_write, list_blocks, get_block, update_block, delete_block, list_comments, create_comment, get_comment, list_comment_replies. Use "create_and_write" for atomic create + content write.',
         parameters: FeishuDocSchema,
         async execute(_toolCallId, params) {
           const p = params as FeishuDocParams;
@@ -380,7 +343,7 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
               requiredTool: "doc",
               run: async ({ client, account }) => {
                 const mediaMaxBytes = (account.config?.mediaMaxMb ?? 30) * 1024 * 1024;
-                 switch (p.action) {
+                switch (p.action) {
                   case "read":
                     return json(await readDoc(client, p.doc_token));
                   case "write":
@@ -410,13 +373,11 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
                   case "list_comments":
                     return json(await listComments(client, p.doc_token, p.page_token, p.page_size));
                   case "create_comment":
-                    return json(await createComment(client, p.doc_token, p.content, p.block_id));
+                    return json(await createComment(client, p.doc_token, p.content));
                   case "get_comment":
                     return json(await getComment(client, p.doc_token, p.comment_id));
                   case "list_comment_replies":
                     return json(await listCommentReplies(client, p.doc_token, p.comment_id, p.page_token, p.page_size));
-                  case "reply_comment":
-                    return json(await replyComment(client, p.doc_token, p.comment_id, p.content));
                   default:
                     return json({ error: `Unknown action: ${(p as any).action}` });
                 }
