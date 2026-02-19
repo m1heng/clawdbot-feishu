@@ -73,6 +73,7 @@ export type FeishuToolsConfig = {
   perm?: boolean;
   scopes?: boolean;
   task?: boolean;
+  chat?: boolean;
   /** Enable the feishu_urgent tool (buzz/urgent notifications). Enabled by default. */
   urgent?: boolean;
 };

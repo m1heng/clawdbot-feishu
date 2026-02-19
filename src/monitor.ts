@@ -12,6 +12,20 @@ import { resolveFeishuAccount, listEnabledFeishuAccounts } from "./accounts.js";
 import { handleFeishuMessage, type FeishuMessageEvent, type FeishuBotAddedEvent } from "./bot.js";
 import { probeFeishu } from "./probe.js";
 
+// Type for im.chat.updated_v1 event
+type FeishuChatUpdatedEvent = {
+  chat_id: string;
+  operator_id?: {
+    open_id?: string;
+    user_id?: string;
+    union_id?: string;
+  };
+  external?: boolean;
+  operator_tenant_key?: string;
+  // The event doesn't specify exactly what changed, so we can't
+  // easily tell if it was an announcement update without polling
+};
+
 export type MonitorFeishuOpts = {
   config?: ClawdbotConfig;
   runtime?: RuntimeEnv;
@@ -96,6 +110,14 @@ function registerEventHandlers(
         log(`feishu[${accountId}]: bot removed from chat ${event.chat_id}`);
       } catch (err) {
         error(`feishu[${accountId}]: error handling bot removed event: ${String(err)}`);
+      }
+    },
+    "im.chat.updated_v1": async (data) => {
+      try {
+        const event = data as unknown as FeishuChatUpdatedEvent;
+        log(`feishu[${accountId}]: chat updated: ${event.chat_id}`);
+      } catch (err) {
+        error(`feishu[${accountId}]: error handling chat updated event: ${String(err)}`);
       }
     },
   });
