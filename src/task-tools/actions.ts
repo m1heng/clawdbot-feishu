@@ -1,5 +1,6 @@
 import type { TaskClient } from "./common.js";
 import type {
+  CreateSubtaskParams,
   CreateTaskParams,
   GetTaskParams,
   TaskUpdateTask,
@@ -75,6 +76,34 @@ export async function createTask(client: TaskClient, params: CreateTaskParams) {
 
   return {
     task: formatTask((res.data?.task ?? undefined) as Record<string, unknown> | undefined),
+  };
+}
+
+export async function createSubtask(client: TaskClient, params: CreateSubtaskParams) {
+  const res = await runTaskApiCall("task.v2.taskSubtask.create", () =>
+    client.task.v2.taskSubtask.create({
+      path: { task_guid: params.task_guid },
+      data: omitUndefined({
+        summary: params.summary,
+        description: params.description,
+        due: params.due,
+        start: params.start,
+        extra: params.extra,
+        completed_at: params.completed_at,
+        members: params.members,
+        repeat_rule: params.repeat_rule,
+        tasklists: params.tasklists,
+        mode: params.mode,
+        is_milestone: params.is_milestone,
+      }),
+      params: omitUndefined({
+        user_id_type: params.user_id_type,
+      }),
+    }),
+  );
+
+  return {
+    subtask: formatTask((res.data?.subtask ?? undefined) as Record<string, unknown> | undefined),
   };
 }
 

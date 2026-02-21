@@ -87,9 +87,19 @@ openclaw plugins update feishu
 | `drive:drive` | `feishu_doc`, `feishu_drive` | Upload images to documents, create folders, move/delete files |
 | `wiki:wiki` | `feishu_wiki` | Create/move/rename wiki nodes |
 | `bitable:app` | `feishu_bitable` | Create/update/delete bitable records and manage fields |
-| `task:task:write` | `feishu_task_create`, `feishu_task_update`, `feishu_task_delete` | Create/update/delete tasks |
+| `task:task:write` | `feishu_task_create`, `feishu_task_subtask_create`, `feishu_task_update`, `feishu_task_delete` | Create/update/delete tasks |
 
 > Task scope names may vary slightly in Feishu console UI. If needed, search for Task-related permissions and grant read/write accordingly.
+
+#### Task Visibility & Subtasks ⚠️
+
+> **Important:** A user can only view a task when they are included as an assignee.
+>
+> **Limitation:** The bot can currently only create subtasks for tasks created by itself.
+
+To avoid “task created but not visible” issues:
+1. When creating a task, set the requesting user as an assignee.
+2. If you need more flexible subtask organization/visibility, consider using tasklists.
 
 #### Drive Access ⚠️
 
@@ -481,9 +491,19 @@ openclaw plugins update feishu
 | `drive:drive` | `feishu_doc`, `feishu_drive` | 上传图片到文档、创建文件夹、移动/删除文件 |
 | `wiki:wiki` | `feishu_wiki` | 创建/移动/重命名知识库节点 |
 | `bitable:app` | `feishu_bitable` | 创建/更新/删除多维表格记录并管理字段 |
-| `task:task:write` | `feishu_task_create`, `feishu_task_update`, `feishu_task_delete` | 创建/更新/删除任务 |
+| `task:task:write` | `feishu_task_create`, `feishu_task_subtask_create`, `feishu_task_update`, `feishu_task_delete` | 创建/更新/删除任务 |
 
 > 飞书控制台中任务权限的显示名称可能略有差异，必要时可按关键字 `task` 搜索并授予对应读写权限。
+
+#### 任务权限与子任务 ⚠️
+
+> **重要：** 只有当任务责任人包含用户时，用户才能查看到该任务。
+>
+> **限制：** 机器人目前只能给自己创建出来的任务创建子任务。
+
+为避免“任务创建了但用户看不到”的问题：
+1. 创建任务时，请把发起用户设为任务负责人（`assignee`）。
+2. 如需更灵活的子任务创建/组织/可见性管理，建议使用任务清单（tasklists）。
 
 #### 云空间访问权限 ⚠️
 
