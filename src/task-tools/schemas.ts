@@ -11,6 +11,31 @@ type TaskAddTasklistPayload = NonNullable<
 type TaskRemoveTasklistPayload = NonNullable<
   Parameters<TaskClient["task"]["v2"]["task"]["removeTasklist"]>[0]
 >;
+type TaskCommentCreatePayload = NonNullable<
+  Parameters<TaskClient["task"]["v2"]["comment"]["create"]>[0]
+>;
+type TaskCommentGetPayload = NonNullable<Parameters<TaskClient["task"]["v2"]["comment"]["get"]>[0]>;
+type TaskCommentListPayload = NonNullable<
+  Parameters<TaskClient["task"]["v2"]["comment"]["list"]>[0]
+>;
+type TaskCommentPatchPayload = NonNullable<
+  Parameters<TaskClient["task"]["v2"]["comment"]["patch"]>[0]
+>;
+type TaskCommentDeletePayload = NonNullable<
+  Parameters<TaskClient["task"]["v2"]["comment"]["delete"]>[0]
+>;
+type TaskAttachmentUploadPayload = NonNullable<
+  Parameters<TaskClient["task"]["v2"]["attachment"]["upload"]>[0]
+>;
+type TaskAttachmentGetPayload = NonNullable<
+  Parameters<TaskClient["task"]["v2"]["attachment"]["get"]>[0]
+>;
+type TaskAttachmentListPayload = NonNullable<
+  Parameters<TaskClient["task"]["v2"]["attachment"]["list"]>[0]
+>;
+type TaskAttachmentDeletePayload = NonNullable<
+  Parameters<TaskClient["task"]["v2"]["attachment"]["delete"]>[0]
+>;
 type TasklistCreatePayload = NonNullable<
   Parameters<TaskClient["task"]["v2"]["tasklist"]["create"]>[0]
 >;
@@ -38,6 +63,8 @@ export type TasklistPatchTasklist = TasklistPatchData["tasklist"];
 export type TasklistMember = NonNullable<
   NonNullable<TasklistCreateData["members"]>[number]
 >;
+export type TaskCommentPatchData = TaskCommentPatchPayload["data"];
+export type TaskCommentPatchComment = TaskCommentPatchData["comment"];
 
 export type CreateTaskParams = {
   summary: TaskCreateData["summary"];
@@ -85,6 +112,67 @@ export type RemoveTaskFromTasklistParams = {
   task_guid: TaskRemoveTasklistPayload["path"]["task_guid"];
   tasklist_guid: TaskRemoveTasklistPayload["data"]["tasklist_guid"];
   user_id_type?: NonNullable<TaskRemoveTasklistPayload["params"]>["user_id_type"];
+};
+
+export type CreateTaskCommentParams = {
+  task_guid: string;
+  content: TaskCommentCreatePayload["data"]["content"];
+  reply_to_comment_id?: TaskCommentCreatePayload["data"]["reply_to_comment_id"];
+  user_id_type?: NonNullable<TaskCommentCreatePayload["params"]>["user_id_type"];
+};
+
+export type ListTaskCommentsParams = {
+  task_guid: string;
+  page_size?: NonNullable<TaskCommentListPayload["params"]>["page_size"];
+  page_token?: NonNullable<TaskCommentListPayload["params"]>["page_token"];
+  direction?: NonNullable<TaskCommentListPayload["params"]>["direction"];
+  user_id_type?: NonNullable<TaskCommentListPayload["params"]>["user_id_type"];
+};
+
+export type GetTaskCommentParams = {
+  comment_id: TaskCommentGetPayload["path"]["comment_id"];
+  user_id_type?: NonNullable<TaskCommentGetPayload["params"]>["user_id_type"];
+};
+
+export type UpdateTaskCommentParams = {
+  comment_id: TaskCommentPatchPayload["path"]["comment_id"];
+  comment: TaskCommentPatchComment;
+  update_fields?: TaskCommentPatchData["update_fields"];
+  user_id_type?: NonNullable<TaskCommentPatchPayload["params"]>["user_id_type"];
+};
+
+export type DeleteTaskCommentParams = {
+  comment_id: TaskCommentDeletePayload["path"]["comment_id"];
+};
+
+export type UploadTaskAttachmentParams =
+  | {
+      task_guid: string;
+      file_path: string;
+      user_id_type?: NonNullable<TaskAttachmentUploadPayload["params"]>["user_id_type"];
+    }
+  | {
+      task_guid: string;
+      file_url: string;
+      filename?: string;
+      user_id_type?: NonNullable<TaskAttachmentUploadPayload["params"]>["user_id_type"];
+    };
+
+export type ListTaskAttachmentsParams = {
+  task_guid: NonNullable<TaskAttachmentListPayload["params"]>["resource_id"];
+  page_size?: NonNullable<TaskAttachmentListPayload["params"]>["page_size"];
+  page_token?: NonNullable<TaskAttachmentListPayload["params"]>["page_token"];
+  updated_mesc?: NonNullable<TaskAttachmentListPayload["params"]>["updated_mesc"];
+  user_id_type?: NonNullable<TaskAttachmentListPayload["params"]>["user_id_type"];
+};
+
+export type GetTaskAttachmentParams = {
+  attachment_guid: TaskAttachmentGetPayload["path"]["attachment_guid"];
+  user_id_type?: NonNullable<TaskAttachmentGetPayload["params"]>["user_id_type"];
+};
+
+export type DeleteTaskAttachmentParams = {
+  attachment_guid: NonNullable<TaskAttachmentDeletePayload["path"]>["attachment_guid"];
 };
 
 export type CreateTasklistParams = {
@@ -239,6 +327,113 @@ export const UpdateTaskSchema = Type.Object({
   ),
 });
 
+export const CreateTaskCommentSchema = Type.Object({
+  task_guid: Type.String({ description: "Task GUID to comment on" }),
+  content: Type.String({ description: "Comment content" }),
+  reply_to_comment_id: Type.Optional(
+    Type.String({ description: "Reply to a specific comment ID" }),
+  ),
+  user_id_type: Type.Optional(
+    Type.String({ description: "User ID type when comment involves user-related fields" }),
+  ),
+});
+
+export const ListTaskCommentsSchema = Type.Object({
+  task_guid: Type.String({ description: "Task GUID to list comments for" }),
+  page_size: Type.Optional(
+    Type.Number({
+      description: "Page size (1-100)",
+      minimum: 1,
+      maximum: 100,
+    }),
+  ),
+  page_token: Type.Optional(Type.String({ description: "Pagination token" })),
+  direction: Type.Optional(
+    Type.Union([Type.Literal("asc"), Type.Literal("desc")], {
+      description: "Sort direction",
+    }),
+  ),
+  user_id_type: Type.Optional(
+    Type.String({ description: "User ID type for returned creators" }),
+  ),
+});
+
+export const GetTaskCommentSchema = Type.Object({
+  comment_id: Type.String({ description: "Comment ID to retrieve" }),
+  user_id_type: Type.Optional(
+    Type.String({ description: "User ID type for returned creators" }),
+  ),
+});
+
+const TaskCommentUpdateContentSchema = Type.Object(
+  {
+    content: Type.Optional(Type.String({ description: "Updated comment content" })),
+  },
+  { minProperties: 1 },
+);
+
+export const UpdateTaskCommentSchema = Type.Object({
+  comment_id: Type.String({ description: "Comment ID to update" }),
+  comment: TaskCommentUpdateContentSchema,
+  update_fields: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "Fields to update. If omitted, this tool infers from keys in comment (content)",
+      minItems: 1,
+    }),
+  ),
+  user_id_type: Type.Optional(
+    Type.String({ description: "User ID type for returned creators" }),
+  ),
+});
+
+export const DeleteTaskCommentSchema = Type.Object({
+  comment_id: Type.String({ description: "Comment ID to delete" }),
+});
+
+export const UploadTaskAttachmentSchema = Type.Union([
+  Type.Object({
+    task_guid: Type.String({ description: "Task GUID to upload attachment to" }),
+    file_path: Type.String({ description: "Local file path on the OpenClaw host" }),
+    user_id_type: Type.Optional(
+      Type.String({ description: "User ID type for returned uploader" }),
+    ),
+  }),
+  Type.Object({
+    task_guid: Type.String({ description: "Task GUID to upload attachment to" }),
+    file_url: Type.String({ description: "OSS file URL to download and upload" }),
+    filename: Type.Optional(Type.String({ description: "Override filename for uploaded attachment" })),
+    user_id_type: Type.Optional(
+      Type.String({ description: "User ID type for returned uploader" }),
+    ),
+  }),
+]);
+
+export const ListTaskAttachmentsSchema = Type.Object({
+  task_guid: Type.String({ description: "Task GUID to list attachments for" }),
+  page_size: Type.Optional(
+    Type.Number({
+      description: "Page size (1-100)",
+      minimum: 1,
+      maximum: 100,
+    }),
+  ),
+  page_token: Type.Optional(Type.String({ description: "Pagination token" })),
+  updated_mesc: Type.Optional(Type.String({ description: "Updated timestamp filter" })),
+  user_id_type: Type.Optional(
+    Type.String({ description: "User ID type for returned uploader" }),
+  ),
+});
+
+export const GetTaskAttachmentSchema = Type.Object({
+  attachment_guid: Type.String({ description: "Attachment GUID to retrieve" }),
+  user_id_type: Type.Optional(
+    Type.String({ description: "User ID type for returned uploader" }),
+  ),
+});
+
+export const DeleteTaskAttachmentSchema = Type.Object({
+  attachment_guid: Type.String({ description: "Attachment GUID to delete" }),
+});
 export const AddTaskToTasklistSchema = Type.Object({
   task_guid: Type.String({ description: "Task GUID to move" }),
   tasklist_guid: Type.String({ description: "Tasklist GUID to add the task into" }),

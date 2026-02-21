@@ -101,6 +101,12 @@ To avoid “task created but not visible” issues:
 1. When creating a task, set the requesting user as an assignee.
 2. If you need more flexible subtask organization/visibility, consider using tasklists.
 
+#### Task Attachments ⚠️
+
+Task attachments support upload/get/list/delete. Upload sources:
+1. Local files on the OpenClaw/Node host (`file_path`)
+2. OSS direct download links (`file_url`, public or presigned)
+
 #### Tasklist Ownership ⚠️
 
 > **Important:** Keep tasklist owner as the bot. Add users as members instead.
@@ -501,7 +507,7 @@ openclaw plugins update feishu
 
 > 飞书控制台中任务权限的显示名称可能略有差异，必要时可按关键字 `task` 搜索并授予对应读写权限。
 
-#### 任务权限与子任务 ⚠️
+#### 任务限制 ⚠️
 
 > **重要：** 只有当任务责任人包含用户时，用户才能查看到该任务。
 >
@@ -511,11 +517,13 @@ openclaw plugins update feishu
 1. 创建任务时，请把发起用户设为任务负责人（`assignee`）。
 2. 如需更灵活的子任务创建/组织/可见性管理，建议使用任务清单（tasklists）。
 
-#### 任务清单所有者 ⚠️
+任务附件支持上传/获取/列表/删除。上传来源：
+1. OpenClaw/Node 所在机器的本地文件路径（`file_path`）
+2. OSS 可直接下载的链接（`file_url`，公开/预签名 URL）
 
-> **重要：** 创建/修改任务清单时，请保持清单所有者为机器人本身，只把用户作为协作人添加。
+通过 OSS 链接上传时，文件会先下载并临时存储到 `os.tmpdir()` 目录下。
 
-任务清单权限基于“所有者 + 协作成员角色”授予。如果把清单所有者改成用户、且机器人不在协作成员中，机器人可能会失去对该清单的读取/编辑/管理权限，导致后续对清单的操作失败。
+创建/修改任务清单时，请保持清单所有者为机器人本身，只把用户作为协作人添加。任务清单权限基于“所有者 + 协作成员角色”授予。如果把清单所有者改成用户、且机器人不在协作成员中，机器人可能会失去对该清单的读取/编辑/管理权限，导致后续对清单的操作失败。
 
 #### 云空间访问权限 ⚠️
 

@@ -14,6 +14,15 @@ Tools:
 - `feishu_task_delete`
 - `feishu_task_add_tasklist`
 - `feishu_task_remove_tasklist`
+- `feishu_task_comment_create`
+- `feishu_task_comment_list`
+- `feishu_task_comment_get`
+- `feishu_task_comment_update`
+- `feishu_task_comment_delete`
+- `feishu_task_attachment_upload`
+- `feishu_task_attachment_list`
+- `feishu_task_attachment_get`
+- `feishu_task_attachment_delete`
 - `feishu_tasklist_create`
 - `feishu_tasklist_get`
 - `feishu_tasklist_list`
@@ -30,6 +39,7 @@ Tools:
 - If no assignee is specified, set the assignee to the requesting user. Do not create unassigned tasks because the user may not be able to view them.
 - Task visibility: users can only view tasks when they are included as assignee. The bot can currently only create subtasks for tasks created by itself; for more flexible subtask organization, use tasklists.
 - When creating or updating tasklists, keep the owner as the bot. Add users as members instead to avoid losing access.
+- Attachment upload supports local `file_path` on the OpenClaw host or OSS `file_url` (public/presigned).
 
 ## Create Task
 
@@ -198,5 +208,107 @@ Use `user_id_type` to control member ID formats.
     { "id": "ou_xxx", "type": "user", "role": "viewer" }
   ],
   "user_id_type": "open_id"
+}
+```
+
+## Task Comments
+
+### Create Comment
+
+```json
+{
+  "task_guid": "e297ddff-06ca-4166-b917-4ce57cd3a7a0",
+  "content": "Looks good to me",
+  "user_id_type": "open_id"
+}
+```
+
+### List Comments
+
+```json
+{
+  "task_guid": "e297ddff-06ca-4166-b917-4ce57cd3a7a0",
+  "page_size": 50,
+  "user_id_type": "open_id"
+}
+```
+
+### Get Comment
+
+```json
+{
+  "comment_id": "7088226436635389954",
+  "user_id_type": "open_id"
+}
+```
+
+### Update Comment
+
+```json
+{
+  "comment_id": "7088226436635389954",
+  "comment": {
+    "content": "Updated comment content"
+  },
+  "update_fields": ["content"],
+  "user_id_type": "open_id"
+}
+```
+
+### Delete Comment
+
+```json
+{
+  "comment_id": "7088226436635389954"
+}
+```
+
+## Task Attachments
+
+### Upload Attachment (file_path)
+
+```json
+{
+  "task_guid": "e297ddff-06ca-4166-b917-4ce57cd3a7a0",
+  "file_path": "/path/to/report.pdf",
+  "user_id_type": "open_id"
+}
+```
+
+### Upload Attachment (file_url)
+
+```json
+{
+  "task_guid": "e297ddff-06ca-4166-b917-4ce57cd3a7a0",
+  "file_url": "https://oss-example.com/bucket/report.pdf",
+  "filename": "report.pdf",
+  "user_id_type": "open_id"
+}
+```
+
+### List Attachments
+
+```json
+{
+  "task_guid": "e297ddff-06ca-4166-b917-4ce57cd3a7a0",
+  "page_size": 50,
+  "user_id_type": "open_id"
+}
+```
+
+### Get Attachment
+
+```json
+{
+  "attachment_guid": "a9f05f1c-4f86-4b0b-9c10-08cebe6a9c7a",
+  "user_id_type": "open_id"
+}
+```
+
+### Delete Attachment
+
+```json
+{
+  "attachment_guid": "a9f05f1c-4f86-4b0b-9c10-08cebe6a9c7a"
 }
 ```
