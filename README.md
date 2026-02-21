@@ -101,6 +101,12 @@ To avoid “task created but not visible” issues:
 1. When creating a task, set the requesting user as an assignee.
 2. If you need more flexible subtask organization/visibility, consider using tasklists.
 
+#### Tasklist Ownership ⚠️
+
+> **Important:** Keep tasklist owner as the bot. Add users as members instead.
+
+Tasklist access is granted based on owner + member roles. If you change the owner to a user and the bot is not a member, the bot may lose permission to read/edit/manage that tasklist (and subsequent operations will fail).
+
 #### Drive Access ⚠️
 
 > **Important:** Bots don't have their own "My Space" (root folder). Bots can only access files/folders that have been **shared with them**.
@@ -504,6 +510,12 @@ openclaw plugins update feishu
 为避免“任务创建了但用户看不到”的问题：
 1. 创建任务时，请把发起用户设为任务负责人（`assignee`）。
 2. 如需更灵活的子任务创建/组织/可见性管理，建议使用任务清单（tasklists）。
+
+#### 任务清单所有者 ⚠️
+
+> **重要：** 创建/修改任务清单时，请保持清单所有者为机器人本身，只把用户作为协作人添加。
+
+任务清单权限基于“所有者 + 协作成员角色”授予。如果把清单所有者改成用户、且机器人不在协作成员中，机器人可能会失去对该清单的读取/编辑/管理权限，导致后续对清单的操作失败。
 
 #### 云空间访问权限 ⚠️
 
