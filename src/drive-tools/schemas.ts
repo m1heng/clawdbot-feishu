@@ -52,7 +52,8 @@ export const FeishuDriveSchema = Type.Union([
       description: "Document title",
     }),
     content: Type.String({
-      description: "Markdown content to import. Supports full Markdown syntax including tables, lists, code blocks, etc.",
+      description:
+        "Markdown content to import. Supports full Markdown syntax including tables, lists, code blocks, etc.",
     }),
     folder_token: Type.Optional(
       Type.String({
