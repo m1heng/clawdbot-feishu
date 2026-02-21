@@ -763,8 +763,11 @@ export async function handleFeishuMessage(params: {
     const inboundLabel = isGroup
       ? `Feishu[${account.accountId}] message in group ${ctx.chatId}`
       : `Feishu[${account.accountId}] DM from ${ctx.senderOpenId}`;
+    const systemEventText = permissionErrorForAgent
+      ? inboundLabel
+      : `${inboundLabel}: ${preview}`;
 
-    core.system.enqueueSystemEvent(`${inboundLabel}: ${preview}`, {
+    core.system.enqueueSystemEvent(systemEventText, {
       sessionKey: route.sessionKey,
       contextKey: `feishu:message:${ctx.chatId}:${ctx.messageId}`,
     });
