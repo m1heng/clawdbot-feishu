@@ -1,9 +1,11 @@
 import type { TSchema } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { hasFeishuToolEnabledForAnyAccount, withFeishuToolClient } from "../tools-common/tool-exec.js";
-import { createTask, deleteTask, getTask, updateTask } from "./actions.js";
+import { createSubtask, createTask, deleteTask, getTask, updateTask } from "./actions.js";
 import { errorResult, json, type TaskClient } from "./common.js";
 import {
+  CreateSubtaskSchema,
+  type CreateSubtaskParams,
   CreateTaskSchema,
   type CreateTaskParams,
   DeleteTaskSchema,
@@ -73,6 +75,14 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     run: (client, params) => createTask(client, params),
   });
 
+  registerTaskTool<CreateSubtaskParams>(api, {
+    name: "feishu_task_subtask_create",
+    label: "Feishu Task Subtask Create",
+    description: "Create a Feishu subtask under a parent task (task v2)",
+    parameters: CreateSubtaskSchema,
+    run: (client, params) => createSubtask(client, params),
+  });
+
   registerTaskTool<DeleteTaskParams>(api, {
     name: "feishu_task_delete",
     label: "Feishu Task Delete",
@@ -97,5 +107,5 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     run: (client, params) => updateTask(client, params),
   });
 
-  api.logger.debug?.("feishu_task: Registered 4 task tools");
+  api.logger.debug?.("feishu_task: Registered 5 task tools");
 }
