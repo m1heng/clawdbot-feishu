@@ -10,7 +10,7 @@ function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
 
 async function createChat(
   client: ChatClient,
-  params: Extract<FeishuChatParams, { action: "chat_create" }>,
+  params: Extract<FeishuChatParams, { action: "group_chat_create" }>,
 ) {
   const res = await runChatApiCall("im.v1.chat.create", () =>
     client.im.v1.chat.create({
@@ -46,7 +46,7 @@ async function createChat(
 
 async function addChatMembers(
   client: ChatClient,
-  params: Extract<FeishuChatParams, { action: "chat_add_members" }>,
+  params: Extract<FeishuChatParams, { action: "group_chat_add_members" }>,
 ) {
   const res = await runChatApiCall("im.v1.chatMembers.create", () =>
     client.im.v1.chatMembers.create({
@@ -70,7 +70,7 @@ async function addChatMembers(
 
 async function isInChat(
   client: ChatClient,
-  params: Extract<FeishuChatParams, { action: "chat_is_in_chat" }>,
+  params: Extract<FeishuChatParams, { action: "group_chat_is_in_chat" }>,
 ) {
   const res = await runChatApiCall("im.v1.chatMembers.isInChat", () =>
     client.im.v1.chatMembers.isInChat({
@@ -86,11 +86,11 @@ async function isInChat(
 
 export async function runChatAction(client: ChatClient, params: FeishuChatParams) {
   switch (params.action) {
-    case "chat_create":
+    case "group_chat_create":
       return createChat(client, params);
-    case "chat_add_members":
+    case "group_chat_add_members":
       return addChatMembers(client, params);
-    case "chat_is_in_chat":
+    case "group_chat_is_in_chat":
       return isInChat(client, params);
     default:
       return { error: `Unknown action: ${(params as { action?: string }).action ?? ""}` };

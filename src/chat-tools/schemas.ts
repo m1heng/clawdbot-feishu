@@ -13,7 +13,7 @@ const MemberIdType = Type.Union([
 
 export const FeishuChatSchema = Type.Union([
   Type.Object({
-    action: Type.Literal("chat_create"),
+    action: Type.Literal("group_chat_create"),
     name: Type.String({ description: "Group name" }),
     description: Type.Optional(Type.String({ description: "Group description" })),
     owner_id: Type.Optional(Type.String({ description: "Owner user ID" })),
@@ -25,7 +25,7 @@ export const FeishuChatSchema = Type.Union([
     uuid: Type.Optional(Type.String({ description: "Idempotency key for create request (up to 50 chars)" })),
   }),
   Type.Object({
-    action: Type.Literal("chat_add_members"),
+    action: Type.Literal("group_chat_add_members"),
     chat_id: Type.String({ description: "Target group chat ID" }),
     id_list: Type.Array(Type.String(), {
       description: "Member IDs to add. Use app_id when adding bots.",
@@ -35,7 +35,7 @@ export const FeishuChatSchema = Type.Union([
     succeed_type: Type.Optional(Type.Number({ description: "Success mode from Feishu API (optional, usually omit)" })),
   }),
   Type.Object({
-    action: Type.Literal("chat_is_in_chat"),
+    action: Type.Literal("group_chat_is_in_chat"),
     chat_id: Type.String({ description: "Target group chat ID" }),
   }),
 ]);

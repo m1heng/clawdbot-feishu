@@ -83,7 +83,7 @@ openclaw plugins update feishu
 | `wiki:wiki:readonly` | `feishu_wiki` | List spaces, list nodes, get node info, search |
 | `bitable:app:readonly` | `feishu_bitable` | Read bitable records and fields |
 | `task:task:read` | `feishu_task_get` | Get task details |
-| `im:chat:readonly` | `feishu_chat` | Check whether current bot is in a chat (`chat_is_in_chat`) |
+| `im:chat:readonly` | `feishu_chat` | Check whether current bot is in a chat (`group_chat_is_in_chat`) |
 
 **Read-write** (optional, for create/edit/delete operations):
 
@@ -498,7 +498,7 @@ openclaw plugins update feishu
 | `wiki:wiki:readonly` | `feishu_wiki` | 列出空间、列出节点、获取节点详情、搜索 |
 | `bitable:app:readonly` | `feishu_bitable` | 读取多维表格记录和字段 |
 | `task:task:read` | `feishu_task_get` | 获取任务详情 |
-| `im:chat:readonly` | `feishu_chat` | 判断当前机器人是否在群里（`chat_is_in_chat`） |
+| `im:chat:readonly` | `feishu_chat` | 判断当前机器人是否在群里（`group_chat_is_in_chat`） |
 
 **读写权限**（可选，用于创建/编辑/删除操作）：
 
