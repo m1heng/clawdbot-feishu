@@ -1,0 +1,49 @@
+name: "文档改进（中文）"
+description: "反馈文档错误、缺失或表述不清。"
+title: "[Docs] "
+labels:
+  - type:docs
+body:
+  - type: input
+    id: page
+    attributes:
+      label: 涉及文档页面
+      description: "请提供 URL 或文件路径。"
+      placeholder: "例如 README.md#event-subscriptions"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: 文档问题类型
+      options:
+        - "内容错误"
+        - "信息缺失"
+        - "版本过期"
+        - "描述不清"
+        - "翻译问题"
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_text
+    attributes:
+      label: 当前内容（可选）
+      description: "如方便，请贴出有问题的原文。"
+
+  - type: textarea
+    id: expected_text
+    attributes:
+      label: 建议修改
+      description: "请说明希望如何调整。"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: 影响说明
+      description: "该问题会如何影响使用者？"
+    validations:
+      required: true

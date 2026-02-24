@@ -1,0 +1,49 @@
+name: "Documentation Improvement (EN)"
+description: "Report missing, incorrect, or unclear docs."
+title: "[Docs] "
+labels:
+  - type:docs
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Affected Doc Page
+      description: "Provide URL or file path."
+      placeholder: "e.g. README.md#event-subscriptions"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Doc Issue Type
+      options:
+        - "Incorrect"
+        - "Missing"
+        - "Outdated"
+        - "Unclear"
+        - "Translation"
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_text
+    attributes:
+      label: Current Content (Optional)
+      description: "Quote the problematic part if possible."
+
+  - type: textarea
+    id: expected_text
+    attributes:
+      label: Suggested Fix
+      description: "Tell us what should be changed."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: Why This Matters
+      description: "How does this issue affect users?"
+    validations:
+      required: true

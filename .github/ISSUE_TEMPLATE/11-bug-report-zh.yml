@@ -1,0 +1,121 @@
+name: "缺陷反馈（中文）"
+description: "提交可复现缺陷，请附版本、配置方式和日志。"
+title: "[Bug] "
+labels:
+  - type:bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请尽量完整填写，便于维护者快速复现和定位。
+
+  - type: checkboxes
+    id: precheck_search
+    attributes:
+      label: 提交前检查
+      options:
+        - label: 我已搜索现有 issue，未发现重复。
+          required: true
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: 是否回归问题
+      options:
+        - "是（之前正常，现在异常）"
+        - "否"
+        - "不确定"
+    validations:
+      required: true
+
+  - type: input
+    id: openclaw_version
+    attributes:
+      label: OpenClaw 版本
+      description: "例如：`openclaw --version` 输出"
+      placeholder: "例如 2026.2.13"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin_version
+    attributes:
+      label: 飞书插件版本
+      description: "例如：`openclaw plugins list` 输出"
+      placeholder: "例如 @m1heng-clawd/feishu 0.1.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_source
+    attributes:
+      label: 插件安装来源
+      options:
+        - "npm 包（openclaw plugins install @m1heng-clawd/feishu）"
+        - "本地路径（-l /path/to/clawdbot-feishu）"
+        - "本地 tarball（.tgz）"
+        - "其他"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro_steps
+    attributes:
+      label: 复现步骤
+      description: "请使用编号步骤，并包含触发动作。"
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志（可选）
+      description: "如有可提供启动日志及故障窗口日志。"
+      render: shell
+      placeholder: |
+        [startup]
+        ...
+
+        [when reproducing]
+        ...
+
+  - type: textarea
+    id: env
+    attributes:
+      label: 环境信息
+      description: "操作系统、Node.js 版本、部署方式（本机/docker/服务器）。"
+      placeholder: "macOS 14.7, Node v22.x, 本机 daemon"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: precheck_redacted
+    attributes:
+      label: 隐私检查
+      options:
+        - label: 我已移除配置和日志中的敏感信息（appSecret、token、cookie 等）。
+          required: true
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: 补充信息
+      description: "可选"

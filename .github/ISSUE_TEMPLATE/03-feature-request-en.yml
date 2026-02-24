@@ -1,0 +1,31 @@
+name: "Feature Request (EN)"
+description: "Describe your use case and expected behavior."
+title: "[Feature] "
+labels:
+  - type:feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the use case and expected behavior.
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use Case
+      description: "What scenario are you trying to support?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected Behavior
+      description: "What should the plugin do?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional Context (Optional)

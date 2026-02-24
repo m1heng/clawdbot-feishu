@@ -5,6 +5,12 @@ Feishu/Lark (飞书) channel plugin for [OpenClaw](https://github.com/openclaw/o
 > **中文社区资料** - 配置教程、常见问题、使用技巧：[Wiki](https://github.com/m1heng/clawdbot-feishu/wiki)
 >
 > **Contributing / 贡献指南**: [CONTRIBUTING.md](./CONTRIBUTING.md)
+>
+> **Issue Reporting / 问题反馈**: Please use structured Issue Forms with version and setup details; logs are optional.  
+> 请使用结构化 Issue 模板，并附版本与配置方式信息；日志为可选。
+>
+> **Questions / 使用咨询**: Please open a `Question` issue for usage troubleshooting.  
+> 使用咨询请提交 `Question` Issue。
 
 [English](#english) | [中文](#中文)
 

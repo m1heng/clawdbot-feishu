@@ -1,0 +1,31 @@
+- name: type:bug
+  color: d73a4a
+  description: Something is broken and reproducible.
+
+- name: type:config
+  color: 1d76db
+  description: Configuration or integration issue.
+
+- name: type:feature
+  color: a2eeef
+  description: New feature or improvement proposal.
+
+- name: type:docs
+  color: 0075ca
+  description: Documentation issue or improvement.
+
+- name: type:question
+  color: d876e3
+  description: Usage question or troubleshooting request.
+
+- name: area:channel
+  color: 0366d6
+  description: Feishu channel runtime/message routing.
+
+- name: area:tools
+  color: 006b75
+  description: Feishu tools (doc/wiki/drive/perm/bitable/task).
+
+- name: area:docs
+  color: 5319e7
+  description: Documentation and examples.

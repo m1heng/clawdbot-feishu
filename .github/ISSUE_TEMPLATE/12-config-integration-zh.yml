@@ -1,0 +1,74 @@
+name: "配置或接入问题（中文）"
+description: "用于配置和接入排查（账号映射、事件模式、权限、路由）。"
+title: "[Config] "
+labels:
+  - type:config
+body:
+  - type: markdown
+    attributes:
+      value: |
+        该模板用于配置和接入问题排查。
+
+  - type: input
+    id: openclaw_version
+    attributes:
+      label: OpenClaw 版本
+      placeholder: "例如 2026.2.13"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin_version
+    attributes:
+      label: 飞书插件版本
+      placeholder: "例如 @m1heng-clawd/feishu 0.1.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: setup_method
+    attributes:
+      label: 你是如何配置的？
+      options:
+        - "手工编辑 openclaw.json"
+        - "通过 openclaw config set 命令"
+        - "通过 onboarding 或 UI"
+        - "混合方式"
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目标配置
+      description: "你希望实现什么行为？"
+      placeholder: "例如：两个飞书应用分别映射到两个 agent"
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_config
+    attributes:
+      label: 相关配置（可选）
+      description: "如有助于排查，可贴相关配置片段。"
+      render: json
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志（可选）
+      render: shell
+      description: "如有可提供启动日志及复现动作期间日志。"
+
+  - type: checkboxes
+    id: precheck_redacted
+    attributes:
+      label: 隐私检查
+      options:
+        - label: 我已移除日志和配置中的敏感信息。
+          required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他补充

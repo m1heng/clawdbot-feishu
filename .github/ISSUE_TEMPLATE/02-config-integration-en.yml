@@ -1,0 +1,74 @@
+name: "Config or Integration Issue (EN)"
+description: "For setup/config issues (account mapping, event mode, permissions, routing)."
+title: "[Config] "
+labels:
+  - type:config
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This template is for configuration and integration troubleshooting.
+
+  - type: input
+    id: openclaw_version
+    attributes:
+      label: OpenClaw Version
+      placeholder: "e.g. 2026.2.13"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin_version
+    attributes:
+      label: Feishu Plugin Version
+      placeholder: "e.g. @m1heng-clawd/feishu 0.1.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: setup_method
+    attributes:
+      label: How Did You Configure?
+      options:
+        - "Manual openclaw.json edit"
+        - "openclaw config set commands"
+        - "Onboarding or UI"
+        - "Mixed"
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Target Setup
+      description: "What behavior are you trying to achieve?"
+      placeholder: "e.g. Two Feishu apps map to two different agents"
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_config
+    attributes:
+      label: Relevant Config (Optional)
+      description: "Share relevant config sections if helpful."
+      render: json
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs (Optional)
+      render: shell
+      description: "If available, include startup logs and logs during the failing action."
+
+  - type: checkboxes
+    id: precheck_redacted
+    attributes:
+      label: Privacy Check
+      options:
+        - label: I removed secrets from logs/config.
+          required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional Notes

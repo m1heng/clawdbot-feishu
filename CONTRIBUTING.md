@@ -17,6 +17,36 @@ OpenClaw references:
 - Submit a Pull Request to fix bugs, add features, or improve docs.
 - Help review PRs and verify fixes from other contributors.
 
+### Issue Reporting Standard
+
+Use the GitHub Issue Forms and pick the correct type:
+
+- `Bug Report / 缺陷反馈`
+- `Config or Integration Issue / 配置或接入问题`
+- `Feature Request / 功能建议`
+- `Documentation Improvement / 文档改进`
+- `Question / 使用咨询`
+
+For usage questions, please use:
+
+- Open `Question` issue for troubleshooting with logs/config details.
+
+For bug/config issues, include this recommended context:
+
+- OpenClaw version
+- Feishu plugin version
+- Setup method (`openclaw.json` manual edit / CLI command / onboarding/UI)
+- Repro steps
+- Relevant startup and runtime logs
+
+Recommended commands to collect environment details:
+
+```bash
+openclaw --version
+openclaw plugins list | rg -i feishu
+node -v
+```
+
 ### Development requirements
 
 - Node.js `>= 22` (matches OpenClaw development requirement)
@@ -130,6 +160,36 @@ OpenClaw 参考文档：
 - 提交 Issue 讨论新功能需求。
 - 提交 Pull Request 修复 Bug、增加功能或改进文档。
 - 参与 PR 评审，协助验证其他贡献者的修复。
+
+### Issue 反馈规范
+
+请优先使用 GitHub Issue Forms，并选择正确类型：
+
+- `Bug Report / 缺陷反馈`
+- `Config or Integration Issue / 配置或接入问题`
+- `Feature Request / 功能建议`
+- `Documentation Improvement / 文档改进`
+- `Question / 使用咨询`
+
+使用咨询请使用：
+
+- 需要日志/配置排查时，提交 `Question` Issue。
+
+对于 Bug/配置问题，建议提供以下信息：
+
+- OpenClaw 版本
+- 飞书插件版本
+- 配置方式（手工 `openclaw.json` / 命令行 / onboarding 或 UI）
+- 可复现步骤
+- 相关启动日志和运行日志
+
+建议用于采集环境信息的命令：
+
+```bash
+openclaw --version
+openclaw plugins list | rg -i feishu
+node -v
+```
 
 ### 开发环境要求
 

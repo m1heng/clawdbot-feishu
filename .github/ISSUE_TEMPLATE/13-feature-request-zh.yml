@@ -1,0 +1,31 @@
+name: "功能建议（中文）"
+description: "请描述使用场景和期望行为。"
+title: "[Feature] "
+labels:
+  - type:feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请简要说明使用场景与期望行为。
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: 使用场景
+      description: "你希望支持的场景是什么？"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: 期望行为
+      description: "你希望插件具体怎么做？"
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息（可选）

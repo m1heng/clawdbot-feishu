@@ -1,0 +1,67 @@
+name: "Question (EN)"
+description: "Ask a usage question with enough context for troubleshooting."
+title: "[Question] "
+labels:
+  - type:question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when you need troubleshooting help.
+
+  - type: input
+    id: openclaw_version
+    attributes:
+      label: OpenClaw Version
+      description: "Example: output of `openclaw --version`"
+      placeholder: "e.g. 2026.2.13"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin_version
+    attributes:
+      label: Feishu Plugin Version
+      description: "Example: output from `openclaw plugins list`"
+      placeholder: "e.g. @m1heng-clawd/feishu 0.1.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: setup_method
+    attributes:
+      label: Setup Method
+      options:
+        - "Manual openclaw.json edit"
+        - "openclaw config set commands"
+        - "Onboarding or UI"
+        - "Mixed"
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant Config (Optional)
+      render: json
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs (Optional)
+      render: shell
+
+  - type: checkboxes
+    id: precheck_redacted
+    attributes:
+      label: Privacy Check
+      options:
+        - label: I removed secrets (appSecret, tokens, cookies, etc.) from config/logs.
+          required: true
