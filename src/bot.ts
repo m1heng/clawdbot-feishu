@@ -600,17 +600,11 @@ export async function handleFeishuMessage(params: {
     }
 
     // Additional sender-level allowlist check if group has specific allowFrom config.
-    // Merge pairing store entries so DM-paired users are also recognized in group checks.
     const senderAllowFrom = groupConfig?.allowFrom ?? [];
     if (senderAllowFrom.length > 0) {
-      const coreForGroup = getFeishuRuntime();
-      const groupStoreEntries = await coreForGroup.channel.pairing
-        .readAllowFromStore("feishu")
-        .catch(() => []);
-      const effectiveSenderAllowFrom = [...senderAllowFrom, ...groupStoreEntries];
       const senderAllowed = isFeishuGroupAllowed({
         groupPolicy: "allowlist",
-        allowFrom: effectiveSenderAllowFrom,
+        allowFrom: senderAllowFrom,
         senderId: ctx.senderOpenId,
         senderName: ctx.senderName,
       });
