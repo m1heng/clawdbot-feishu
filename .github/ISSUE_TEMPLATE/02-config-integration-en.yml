@@ -8,6 +8,15 @@ body:
     attributes:
       value: |
         This template is for configuration and integration troubleshooting.
+        Please check Discussions first: https://github.com/m1heng/clawdbot-feishu/discussions
+
+  - type: checkboxes
+    id: precheck_search
+    attributes:
+      label: Pre-check
+      options:
+        - label: I checked discussions and existing issues and did not find an existing answer or duplicate.
+          required: true
 
   - type: input
     id: openclaw_version

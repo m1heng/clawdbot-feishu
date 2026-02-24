@@ -8,13 +8,14 @@ body:
     attributes:
       value: |
         请尽量完整填写，便于维护者快速复现和定位。
+        提交前请先查看 Discussions 常见解答：https://github.com/m1heng/clawdbot-feishu/discussions
 
   - type: checkboxes
     id: precheck_search
     attributes:
       label: 提交前检查
       options:
-        - label: 我已搜索现有 issue，未发现重复。
+        - label: 我已搜索现有 issues 和 Discussions，未发现可直接复用的答案或重复问题。
           required: true
 
   - type: dropdown

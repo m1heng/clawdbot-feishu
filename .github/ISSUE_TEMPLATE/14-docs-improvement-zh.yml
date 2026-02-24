@@ -4,6 +4,12 @@ title: "[Docs] "
 labels:
   - type:docs
 body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先查看 Discussions 和现有 issues，避免重复反馈：
+        https://github.com/m1heng/clawdbot-feishu/discussions
+
   - type: input
     id: page
     attributes:

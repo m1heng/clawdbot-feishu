@@ -6,11 +6,11 @@ Feishu/Lark (飞书) channel plugin for [OpenClaw](https://github.com/openclaw/o
 >
 > **Contributing / 贡献指南**: [CONTRIBUTING.md](./CONTRIBUTING.md)
 >
-> **Issue Reporting / 问题反馈**: Please use structured Issue Forms with version and setup details; logs are optional.  
-> 请使用结构化 Issue 模板，并附版本与配置方式信息；日志为可选。
+> **Issue Reporting / 问题反馈**: Please check [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) first for common solutions, then open a structured Issue Form if needed.  
+> 问题反馈前请先查看 [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) 是否已有常见解答；如仍未解决，再提交结构化 Issue 模板。
 >
-> **Questions / 使用咨询**: Please open a `Question` issue for usage troubleshooting.  
-> 使用咨询请提交 `Question` Issue。
+> **Questions / 使用咨询**: Use `Question` issue for troubleshooting; use [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) for open-ended Q&A.  
+> 排查型咨询请提交 `Question` Issue；开放式交流请使用 [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions)。
 
 [English](#english) | [中文](#中文)
 

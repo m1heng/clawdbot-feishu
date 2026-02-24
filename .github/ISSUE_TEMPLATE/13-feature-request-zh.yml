@@ -8,6 +8,7 @@ body:
     attributes:
       value: |
         请简要说明使用场景与期望行为。
+        提交前请先查看 Discussions 和现有 issues，避免重复建议：https://github.com/m1heng/clawdbot-feishu/discussions
 
   - type: textarea
     id: use_case

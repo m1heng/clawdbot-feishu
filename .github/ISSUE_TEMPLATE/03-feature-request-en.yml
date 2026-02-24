@@ -8,6 +8,7 @@ body:
     attributes:
       value: |
         Describe the use case and expected behavior.
+        Please check Discussions and existing issues first to avoid duplicates: https://github.com/m1heng/clawdbot-feishu/discussions
 
   - type: textarea
     id: use_case
