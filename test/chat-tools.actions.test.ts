@@ -30,7 +30,7 @@ test("runChatAction create calls chat.create with mapped payload", async () => {
   } as any;
 
   const result = await runChatAction(client, {
-    action: "create",
+    action: "chat_create",
     name: "Dev Group",
     description: "for testing",
     owner_id: "ou_owner",
@@ -95,7 +95,7 @@ test("runChatAction add_members calls chatMembers.create and normalizes lists", 
   } as any;
 
   const result = await runChatAction(client, {
-    action: "add_members",
+    action: "chat_add_members",
     chat_id: "oc_group",
     id_list: ["cli_bot"],
     member_id_type: "app_id",
@@ -129,7 +129,7 @@ test("runChatAction is_in_chat returns boolean from API response", async () => {
   } as any;
 
   const result = await runChatAction(client, {
-    action: "is_in_chat",
+    action: "chat_is_in_chat",
     chat_id: "oc_group",
   });
 
