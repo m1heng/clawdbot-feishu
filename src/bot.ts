@@ -579,6 +579,10 @@ export async function handleFeishuMessage(params: {
   const useAccessGroups = cfg.commands?.useAccessGroups !== false;
 
   if (isGroup) {
+    if (groupConfig?.enabled === false) {
+      log(`feishu[${account.accountId}]: group ${ctx.chatId} is disabled`);
+      return;
+    }
     const groupPolicy = feishuCfg?.groupPolicy ?? "open";
     const groupAllowFrom = feishuCfg?.groupAllowFrom ?? [];
 
@@ -591,16 +595,22 @@ export async function handleFeishuMessage(params: {
     });
 
     if (!groupAllowed) {
-      log(`feishu[${account.accountId}]: sender ${ctx.senderOpenId} not in group allowlist`);
+      log(`feishu[${account.accountId}]: group ${ctx.chatId} not in groupAllowFrom (groupPolicy=${groupPolicy})`);
       return;
     }
 
-    // Additional sender-level allowlist check if group has specific allowFrom config
+    // Additional sender-level allowlist check if group has specific allowFrom config.
+    // Merge pairing store entries so DM-paired users are also recognized in group checks.
     const senderAllowFrom = groupConfig?.allowFrom ?? [];
     if (senderAllowFrom.length > 0) {
+      const coreForGroup = getFeishuRuntime();
+      const groupStoreEntries = await coreForGroup.channel.pairing
+        .readAllowFromStore("feishu")
+        .catch(() => []);
+      const effectiveSenderAllowFrom = [...senderAllowFrom, ...groupStoreEntries];
       const senderAllowed = isFeishuGroupAllowed({
         groupPolicy: "allowlist",
-        allowFrom: senderAllowFrom,
+        allowFrom: effectiveSenderAllowFrom,
         senderId: ctx.senderOpenId,
         senderName: ctx.senderName,
       });
