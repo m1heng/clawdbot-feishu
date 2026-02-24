@@ -57,7 +57,7 @@ export function registerFeishuChatTools(api: OpenClawPluginApi) {
     name: "feishu_chat",
     label: "Feishu Chat",
     description:
-      "Feishu group chat operations. Actions: group_chat_create, group_chat_add_members, group_chat_is_in_chat. Supports creating groups and adding specified bots/users.",
+      "Feishu group chat operations. Actions: group_chat_create, group_chat_create_session, group_chat_add_members, group_chat_is_in_chat. Supports creating groups, one-step session groups, and adding specified bots/users.",
     parameters: FeishuChatSchema,
     run: (client, params) => runChatAction(client, params),
   });

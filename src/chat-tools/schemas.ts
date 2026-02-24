@@ -10,10 +10,30 @@ export const FeishuChatSchema = Type.Union([
     description: Type.Optional(Type.String({ description: "Group description" })),
     owner_id: Type.Optional(Type.String({ description: "Owner user ID" })),
     user_id_type: Type.Optional(UserIdTypeSchema),
-    user_id_list: Type.Optional(Type.Array(Type.String(), { description: "Initial user IDs to add when creating the group" })),
-    bot_id_list: Type.Optional(Type.Array(Type.String(), { description: "Initial bot app IDs to add when creating the group" })),
-    set_bot_manager: Type.Optional(Type.Boolean({ description: "Whether to set the calling bot as group manager" })),
+    user_id_list: Type.Optional(
+      Type.Array(Type.String(), { description: "Initial user IDs to add when creating the group" }),
+    ),
+    bot_id_list: Type.Optional(
+      Type.Array(Type.String(), { description: "Initial bot app IDs to add when creating the group" }),
+    ),
+    set_bot_manager: Type.Optional(
+      Type.Boolean({ description: "Whether to set the calling bot as group manager" }),
+    ),
     group_message_type: Type.Optional(GroupMessageType),
+    uuid: Type.Optional(Type.String({ description: "Idempotency key for create request (up to 50 chars)" })),
+  }),
+  Type.Object({
+    action: Type.Literal("group_chat_create_session"),
+    name: Type.String({ description: "Session group name" }),
+    participant_id: Type.String({ description: "User ID to invite into the session group" }),
+    participant_id_type: Type.Optional(UserIdTypeSchema),
+    description: Type.Optional(Type.String({ description: "Group description" })),
+    greeting: Type.Optional(Type.String({ description: "Greeting to send after group creation" })),
+    group_message_type: Type.Optional(GroupMessageType),
+    owner_id: Type.Optional(Type.String({ description: "Owner user ID (optional)" })),
+    set_bot_manager: Type.Optional(
+      Type.Boolean({ description: "Whether to set the calling bot as group manager" }),
+    ),
     uuid: Type.Optional(Type.String({ description: "Idempotency key for create request (up to 50 chars)" })),
   }),
   Type.Object({

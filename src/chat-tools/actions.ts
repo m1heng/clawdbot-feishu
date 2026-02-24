@@ -81,10 +81,70 @@ async function isInChat(
   };
 }
 
+async function createChatSession(
+  client: ChatClient,
+  params: Extract<FeishuChatParams, { action: "group_chat_create_session" }>,
+) {
+  const createRes = await runChatApiCall("im.v1.chat.create", () =>
+    client.im.v1.chat.create({
+      data: omitUndefined({
+        name: params.name,
+        description: params.description,
+        owner_id: params.owner_id,
+        user_id_list: [params.participant_id],
+        group_message_type: params.group_message_type,
+      }),
+      params: omitUndefined({
+        user_id_type: params.participant_id_type as UserIdType | undefined,
+        set_bot_manager: params.set_bot_manager,
+        uuid: params.uuid,
+      }),
+    }),
+  );
+
+  const chatId = createRes.data?.chat_id;
+  if (!chatId) {
+    throw new Error("group chat created without chat_id");
+  }
+
+  const greeting = params.greeting?.trim() || "你好，我是番薯仔 🐶，这个群已经创建好啦，我们可以在这里继续聊。";
+
+  const content = JSON.stringify({ text: greeting });
+  const messageRes = await runChatApiCall("im.v1.message.create", () =>
+    client.im.message.create({
+      params: { receive_id_type: "chat_id" },
+      data: {
+        receive_id: chatId,
+        msg_type: "text",
+        content,
+      },
+    }),
+  );
+
+  return {
+    chat: {
+      chat_id: chatId,
+      name: createRes.data?.name,
+      description: createRes.data?.description,
+      owner_id: createRes.data?.owner_id,
+      owner_id_type: createRes.data?.owner_id_type,
+      external: createRes.data?.external,
+    },
+    session: {
+      participant_id: params.participant_id,
+      participant_id_type: params.participant_id_type ?? "open_id",
+      greeting_sent: true,
+      greeting_message_id: messageRes.data?.message_id,
+    },
+  };
+}
+
 export async function runChatAction(client: ChatClient, params: FeishuChatParams) {
   switch (params.action) {
     case "group_chat_create":
       return createChat(client, params);
+    case "group_chat_create_session":
+      return createChatSession(client, params);
     case "group_chat_add_members":
       return addChatMembers(client, params);
     case "group_chat_is_in_chat":
