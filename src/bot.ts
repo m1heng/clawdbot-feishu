@@ -4,6 +4,7 @@ import {
   recordPendingHistoryEntryIfEnabled,
   clearHistoryEntriesIfEnabled,
   DEFAULT_GROUP_HISTORY_LIMIT,
+  resolveMentionGatingWithBypass,
   type HistoryEntry,
 } from "openclaw/plugin-sdk";
 import type { FeishuConfig, FeishuMessageContext, FeishuMediaInfo, ResolvedFeishuAccount } from "./types.js";
@@ -14,6 +15,7 @@ import { tryRecordMessage } from "./dedup.js";
 import {
   resolveFeishuGroupConfig,
   resolveFeishuReplyPolicy,
+  resolveFeishuGroupCommandMentionBypass,
   resolveFeishuAllowlistMatch,
   isFeishuGroupAllowed,
 } from "./policy.js";
@@ -145,6 +147,40 @@ async function resolveFeishuSenderName(params: {
   }
 }
 
+// Cache group bot counts for command mention bypass policy checks.
+const GROUP_BOT_COUNT_TTL_MS = 10 * 60 * 1000;
+const groupBotCountCache = new Map<string, { count: number; expireAt: number }>();
+
+async function resolveFeishuGroupBotCount(params: {
+  account: ResolvedFeishuAccount;
+  chatId: string;
+  log: (...args: any[]) => void;
+}): Promise<number | undefined> {
+  const { account, chatId, log } = params;
+  if (!account.configured || !chatId) return undefined;
+
+  const cacheKey = `${account.accountId}:${chatId}`;
+  const now = Date.now();
+  const cached = groupBotCountCache.get(cacheKey);
+  if (cached && cached.expireAt > now) return cached.count;
+
+  try {
+    const client = createFeishuClient(account);
+    const res: any = await client.im.chat.get({
+      path: { chat_id: chatId },
+    });
+    const parsed = Number.parseInt(String(res?.data?.bot_count ?? ""), 10);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      groupBotCountCache.set(cacheKey, { count: parsed, expireAt: now + GROUP_BOT_COUNT_TTL_MS });
+      return parsed;
+    }
+    return undefined;
+  } catch (err) {
+    log(`feishu[${account.accountId}]: failed to resolve bot_count for ${chatId}: ${String(err)}`);
+    return undefined;
+  }
+}
+
 export type FeishuMessageEvent = {
   sender: {
     sender_id: {
@@ -204,12 +240,21 @@ function parseMessageContent(content: string, messageType: string): string {
   }
 }
 
-function checkBotMentioned(event: FeishuMessageEvent, botOpenId?: string): boolean {
-  const mentions = event.message.mentions ?? [];
-  if (mentions.length === 0) return false;
+function checkBotMentioned(
+  event: FeishuMessageEvent,
+  botOpenId?: string,
+  postMentionIds: string[] = [],
+): boolean {
+  const normalizedBotOpenId = botOpenId?.trim();
   // Keep explicit bot mention semantics: without a resolved botOpenId, do not trigger.
-  if (!botOpenId) return false;
-  return mentions.some((m) => m.id.open_id === botOpenId);
+  if (!normalizedBotOpenId) return false;
+
+  const mentions = event.message.mentions ?? [];
+  return (
+    mentions.some(
+      (m) => m.id.open_id === normalizedBotOpenId || m.id.user_id === normalizedBotOpenId,
+    ) || postMentionIds.some((id) => id === normalizedBotOpenId)
+  );
 }
 
 function stripBotMention(text: string, mentions?: FeishuMessageEvent["message"]["mentions"]): string {
@@ -262,6 +307,7 @@ function parseMediaKeys(
 function parsePostContent(content: string): {
   textContent: string;
   imageKeys: string[];
+  mentionIds: string[];
 } {
   try {
     const parsed = JSON.parse(content);
@@ -269,6 +315,7 @@ function parsePostContent(content: string): {
     const contentBlocks = parsed.content || [];
     let textContent = title ? `${title}\n\n` : "";
     const imageKeys: string[] = [];
+    const mentionIds: string[] = [];
 
     for (const paragraph of contentBlocks) {
       if (Array.isArray(paragraph)) {
@@ -280,7 +327,11 @@ function parsePostContent(content: string): {
             textContent += element.text || element.href || "";
           } else if (element.tag === "at") {
             // Mention: @username
-            textContent += `@${element.user_name || element.user_id || ""}`;
+            const mentionId =
+              String(element.open_id ?? element.user_id ?? element.union_id ?? "").trim() ||
+              undefined;
+            if (mentionId) mentionIds.push(mentionId);
+            textContent += `@${element.user_name || mentionId || ""}`;
           } else if (element.tag === "img" && element.image_key) {
             // Embedded image
             imageKeys.push(element.image_key);
@@ -293,9 +344,10 @@ function parsePostContent(content: string): {
     return {
       textContent: textContent.trim() || "[富文本消息]",
       imageKeys,
+      mentionIds,
     };
   } catch {
-    return { textContent: "[富文本消息]", imageKeys: [] };
+    return { textContent: "[富文本消息]", imageKeys: [], mentionIds: [] };
   }
 }
 
@@ -479,8 +531,12 @@ export function parseFeishuMessageEvent(
   event: FeishuMessageEvent,
   botOpenId?: string,
 ): FeishuMessageContext {
+  const parsedPost =
+    event.message.message_type === "post" ? parsePostContent(event.message.content) : undefined;
   const rawContent = parseMessageContent(event.message.content, event.message.message_type);
-  const mentionedBot = checkBotMentioned(event, botOpenId);
+  const mentionedBot = checkBotMentioned(event, botOpenId, parsedPost?.mentionIds ?? []);
+  const hasAnyMention =
+    (event.message.mentions?.length ?? 0) > 0 || (parsedPost?.mentionIds.length ?? 0) > 0;
   const content = stripBotMention(rawContent, event.message.mentions);
 
   const ctx: FeishuMessageContext = {
@@ -494,6 +550,7 @@ export function parseFeishuMessageEvent(
     parentId: event.message.parent_id || undefined,
     content,
     contentType: event.message.message_type,
+    hasAnyMention,
   };
 
   // Detect mention forward request: message mentions bot + at least one other user
@@ -519,11 +576,11 @@ export async function handleFeishuMessage(params: {
   accountId?: string;
 }): Promise<void> {
   const { cfg, event, botOpenId, runtime, chatHistories, accountId } = params;
-  
+
   // Resolve account with merged config
   const account = resolveFeishuAccount({ cfg, accountId });
   const feishuCfg = account.config;
-  
+
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
 
@@ -578,69 +635,17 @@ export async function handleFeishuMessage(params: {
   const configAllowFrom = feishuCfg?.allowFrom ?? [];
   const useAccessGroups = cfg.commands?.useAccessGroups !== false;
 
-  if (isGroup) {
-    const groupPolicy = feishuCfg?.groupPolicy ?? "open";
-    const groupAllowFrom = feishuCfg?.groupAllowFrom ?? [];
-
-    // Check if this GROUP is allowed (groupAllowFrom contains group IDs like oc_xxx, not user IDs)
-    const groupAllowed = isFeishuGroupAllowed({
-      groupPolicy,
-      allowFrom: groupAllowFrom,
-      senderId: ctx.chatId, // Check group ID, not sender ID
-      senderName: undefined,
-    });
-
-    if (!groupAllowed) {
-      log(`feishu[${account.accountId}]: sender ${ctx.senderOpenId} not in group allowlist`);
-      return;
-    }
-
-    // Additional sender-level allowlist check if group has specific allowFrom config
-    const senderAllowFrom = groupConfig?.allowFrom ?? [];
-    if (senderAllowFrom.length > 0) {
-      const senderAllowed = isFeishuGroupAllowed({
-        groupPolicy: "allowlist",
-        allowFrom: senderAllowFrom,
-        senderId: ctx.senderOpenId,
-        senderName: ctx.senderName,
-      });
-      if (!senderAllowed) {
-        log(`feishu: sender ${ctx.senderOpenId} not in group ${ctx.chatId} sender allowlist`);
-        return;
-      }
-    }
-
-    const { requireMention } = resolveFeishuReplyPolicy({
-      isDirectMessage: false,
-      globalConfig: feishuCfg,
-      groupConfig,
-    });
-
-    if (requireMention && !ctx.mentionedBot) {
-      log(`feishu[${account.accountId}]: message in group ${ctx.chatId} did not mention bot, recording to history`);
-      if (chatHistories) {
-        recordPendingHistoryEntryIfEnabled({
-          historyMap: chatHistories,
-          historyKey: ctx.chatId,
-          limit: historyLimit,
-          entry: {
-            sender: ctx.senderOpenId,
-            body: `${ctx.senderName ?? ctx.senderOpenId}: ${ctx.content}`,
-            timestamp: Date.now(),
-            messageId: ctx.messageId,
-          },
-        });
-      }
-      return;
-    }
-  }
-
   try {
     const core = getFeishuRuntime();
     const shouldComputeCommandAuthorized = core.channel.commands.shouldComputeCommandAuthorized(
       ctx.content,
       cfg,
     );
+    const allowTextCommands = core.channel.commands.shouldHandleTextCommands({
+      cfg,
+      surface: "feishu",
+    });
+    const hasControlCommand = core.channel.text.hasControlCommand(ctx.content, cfg);
     const storeAllowFrom =
       !isGroup && (dmPolicy !== "open" || shouldComputeCommandAuthorized)
         ? await core.channel.pairing.readAllowFromStore("feishu").catch(() => [])
@@ -686,7 +691,11 @@ export async function handleFeishuMessage(params: {
       return;
     }
 
-    const commandAllowFrom = isGroup ? (groupConfig?.allowFrom ?? []) : effectiveDmAllowFrom;
+    const commandAllowFrom = isGroup
+      ? groupConfig?.allowFrom && groupConfig.allowFrom.length > 0
+        ? groupConfig.allowFrom
+        : configAllowFrom
+      : effectiveDmAllowFrom;
     const senderAllowedForCommands = resolveFeishuAllowlistMatch({
       allowFrom: commandAllowFrom,
       senderId: ctx.senderOpenId,
@@ -700,6 +709,100 @@ export async function handleFeishuMessage(params: {
           ],
         })
       : undefined;
+    let effectiveWasMentioned = ctx.mentionedBot;
+
+    if (isGroup) {
+      const groupPolicy = feishuCfg?.groupPolicy ?? "open";
+      const groupAllowFrom = feishuCfg?.groupAllowFrom ?? [];
+
+      // Check if this GROUP is allowed (groupAllowFrom contains group IDs like oc_xxx, not user IDs)
+      const groupAllowed = isFeishuGroupAllowed({
+        groupPolicy,
+        allowFrom: groupAllowFrom,
+        senderId: ctx.chatId, // Check group ID, not sender ID
+        senderName: undefined,
+      });
+
+      if (!groupAllowed) {
+        log(`feishu[${account.accountId}]: sender ${ctx.senderOpenId} not in group allowlist`);
+        return;
+      }
+
+      // Additional sender-level allowlist check if group has specific allowFrom config
+      const senderAllowFrom = groupConfig?.allowFrom ?? [];
+      if (senderAllowFrom.length > 0) {
+        const senderAllowed = isFeishuGroupAllowed({
+          groupPolicy: "allowlist",
+          allowFrom: senderAllowFrom,
+          senderId: ctx.senderOpenId,
+          senderName: ctx.senderName,
+        });
+        if (!senderAllowed) {
+          log(`feishu: sender ${ctx.senderOpenId} not in group ${ctx.chatId} sender allowlist`);
+          return;
+        }
+      }
+
+      const { requireMention } = resolveFeishuReplyPolicy({
+        isDirectMessage: false,
+        globalConfig: feishuCfg,
+        groupConfig,
+      });
+
+      if (requireMention) {
+        const bypassPolicy = resolveFeishuGroupCommandMentionBypass({
+          globalConfig: feishuCfg,
+          groupConfig,
+        });
+        let bypassAllowedByPolicy = bypassPolicy === "always";
+
+        if (!bypassAllowedByPolicy && bypassPolicy === "single_bot" && hasControlCommand) {
+          const botCount = await resolveFeishuGroupBotCount({
+            account,
+            chatId: ctx.chatId,
+            log,
+          });
+          bypassAllowedByPolicy = botCount !== undefined && botCount <= 1;
+          if (botCount === undefined) {
+            log(
+              `feishu[${account.accountId}]: unable to resolve bot count for ${ctx.chatId}, command mention bypass disabled`,
+            );
+          }
+        }
+
+        const mentionGate = resolveMentionGatingWithBypass({
+          isGroup: true,
+          requireMention,
+          canDetectMention: true,
+          wasMentioned: ctx.mentionedBot,
+          hasAnyMention: ctx.hasAnyMention,
+          allowTextCommands: allowTextCommands && bypassAllowedByPolicy,
+          hasControlCommand,
+          commandAuthorized: commandAuthorized === true,
+        });
+        effectiveWasMentioned = mentionGate.effectiveWasMentioned;
+
+        if (mentionGate.shouldSkip) {
+          log(
+            `feishu[${account.accountId}]: message in group ${ctx.chatId} skipped (mention required)`,
+          );
+          if (chatHistories) {
+            recordPendingHistoryEntryIfEnabled({
+              historyMap: chatHistories,
+              historyKey: ctx.chatId,
+              limit: historyLimit,
+              entry: {
+                sender: ctx.senderOpenId,
+                body: `${ctx.senderName ?? ctx.senderOpenId}: ${ctx.content}`,
+                timestamp: Date.now(),
+                messageId: ctx.messageId,
+              },
+            });
+          }
+          return;
+        }
+      }
+    }
 
     // In group chats, the session is scoped to the group, but the *speaker* is the sender.
     // Using a group-scoped From causes the agent to treat different users as the same person.
@@ -931,7 +1034,7 @@ export async function handleFeishuMessage(params: {
       Surface: "feishu" as const,
       MessageSid: ctx.messageId,
       Timestamp: Date.now(),
-      WasMentioned: ctx.mentionedBot,
+      WasMentioned: effectiveWasMentioned,
       CommandAuthorized: commandAuthorized,
       OriginatingChannel: "feishu" as const,
       OriginatingTo: feishuTo,
