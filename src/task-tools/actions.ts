@@ -1,11 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import type { TaskClient } from "./common.js";
 import type {
+  CreateSubtaskParams,
   CreateTaskParams,
   DeleteTaskAttachmentParams,
   GetTaskAttachmentParams,
@@ -15,6 +13,7 @@ import type {
   UploadTaskAttachmentParams,
   UpdateTaskParams,
 } from "./schemas.js";
+import { getFeishuRuntime } from "../runtime.js";
 import { runTaskApiCall } from "./common.js";
 
 const SUPPORTED_PATCH_FIELDS = new Set<keyof TaskUpdateTask>([
@@ -28,6 +27,7 @@ const SUPPORTED_PATCH_FIELDS = new Set<keyof TaskUpdateTask>([
   "mode",
   "is_milestone",
 ]);
+const DEFAULT_ATTACHMENT_MAX_BYTES = 30 * 1024 * 1024;
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
   return Object.fromEntries(
@@ -76,26 +76,38 @@ function formatAttachment(attachment: Record<string, unknown> | undefined) {
   };
 }
 
-async function downloadToTempFile(fileUrl: string, filename?: string) {
-  const url = new URL(fileUrl);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(`unsupported file_url protocol: ${url.protocol}`);
+function sanitizeUploadFilename(input: string) {
+  const base = path.basename(input.trim());
+  return base.length > 0 ? base : "attachment";
+}
+
+async function ensureUploadableLocalFile(filePath: string, maxBytes: number) {
+  let stat: fs.Stats;
+  try {
+    stat = await fs.promises.stat(filePath);
+  } catch {
+    throw new Error(`file_path not found: ${filePath}`);
   }
 
-  const inferredName = path.basename(url.pathname) || filename || "attachment";
+  if (!stat.isFile()) {
+    throw new Error(`file_path is not a regular file: ${filePath}`);
+  }
+
+  if (stat.size > maxBytes) {
+    throw new Error(
+      `file_path exceeds ${(maxBytes / (1024 * 1024)).toFixed(0)}MB limit: ${filePath}`,
+    );
+  }
+}
+
+async function saveBufferToTempFile(buffer: Buffer, fileName: string) {
+  const safeName = sanitizeUploadFilename(fileName);
   const tempPath = path.join(
     os.tmpdir(),
-    `feishu-task-attachment-${Date.now()}-${Math.random().toString(16).slice(2)}-${inferredName}`,
+    `feishu-task-attachment-${Date.now()}-${Math.random().toString(16).slice(2)}-${safeName}`,
   );
 
-  const res = await fetch(fileUrl);
-  if (!res.ok || !res.body) {
-    throw new Error(`failed to download file_url: ${res.status} ${res.statusText}`);
-  }
-
-  const readable = Readable.fromWeb(res.body as unknown as WebReadableStream);
-  const writeStream = fs.createWriteStream(tempPath);
-  await pipeline(readable, writeStream);
+  await fs.promises.writeFile(tempPath, buffer);
 
   return {
     tempPath,
@@ -103,6 +115,25 @@ async function downloadToTempFile(fileUrl: string, filename?: string) {
       await fs.promises.unlink(tempPath).catch(() => undefined);
     },
   };
+}
+
+async function downloadToTempFile(fileUrl: string, filename: string | undefined, maxBytes: number) {
+  const loaded = await getFeishuRuntime().media.loadWebMedia(fileUrl, {
+    maxBytes,
+    optimizeImages: false,
+  });
+
+  const parsedPath = (() => {
+    try {
+      return new URL(fileUrl).pathname;
+    } catch {
+      return "";
+    }
+  })();
+
+  const fallbackName = path.basename(parsedPath) || "attachment";
+  const preferredName = filename?.trim() ? filename : loaded.fileName ?? fallbackName;
+  return saveBufferToTempFile(loaded.buffer, preferredName);
 }
 
 export async function createTask(client: TaskClient, params: CreateTaskParams) {
@@ -129,6 +160,34 @@ export async function createTask(client: TaskClient, params: CreateTaskParams) {
 
   return {
     task: formatTask((res.data?.task ?? undefined) as Record<string, unknown> | undefined),
+  };
+}
+
+export async function createSubtask(client: TaskClient, params: CreateSubtaskParams) {
+  const res = await runTaskApiCall("task.v2.taskSubtask.create", () =>
+    client.task.v2.taskSubtask.create({
+      path: { task_guid: params.task_guid },
+      data: omitUndefined({
+        summary: params.summary,
+        description: params.description,
+        due: params.due,
+        start: params.start,
+        extra: params.extra,
+        completed_at: params.completed_at,
+        members: params.members,
+        repeat_rule: params.repeat_rule,
+        tasklists: params.tasklists,
+        mode: params.mode,
+        is_milestone: params.is_milestone,
+      }),
+      params: omitUndefined({
+        user_id_type: params.user_id_type,
+      }),
+    }),
+  );
+
+  return {
+    subtask: formatTask((res.data?.subtask ?? undefined) as Record<string, unknown> | undefined),
   };
 }
 
@@ -243,14 +302,24 @@ export async function updateTask(client: TaskClient, params: UpdateTaskParams) {
   };
 }
 
-export async function uploadTaskAttachment(client: TaskClient, params: UploadTaskAttachmentParams) {
+export async function uploadTaskAttachment(
+  client: TaskClient,
+  params: UploadTaskAttachmentParams,
+  options?: { maxBytes?: number },
+) {
+  const maxBytes =
+    typeof options?.maxBytes === "number" && options.maxBytes > 0
+      ? options.maxBytes
+      : DEFAULT_ATTACHMENT_MAX_BYTES;
+
   let tempCleanup: (() => Promise<void>) | undefined;
-  let filePath: string | undefined;
+  let filePath: string;
 
   if ("file_path" in params) {
     filePath = params.file_path;
+    await ensureUploadableLocalFile(filePath, maxBytes);
   } else {
-    const download = await downloadToTempFile(params.file_url, params.filename);
+    const download = await downloadToTempFile(params.file_url, params.filename, maxBytes);
     filePath = download.tempPath;
     tempCleanup = download.cleanup;
   }

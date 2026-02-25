@@ -1,7 +1,9 @@
 import type { TSchema } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import type { ResolvedFeishuAccount } from "../types.js";
 import { hasFeishuToolEnabledForAnyAccount, withFeishuToolClient } from "../tools-common/tool-exec.js";
 import {
+  createSubtask,
   createTask,
   deleteTaskAttachment,
   deleteTask,
@@ -13,6 +15,8 @@ import {
 } from "./actions.js";
 import { errorResult, json, type TaskClient } from "./common.js";
 import {
+  CreateSubtaskSchema,
+  type CreateSubtaskParams,
   CreateTaskSchema,
   type CreateTaskParams,
   DeleteTaskAttachmentSchema,
@@ -31,18 +35,15 @@ import {
   type UpdateTaskParams,
 } from "./schemas.js";
 
-type ToolSpec<P> = {
+type TaskToolSpec<P> = {
   name: string;
   label: string;
   description: string;
   parameters: TSchema;
-  run: (client: TaskClient, params: P) => Promise<unknown>;
+  run: (args: { client: TaskClient; account: ResolvedFeishuAccount }, params: P) => Promise<unknown>;
 };
 
-function registerTaskTool<P>(
-  api: OpenClawPluginApi,
-  spec: ToolSpec<P>,
-) {
+function registerTaskTool<P>(api: OpenClawPluginApi, spec: TaskToolSpec<P>) {
   api.registerTool(
     {
       name: spec.name,
@@ -55,7 +56,8 @@ function registerTaskTool<P>(
             api,
             toolName: spec.name,
             requiredTool: "task",
-            run: async ({ client }) => json(await spec.run(client as TaskClient, params as P)),
+            run: async ({ client, account }) =>
+              json(await spec.run({ client: client as TaskClient, account }, params as P)),
           });
         } catch (err) {
           return errorResult(err);
@@ -87,7 +89,15 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     label: "Feishu Task Create",
     description: "Create a Feishu task (task v2)",
     parameters: CreateTaskSchema,
-    run: (client, params) => createTask(client, params),
+    run: async ({ client }, params) => createTask(client, params),
+  });
+
+  registerTaskTool<CreateSubtaskParams>(api, {
+    name: "feishu_task_subtask_create",
+    label: "Feishu Task Subtask Create",
+    description: "Create a Feishu subtask under a parent task (task v2)",
+    parameters: CreateSubtaskSchema,
+    run: async ({ client }, params) => createSubtask(client, params),
   });
 
   registerTaskTool<UploadTaskAttachmentParams>(api, {
@@ -95,7 +105,10 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     label: "Feishu Task Attachment Upload",
     description: "Upload an attachment to a Feishu task (task v2)",
     parameters: UploadTaskAttachmentSchema,
-    run: (client, params) => uploadTaskAttachment(client, params),
+    run: async ({ client, account }, params) => {
+      const mediaMaxBytes = (account.config?.mediaMaxMb ?? 30) * 1024 * 1024;
+      return uploadTaskAttachment(client, params, { maxBytes: mediaMaxBytes });
+    },
   });
 
   registerTaskTool<ListTaskAttachmentsParams>(api, {
@@ -103,7 +116,7 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     label: "Feishu Task Attachment List",
     description: "List attachments for a Feishu task (task v2)",
     parameters: ListTaskAttachmentsSchema,
-    run: (client, params) => listTaskAttachments(client, params),
+    run: async ({ client }, params) => listTaskAttachments(client, params),
   });
 
   registerTaskTool<GetTaskAttachmentParams>(api, {
@@ -111,7 +124,7 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     label: "Feishu Task Attachment Get",
     description: "Get a Feishu task attachment by attachment_guid (task v2)",
     parameters: GetTaskAttachmentSchema,
-    run: (client, params) => getTaskAttachment(client, params),
+    run: async ({ client }, params) => getTaskAttachment(client, params),
   });
 
   registerTaskTool<DeleteTaskAttachmentParams>(api, {
@@ -119,7 +132,7 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     label: "Feishu Task Attachment Delete",
     description: "Delete a Feishu task attachment by attachment_guid (task v2)",
     parameters: DeleteTaskAttachmentSchema,
-    run: (client, params) => deleteTaskAttachment(client, params),
+    run: async ({ client }, params) => deleteTaskAttachment(client, params),
   });
 
   registerTaskTool<DeleteTaskParams>(api, {
@@ -127,7 +140,7 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     label: "Feishu Task Delete",
     description: "Delete a Feishu task by task_guid (task v2)",
     parameters: DeleteTaskSchema,
-    run: (client, { task_guid }) => deleteTask(client, task_guid),
+    run: async ({ client }, { task_guid }) => deleteTask(client, task_guid),
   });
 
   registerTaskTool<GetTaskParams>(api, {
@@ -135,7 +148,7 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     label: "Feishu Task Get",
     description: "Get Feishu task details by task_guid (task v2)",
     parameters: GetTaskSchema,
-    run: (client, params) => getTask(client, params),
+    run: async ({ client }, params) => getTask(client, params),
   });
 
   registerTaskTool<UpdateTaskParams>(api, {
@@ -143,8 +156,8 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     label: "Feishu Task Update",
     description: "Update a Feishu task by task_guid (task v2 patch)",
     parameters: UpdateTaskSchema,
-    run: (client, params) => updateTask(client, params),
+    run: async ({ client }, params) => updateTask(client, params),
   });
 
-  api.logger.debug?.("feishu_task: Registered task and attachment tools");
+  api.logger.debug?.("feishu_task: Registered task, subtask, and attachment tools");
 }
