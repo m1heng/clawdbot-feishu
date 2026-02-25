@@ -2,6 +2,7 @@ import type { TSchema } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { hasFeishuToolEnabledForAnyAccount, withFeishuToolClient } from "../tools-common/tool-exec.js";
 import {
+  createSubtask,
   createTaskComment,
   createTask,
   deleteTaskComment,
@@ -14,6 +15,8 @@ import {
 } from "./actions.js";
 import { errorResult, json, type TaskClient } from "./common.js";
 import {
+  CreateSubtaskSchema,
+  type CreateSubtaskParams,
   CreateTaskCommentSchema,
   type CreateTaskCommentParams,
   CreateTaskSchema,
@@ -93,6 +96,14 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     run: (client, params) => createTask(client, params),
   });
 
+  registerTaskTool<CreateSubtaskParams>(api, {
+    name: "feishu_task_subtask_create",
+    label: "Feishu Task Subtask Create",
+    description: "Create a Feishu subtask under a parent task (task v2)",
+    parameters: CreateSubtaskSchema,
+    run: (client, params) => createSubtask(client, params),
+  });
+
   registerTaskTool<CreateTaskCommentParams>(api, {
     name: "feishu_task_comment_create",
     label: "Feishu Task Comment Create",
@@ -157,5 +168,5 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     run: (client, params) => updateTask(client, params),
   });
 
-  api.logger.debug?.("feishu_task: Registered task and comment tools");
+  api.logger.debug?.("feishu_task: Registered task, subtask, and comment tools");
 }

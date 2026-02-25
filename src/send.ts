@@ -3,6 +3,7 @@ import type { FeishuSendResult, ResolvedFeishuAccount } from "./types.js";
 import type { MentionTarget } from "./mention.js";
 import { buildMentionedMessage, buildMentionedCardContent } from "./mention.js";
 import { createFeishuClient } from "./client.js";
+import { normalizeFeishuMarkdownLinks } from "./text/markdown-links.js";
 import { resolveReceiveIdType, normalizeFeishuTarget } from "./targets.js";
 import { getFeishuRuntime } from "./runtime.js";
 import { resolveFeishuAccount } from "./accounts.js";
@@ -172,7 +173,9 @@ export async function sendMessageFeishu(params: SendFeishuMessageParams): Promis
   if (mentions && mentions.length > 0) {
     rawText = buildMentionedMessage(mentions, rawText);
   }
-  const messageText = getFeishuRuntime().channel.text.convertMarkdownTables(rawText, tableMode);
+  const messageText = normalizeFeishuMarkdownLinks(
+    getFeishuRuntime().channel.text.convertMarkdownTables(rawText, tableMode),
+  );
 
   const { content, msgType } = buildFeishuPostMessagePayload({ messageText });
 
@@ -342,6 +345,7 @@ export async function sendMarkdownCardFeishu(params: {
   if (mentions && mentions.length > 0) {
     cardText = buildMentionedCardContent(mentions, text);
   }
+  cardText = normalizeFeishuMarkdownLinks(cardText);
   const card = buildMarkdownCard(cardText);
   return sendCardFeishu({ cfg, to, card, replyToMessageId, accountId });
 }
@@ -367,7 +371,9 @@ export async function editMessageFeishu(params: {
     cfg,
     channel: "feishu",
   });
-  const messageText = getFeishuRuntime().channel.text.convertMarkdownTables(text ?? "", tableMode);
+  const messageText = normalizeFeishuMarkdownLinks(
+    getFeishuRuntime().channel.text.convertMarkdownTables(text ?? "", tableMode),
+  );
 
   const { content, msgType } = buildFeishuPostMessagePayload({ messageText });
 

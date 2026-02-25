@@ -40,6 +40,10 @@ export type CreateTaskParams = {
   user_id_type?: NonNullable<TaskCreatePayload["params"]>["user_id_type"];
 };
 
+export type CreateSubtaskParams = CreateTaskParams & {
+  task_guid: string;
+};
+
 export type DeleteTaskParams = {
   task_guid: TaskDeletePayload["path"]["task_guid"];
 };
@@ -133,6 +137,13 @@ export const CreateTaskSchema = Type.Object({
     }),
   ),
 });
+
+export const CreateSubtaskSchema = Type.Intersect([
+  Type.Object({
+    task_guid: Type.String({ description: "Parent task GUID" }),
+  }),
+  CreateTaskSchema,
+]);
 
 export const DeleteTaskSchema = Type.Object({
   task_guid: Type.String({ description: "Task GUID to delete" }),
