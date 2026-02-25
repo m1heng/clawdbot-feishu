@@ -3,7 +3,10 @@ import { Type, type Static } from "@sinclair/typebox";
 export const FeishuDocSchema = Type.Union([
   Type.Object({
     action: Type.Literal("read"),
-    doc_token: Type.String({ description: "Document token (extract from URL /docx/XXX)" }),
+    doc_token: Type.String({
+      description:
+        "Document token (extract from URL /docx/XXX or /docs/XXX). Supports both new (docx) and legacy (doc) formats.",
+    }),
   }),
   Type.Object({
     action: Type.Literal("write"),

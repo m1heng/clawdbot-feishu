@@ -1,5 +1,5 @@
 import { appendDoc, createAndWriteDoc, createDoc, writeDoc } from "../doc-write-service.js";
-import { runDocApiCall, type DocClient } from "./common.js";
+import { detectDocFormat, runDocApiCall, type DocClient } from "./common.js";
 import type { FeishuDocParams } from "./schemas.js";
 
 const BLOCK_TYPE_NAMES: Record<number, string> = {
@@ -48,7 +48,34 @@ function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
   return Object.fromEntries(Object.entries(obj).filter(([, value]) => value !== undefined)) as T;
 }
 
+async function readLegacyDoc(client: DocClient, docToken: string) {
+  const domain = (client as any).domain ?? "https://open.feishu.cn";
+  const token = await client.tokenManager.getTenantAccessToken();
+  const response = await runDocApiCall("doc.v2.raw_content", () =>
+    client.httpInstance.get<{ code?: number; msg?: string; data?: { content?: string } }>(
+      `${domain}/open-apis/doc/v2/${docToken}/raw_content`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    ),
+  );
+
+  return {
+    content: response.data?.content,
+    format: "doc" as const,
+    hint: "Legacy document format. Only plain text content available. Title not included in this API response.",
+  };
+}
+
 async function readDoc(client: DocClient, docToken: string) {
+  const format = detectDocFormat(docToken);
+
+  if (format === "doc") {
+    return readLegacyDoc(client, docToken);
+  }
+
   const [contentRes, infoRes, blocksRes] = await Promise.all([
     runDocApiCall("docx.document.rawContent", () =>
       client.docx.document.rawContent({ path: { document_id: docToken } }),

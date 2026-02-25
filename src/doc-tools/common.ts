@@ -16,3 +16,17 @@ export async function runDocApiCall<T extends FeishuApiResponse>(
 ): Promise<T> {
   return runFeishuApiCall(context, fn);
 }
+
+export type DocFormat = "docx" | "doc";
+
+/**
+ * Detect document format from token.
+ * Legacy doc tokens: doccnXXXXXXXXXXXXXXXXXXXXXXX (starts with "docc", 27 chars total)
+ * Docx tokens: Various formats without "docc" prefix
+ */
+export function detectDocFormat(token: string): DocFormat {
+  if (token.startsWith("docc")) {
+    return "doc";
+  }
+  return "docx";
+}
