@@ -3,6 +3,11 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    // Temporary workaround for openclaw@2026.2.13 plugin-sdk type export resolution.
+    "paths": {
+      "openclaw/plugin-sdk": ["node_modules/openclaw/dist/plugin-sdk/plugin-sdk/index.d.ts"]
+    },
     "esModuleInterop": true,
     "strict": false,
     "noImplicitAny": false,

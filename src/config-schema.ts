@@ -3,6 +3,7 @@ export { z };
 
 const DmPolicySchema = z.enum(["open", "pairing", "allowlist"]);
 const GroupPolicySchema = z.enum(["open", "allowlist", "disabled"]);
+const GroupCommandMentionBypassSchema = z.enum(["never", "single_bot", "always"]).optional();
 const FeishuDomainSchema = z.union([
   z.enum(["feishu", "lark"]),
   z.string().url().startsWith("https://"),
@@ -35,6 +36,9 @@ const MarkdownConfigSchema = z
 
 // Message render mode: auto (default) = detect markdown, raw = plain text, card = always card
 const RenderModeSchema = z.enum(["auto", "raw", "card"]).optional();
+
+// Streaming card mode: default false. When enabled, card replies use Feishu Card Kit streaming API.
+const StreamingModeSchema = z.boolean().optional();
 
 const BlockStreamingCoalesceSchema = z
   .object({
@@ -74,6 +78,7 @@ const DynamicAgentCreationSchema = z
  * Dependencies:
  * - wiki requires doc (wiki content is edited via doc tools)
  * - perm can work independently but is typically used with drive
+ * - task can work independently
  */
 const FeishuToolsConfigSchema = z
   .object({
@@ -82,6 +87,7 @@ const FeishuToolsConfigSchema = z
     drive: z.boolean().optional(), // Cloud storage operations (default: true)
     perm: z.boolean().optional(), // Permission management (default: false, sensitive)
     scopes: z.boolean().optional(), // App scopes diagnostic (default: true)
+    task: z.boolean().optional(), // Task operations (default: true)
   })
   .strict()
   .optional();
@@ -99,6 +105,7 @@ const TopicSessionModeSchema = z.enum(["disabled", "enabled"]).optional();
 export const FeishuGroupSchema = z
   .object({
     requireMention: z.boolean().optional(),
+    groupCommandMentionBypass: GroupCommandMentionBypassSchema,
     tools: ToolPolicySchema,
     skills: z.array(z.string()).optional(),
     enabled: z.boolean().optional(),
@@ -132,6 +139,7 @@ export const FeishuAccountConfigSchema = z
     groupPolicy: GroupPolicySchema.optional(),
     groupAllowFrom: z.array(z.union([z.string(), z.number()])).optional(),
     requireMention: z.boolean().optional(),
+    groupCommandMentionBypass: GroupCommandMentionBypassSchema,
     groups: z.record(z.string(), FeishuGroupSchema.optional()).optional(),
     historyLimit: z.number().int().min(0).optional(),
     dmHistoryLimit: z.number().int().min(0).optional(),
@@ -142,6 +150,7 @@ export const FeishuAccountConfigSchema = z
     mediaMaxMb: z.number().positive().optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
     renderMode: RenderModeSchema,
+    streaming: StreamingModeSchema,
     tools: FeishuToolsConfigSchema,
   })
   .strict();
@@ -166,6 +175,7 @@ export const FeishuConfigSchema = z
     groupPolicy: GroupPolicySchema.optional().default("allowlist"),
     groupAllowFrom: z.array(z.union([z.string(), z.number()])).optional(),
     requireMention: z.boolean().optional().default(true),
+    groupCommandMentionBypass: GroupCommandMentionBypassSchema.default("single_bot"),
     groups: z.record(z.string(), FeishuGroupSchema.optional()).optional(),
     topicSessionMode: TopicSessionModeSchema,
     historyLimit: z.number().int().min(0).optional(),
@@ -177,6 +187,7 @@ export const FeishuConfigSchema = z
     mediaMaxMb: z.number().positive().optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
     renderMode: RenderModeSchema, // raw = plain text (default), card = interactive card with markdown
+    streaming: StreamingModeSchema,
     tools: FeishuToolsConfigSchema,
     // Dynamic agent creation for DM users
     dynamicAgentCreation: DynamicAgentCreationSchema,

@@ -1,5 +1,5 @@
 import type { ChannelPlugin, ClawdbotConfig } from "openclaw/plugin-sdk";
-import { DEFAULT_ACCOUNT_ID, PAIRING_APPROVED_MESSAGE } from "openclaw/plugin-sdk";
+import { DEFAULT_ACCOUNT_ID, normalizeAccountId, PAIRING_APPROVED_MESSAGE } from "openclaw/plugin-sdk";
 import type { ResolvedFeishuAccount, FeishuConfig } from "./types.js";
 import {
   resolveFeishuAccount,
@@ -29,7 +29,7 @@ const meta = {
   blurb: "飞书/Lark enterprise messaging.",
   aliases: ["lark"],
   order: 70,
-} as const;
+};
 
 export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
   id: "feishu",
@@ -39,12 +39,11 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
   pairing: {
     idLabel: "feishuUserId",
     normalizeAllowEntry: (entry) => entry.replace(/^(feishu|user|open_id):/i, ""),
-    notifyApproval: async ({ cfg, id, accountId }) => {
+    notifyApproval: async ({ cfg, id }) => {
       await sendMessageFeishu({
         cfg,
         to: id,
         text: PAIRING_APPROVED_MESSAGE,
-        accountId,
       });
     },
   },
@@ -91,6 +90,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
         groupPolicy: { type: "string", enum: ["open", "allowlist", "disabled"] },
         groupAllowFrom: { type: "array", items: { oneOf: [{ type: "string" }, { type: "number" }] } },
         requireMention: { type: "boolean" },
+        groupCommandMentionBypass: { type: "string", enum: ["never", "single_bot", "always"] },
         topicSessionMode: { type: "string", enum: ["disabled", "enabled"] },
         historyLimit: { type: "integer", minimum: 0 },
         dmHistoryLimit: { type: "integer", minimum: 0 },
@@ -111,6 +111,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
               verificationToken: { type: "string" },
               domain: { type: "string", enum: ["feishu", "lark"] },
               connectionMode: { type: "string", enum: ["websocket", "webhook"] },
+              groupCommandMentionBypass: { type: "string", enum: ["never", "single_bot", "always"] },
             },
           },
         },
@@ -201,7 +202,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
     }),
     resolveAllowFrom: ({ cfg, accountId }) => {
       const account = resolveFeishuAccount({ cfg, accountId });
-      return account.config?.allowFrom ?? [];
+      return (account.config?.allowFrom ?? []).map((entry) => String(entry).trim()).filter(Boolean);
     },
     formatAllowFrom: ({ allowFrom }) =>
       allowFrom
@@ -222,7 +223,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
     },
   },
   setup: {
-    resolveAccountId: () => DEFAULT_ACCOUNT_ID,
+    resolveAccountId: ({ accountId }) => normalizeAccountId(accountId),
     applyAccountConfig: ({ cfg, accountId }) => {
       const isDefault = !accountId || accountId === DEFAULT_ACCOUNT_ID;
       
@@ -297,8 +298,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
       probe: snapshot.probe,
       lastProbeAt: snapshot.lastProbeAt ?? null,
     }),
-    probeAccount: async ({ cfg, accountId }) => {
-      const account = resolveFeishuAccount({ cfg, accountId });
+    probeAccount: async ({ account }) => {
       return await probeFeishu(account);
     },
     buildAccountSnapshot: ({ account, runtime, probe }) => ({
