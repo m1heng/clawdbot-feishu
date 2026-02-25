@@ -6,11 +6,11 @@ Feishu/Lark (飞书) channel plugin for [OpenClaw](https://github.com/openclaw/o
 >
 > **Contributing / 贡献指南**: [CONTRIBUTING.md](./CONTRIBUTING.md)
 >
-> **Issue Reporting / 问题反馈**: Please use structured Issue Forms with version and setup details; logs are optional.  
-> 请使用结构化 Issue 模板，并附版本与配置方式信息；日志为可选。
+> **Issue Reporting / 问题反馈**: Please check [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) first for common solutions, then open a structured Issue Form if needed.  
+> 问题反馈前请先查看 [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) 是否已有常见解答；如仍未解决，再提交结构化 Issue 模板。
 >
-> **Questions / 使用咨询**: Please open a `Question` issue for usage troubleshooting.  
-> 使用咨询请提交 `Question` Issue。
+> **Questions / 使用咨询**: Use `Question` issue for troubleshooting; use [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) for open-ended Q&A.  
+> 排查型咨询请提交 `Question` Issue；开放式交流请使用 [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions)。
 
 [English](#english) | [中文](#中文)
 
@@ -180,6 +180,10 @@ channels:
     groupPolicy: "allowlist"
     # Require @mention in groups
     requireMention: true
+    # Group command mention bypass: "never" | "single_bot" | "always"
+    # Default "single_bot": allow authorized command-only messages without @
+    # only when the group has a single bot.
+    groupCommandMentionBypass: "single_bot"
     # Max media size in MB (default: 30)
     mediaMaxMb: 30
     # Render mode for bot replies: "auto" | "raw" | "card"
@@ -260,6 +264,21 @@ Top-level `channels.feishu.dmPolicy` / `channels.feishu.allowFrom` are fallback 
 
 > `dmPolicy` only controls who can trigger the bot.  
 > To actually read/write docs or files, you still need: (1) correct Feishu app scopes, and (2) sharing the target resources (Drive/Wiki/Bitable) with the bot.
+
+#### Group Command Mention Bypass
+
+When `requireMention: true`, Feishu can still allow authorized control commands (such as `/new`) without `@bot`.
+
+| `groupCommandMentionBypass` | Behavior |
+|----------------------------|----------|
+| `never` | Never bypass `@` requirement for group commands. |
+| `single_bot` | Bypass only when the group contains at most one bot (default). |
+| `always` | Always allow authorized control commands to bypass mention gating. |
+
+Notes:
+- Bypass only applies to authorized control commands in group chats.
+- If any user is explicitly `@`-mentioned in the same message, bypass is disabled.
+- In DMs, this setting does not apply.
 
 #### Connection Mode
 
@@ -574,6 +593,9 @@ channels:
     groupPolicy: "allowlist"
     # 群聊是否需要 @机器人
     requireMention: true
+    # 群聊命令绕过 @ 策略: "never" | "single_bot" | "always"
+    # 默认 "single_bot"：仅当群内机器人数量 <= 1 时，允许已授权命令免 @
+    groupCommandMentionBypass: "single_bot"
     # 媒体文件最大大小 (MB, 默认 30)
     mediaMaxMb: 30
     # 回复渲染模式: "auto" | "raw" | "card"
@@ -654,6 +676,21 @@ channels:
 
 > `dmPolicy` 只控制“是否允许触发机器人”。  
 > 真正执行文档/云盘/知识库/多维表格操作，还需要两层权限：1）应用 API 权限（scopes）；2）把目标资源分享给机器人。
+
+#### 群聊命令免 @ 策略
+
+当 `requireMention: true` 时，Feishu 仍可让“已授权控制命令（如 `/new`）”在不 `@bot` 的情况下通过。
+
+| `groupCommandMentionBypass` | 行为 |
+|----------------------------|------|
+| `never` | 群聊命令永不绕过 `@` 校验。 |
+| `single_bot` | 仅当群内机器人数量不超过 1 个时才允许绕过（默认）。 |
+| `always` | 已授权控制命令始终可绕过 `@` 校验。 |
+
+说明：
+- 仅对群聊中的“已授权控制命令”生效。
+- 同一条消息里如果显式 `@` 了任意用户，则不会触发命令免 `@`。
+- 私聊场景不受该配置影响。
 
 #### 连接模式
 

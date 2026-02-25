@@ -8,13 +8,14 @@ body:
     attributes:
       value: |
         Please provide complete details so maintainers can reproduce quickly.
+        Before filing, check Discussions for common fixes: https://github.com/m1heng/clawdbot-feishu/discussions
 
   - type: checkboxes
     id: precheck_search
     attributes:
       label: Pre-check
       options:
-        - label: I searched existing issues and did not find a duplicate.
+        - label: I searched existing issues and discussions and did not find an existing answer or duplicate.
           required: true
 
   - type: dropdown

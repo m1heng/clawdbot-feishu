@@ -1,1 +1,8 @@
 blank_issues_enabled: false
+contact_links:
+  - name: "Q&A Discussions"
+    url: "https://github.com/m1heng/clawdbot-feishu/discussions"
+    about: "Check common Q&A/troubleshooting posts first; open an issue if no existing answer fits."
+  - name: "问答讨论（中文）"
+    url: "https://github.com/m1heng/clawdbot-feishu/discussions"
+    about: "请先查看常见问答/排查贴；若无匹配答案，再提交 issue。"

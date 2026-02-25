@@ -8,6 +8,15 @@ body:
     attributes:
       value: |
         该模板用于配置和接入问题排查。
+        提交前请先查看 Discussions：https://github.com/m1heng/clawdbot-feishu/discussions
+
+  - type: checkboxes
+    id: precheck_search
+    attributes:
+      label: 提交前检查
+      options:
+        - label: 我已搜索 Discussions 和现有 issues，未找到可直接复用的答案或重复问题。
+          required: true
 
   - type: input
     id: openclaw_version

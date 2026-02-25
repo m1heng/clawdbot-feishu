@@ -4,6 +4,12 @@ title: "[Docs] "
 labels:
   - type:docs
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check Discussions and existing issues first to avoid duplicates:
+        https://github.com/m1heng/clawdbot-feishu/discussions
+
   - type: input
     id: page
     attributes:

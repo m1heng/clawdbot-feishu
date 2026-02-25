@@ -19,6 +19,8 @@ OpenClaw references:
 
 ### Issue Reporting Standard
 
+Before opening an issue, search [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) and existing issues for known fixes or duplicates.
+
 Use the GitHub Issue Forms and pick the correct type:
 
 - `Bug Report / 缺陷反馈`
@@ -29,7 +31,8 @@ Use the GitHub Issue Forms and pick the correct type:
 
 For usage questions, please use:
 
-- Open `Question` issue for troubleshooting with logs/config details.
+- Use [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) for open-ended usage Q&A and idea exchange.
+- If no existing answer applies and troubleshooting details are needed, open a `Question` issue.
 
 For bug/config issues, include this recommended context:
 
@@ -163,6 +166,8 @@ OpenClaw 参考文档：
 
 ### Issue 反馈规范
 
+提交 issue 前，请先搜索 [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) 和现有 issues，确认是否已有解答或重复问题。
+
 请优先使用 GitHub Issue Forms，并选择正确类型：
 
 - `Bug Report / 缺陷反馈`
@@ -173,7 +178,8 @@ OpenClaw 参考文档：
 
 使用咨询请使用：
 
-- 需要日志/配置排查时，提交 `Question` Issue。
+- 开放式使用交流和想法讨论，使用 [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions)。
+- 若 Discussions 中没有可用答案，且需要日志/配置排查，再提交 `Question` Issue。
 
 对于 Bug/配置问题，建议提供以下信息：
 

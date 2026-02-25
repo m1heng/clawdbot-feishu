@@ -3,10 +3,18 @@
   "version": "0.1.11",
   "type": "module",
   "description": "OpenClaw Feishu/Lark channel plugin",
+  "scripts": {
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "ci:check": "npx tsc --noEmit && npm run test:coverage"
+  },
   "license": "MIT",
   "files": [
     "index.ts",
-    "src",
+    "src/**/*.ts",
+    "!src/**/__tests__/**",
+    "!src/**/*.test.ts",
     "skills",
     "openclaw.plugin.json"
   ],
@@ -51,10 +59,12 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.8",
     "@types/node": "^25.0.10",
     "openclaw": "2026.2.13",
     "tsx": "^4.21.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
   },
   "peerDependencies": {
     "openclaw": ">=2026.2.13"
