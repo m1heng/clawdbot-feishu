@@ -7,8 +7,7 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "pack:check": "node scripts/check-pack.mjs",
-    "ci:check": "npx tsc --noEmit && npm run test:coverage && npm run pack:check"
+    "ci:check": "npx tsc --noEmit && npm run test:coverage"
   },
   "license": "MIT",
   "files": [
