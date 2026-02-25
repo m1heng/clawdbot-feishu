@@ -7,12 +7,15 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "ci:check": "npx tsc --noEmit && npm run test:coverage"
+    "pack:check": "node scripts/check-pack.mjs",
+    "ci:check": "npx tsc --noEmit && npm run test:coverage && npm run pack:check"
   },
   "license": "MIT",
   "files": [
     "index.ts",
-    "src",
+    "src/**/*.ts",
+    "!src/**/__tests__/**",
+    "!src/**/*.test.ts",
     "skills",
     "openclaw.plugin.json"
   ],
