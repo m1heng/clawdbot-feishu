@@ -5,6 +5,12 @@ Feishu/Lark (飞书) channel plugin for [OpenClaw](https://github.com/openclaw/o
 > **中文社区资料** - 配置教程、常见问题、使用技巧：[Wiki](https://github.com/m1heng/clawdbot-feishu/wiki)
 >
 > **Contributing / 贡献指南**: [CONTRIBUTING.md](./CONTRIBUTING.md)
+>
+> **Issue Reporting / 问题反馈**: Please check [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) first for common solutions, then open a structured Issue Form if needed.  
+> 问题反馈前请先查看 [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) 是否已有常见解答；如仍未解决，再提交结构化 Issue 模板。
+>
+> **Questions / 使用咨询**: Use `Question` issue for troubleshooting; use [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) for open-ended Q&A.  
+> 排查型咨询请提交 `Question` Issue；开放式交流请使用 [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions)。
 
 [English](#english) | [中文](#中文)
 
@@ -78,6 +84,8 @@ openclaw plugins update feishu
 | `bitable:app:readonly` | `feishu_bitable` | Read bitable records and fields |
 | `task:task:read` | `feishu_task_get` | Get task details |
 | `task:tasklist:read` | `feishu_tasklist_get`, `feishu_tasklist_list` | Get/list tasklists |
+| `task:comment:read` | `feishu_task_comment_list`, `feishu_task_comment_get` | List/get task comments |
+| `task:attachment:read` | `feishu_task_attachment_list`, `feishu_task_attachment_get` | List/get task attachments |
 
 **Read-write** (optional, for create/edit/delete operations):
 
@@ -88,16 +96,44 @@ openclaw plugins update feishu
 | `drive:drive` | `feishu_doc`, `feishu_drive` | Upload images to documents, create folders, move/delete files |
 | `wiki:wiki` | `feishu_wiki` | Create/move/rename wiki nodes |
 | `bitable:app` | `feishu_bitable` | Create/update/delete bitable records and manage fields |
-| `task:task:write` | `feishu_task_create`, `feishu_task_update`, `feishu_task_delete` | Create/update/delete tasks |
+| `task:task:write` | `feishu_task_create`, `feishu_task_subtask_create`, `feishu_task_update`, `feishu_task_delete` | Create/update/delete tasks |
 | `task:tasklist:write` | `feishu_tasklist_create`, `feishu_tasklist_update`, `feishu_tasklist_delete`, `feishu_tasklist_add_members`, `feishu_tasklist_remove_members`, `feishu_task_add_tasklist`, `feishu_task_remove_tasklist` | Create/update/delete tasklists and manage membership |
+| `task:comment:write` | `feishu_task_comment_create`, `feishu_task_comment_update`, `feishu_task_comment_delete` | Create/update/delete task comments |
+| `task:attachment:write` | `feishu_task_attachment_upload`, `feishu_task_attachment_delete` | Upload/delete task attachments |
 
-> Task scope names may vary slightly in Feishu console UI. If needed, search for Task / Tasklist-related permissions and grant read/write accordingly.
+> Task scope names may vary slightly in Feishu console UI. If needed, search for Task / Tasklist / Comment / Attachment-related permissions and grant read/write accordingly.
 
-#### Task Limitations ⚠️
+#### Task Comment Scopes ⚠️
+
+Task comments require dedicated scopes:
+1. Read comments: grant `task:comment:read`.
+2. Create/update/delete comments: grant `task:comment:write`.
+
+If these scopes are missing, comment APIs will return permission-denied errors.
+
+#### Task Attachment Upload ⚠️
+
+Task attachments support upload/get/list/delete. Upload sources:
+1. Local files on the OpenClaw/Node host (`file_path`)
+2. Remote links (`file_url`, public or presigned)
+
+For `file_url`, OpenClaw runtime media loader is used with safety checks and size limit (`mediaMaxMb`), then the downloaded file is uploaded via a temporary local file.
+
+#### Tasklist Ownership ⚠️
 
 > **Important:** Keep tasklist owner as the bot. Add users as members instead.
 
 Tasklist access is granted based on owner + member roles. If you change the owner to a user and the bot is not a member, the bot may lose permission to read/edit/manage that tasklist (and subsequent operations will fail).
+
+#### Task Visibility & Subtasks ⚠️
+
+> **Important:** A user can only view a task when they are included as an assignee.
+>
+> **Limitation:** The bot can currently only create subtasks for tasks created by itself.
+
+To avoid “task created but not visible” issues:
+1. When creating a task, set the requesting user as an assignee.
+2. If you need more flexible subtask organization/visibility, consider using tasklists.
 
 #### Drive Access ⚠️
 
@@ -182,6 +218,10 @@ channels:
     groupPolicy: "allowlist"
     # Require @mention in groups
     requireMention: true
+    # Group command mention bypass: "never" | "single_bot" | "always"
+    # Default "single_bot": allow authorized command-only messages without @
+    # only when the group has a single bot.
+    groupCommandMentionBypass: "single_bot"
     # Max media size in MB (default: 30)
     mediaMaxMb: 30
     # Render mode for bot replies: "auto" | "raw" | "card"
@@ -262,6 +302,21 @@ Top-level `channels.feishu.dmPolicy` / `channels.feishu.allowFrom` are fallback 
 
 > `dmPolicy` only controls who can trigger the bot.  
 > To actually read/write docs or files, you still need: (1) correct Feishu app scopes, and (2) sharing the target resources (Drive/Wiki/Bitable) with the bot.
+
+#### Group Command Mention Bypass
+
+When `requireMention: true`, Feishu can still allow authorized control commands (such as `/new`) without `@bot`.
+
+| `groupCommandMentionBypass` | Behavior |
+|----------------------------|----------|
+| `never` | Never bypass `@` requirement for group commands. |
+| `single_bot` | Bypass only when the group contains at most one bot (default). |
+| `always` | Always allow authorized control commands to bypass mention gating. |
+
+Notes:
+- Bypass only applies to authorized control commands in group chats.
+- If any user is explicitly `@`-mentioned in the same message, bypass is disabled.
+- In DMs, this setting does not apply.
 
 #### Connection Mode
 
@@ -480,6 +535,8 @@ openclaw plugins update feishu
 | `bitable:app:readonly` | `feishu_bitable` | 读取多维表格记录和字段 |
 | `task:task:read` | `feishu_task_get` | 获取任务详情 |
 | `task:tasklist:read` | `feishu_tasklist_get`, `feishu_tasklist_list` | 获取/列出任务清单（tasklists） |
+| `task:comment:read` | `feishu_task_comment_list`, `feishu_task_comment_get` | 列出/获取任务评论 |
+| `task:attachment:read` | `feishu_task_attachment_list`, `feishu_task_attachment_get` | 列出/获取任务附件 |
 
 **读写权限**（可选，用于创建/编辑/删除操作）：
 
@@ -490,16 +547,44 @@ openclaw plugins update feishu
 | `drive:drive` | `feishu_doc`, `feishu_drive` | 上传图片到文档、创建文件夹、移动/删除文件 |
 | `wiki:wiki` | `feishu_wiki` | 创建/移动/重命名知识库节点 |
 | `bitable:app` | `feishu_bitable` | 创建/更新/删除多维表格记录并管理字段 |
-| `task:task:write` | `feishu_task_create`, `feishu_task_update`, `feishu_task_delete` | 创建/更新/删除任务 |
+| `task:task:write` | `feishu_task_create`, `feishu_task_subtask_create`, `feishu_task_update`, `feishu_task_delete` | 创建/更新/删除任务 |
 | `task:tasklist:write` | `feishu_tasklist_create`, `feishu_tasklist_update`, `feishu_tasklist_delete`, `feishu_tasklist_add_members`, `feishu_tasklist_remove_members`, `feishu_task_add_tasklist`, `feishu_task_remove_tasklist` | 创建/更新/删除任务清单并管理成员/关联任务 |
+| `task:comment:write` | `feishu_task_comment_create`, `feishu_task_comment_update`, `feishu_task_comment_delete` | 创建/更新/删除任务评论 |
+| `task:attachment:write` | `feishu_task_attachment_upload`, `feishu_task_attachment_delete` | 上传/删除任务附件 |
 
-> 飞书控制台中任务权限的显示名称可能略有差异，必要时可按关键字 `task` / `tasklist` 搜索并授予对应读写权限。
+> 飞书控制台中任务权限的显示名称可能略有差异，必要时可按关键字 `task` / `tasklist` / `comment` / `attachment` 搜索并授予对应读写权限。
 
-#### 任务限制 ⚠️
+#### 任务评论权限 ⚠️
+
+任务评论需要单独授权：
+1. 读取评论：授予 `task:comment:read`。
+2. 创建/更新/删除评论：授予 `task:comment:write`。
+
+缺少上述权限时，评论相关接口会返回权限不足错误。
+
+#### 任务附件上传 ⚠️
+
+任务附件支持上传/获取/列表/删除。上传来源：
+1. OpenClaw/Node 所在机器的本地文件路径（`file_path`）
+2. 可直接下载的远程链接（`file_url`，公开/预签名 URL）
+
+`file_url` 上传路径会使用 OpenClaw 运行时的媒体下载安全校验与大小限制（`mediaMaxMb`），随后经临时本地文件上传到任务附件。
+
+#### 任务清单所有者限制 ⚠️
 
 > **重要：** 创建/修改任务清单时，请保持清单所有者为机器人本身，只把用户作为协作人添加。
 
 任务清单权限基于“所有者 + 协作成员角色”授予。如果把清单所有者改成用户、且机器人不在协作成员中，机器人可能会失去对该清单的读取/编辑/管理权限，导致后续对清单的操作失败。
+
+#### 任务限制 ⚠️
+
+> **重要：** 只有当任务责任人包含用户时，用户才能查看到该任务。
+>
+> **限制：** 机器人目前只能给自己创建出来的任务创建子任务。
+
+为避免“任务创建了但用户看不到”的问题：
+1. 创建任务时，请把发起用户设为任务负责人（`assignee`）。
+2. 如需更灵活的子任务创建/组织/可见性管理，建议使用任务清单（tasklists）。
 
 #### 云空间访问权限 ⚠️
 
@@ -584,6 +669,9 @@ channels:
     groupPolicy: "allowlist"
     # 群聊是否需要 @机器人
     requireMention: true
+    # 群聊命令绕过 @ 策略: "never" | "single_bot" | "always"
+    # 默认 "single_bot"：仅当群内机器人数量 <= 1 时，允许已授权命令免 @
+    groupCommandMentionBypass: "single_bot"
     # 媒体文件最大大小 (MB, 默认 30)
     mediaMaxMb: 30
     # 回复渲染模式: "auto" | "raw" | "card"
@@ -664,6 +752,21 @@ channels:
 
 > `dmPolicy` 只控制“是否允许触发机器人”。  
 > 真正执行文档/云盘/知识库/多维表格操作，还需要两层权限：1）应用 API 权限（scopes）；2）把目标资源分享给机器人。
+
+#### 群聊命令免 @ 策略
+
+当 `requireMention: true` 时，Feishu 仍可让“已授权控制命令（如 `/new`）”在不 `@bot` 的情况下通过。
+
+| `groupCommandMentionBypass` | 行为 |
+|----------------------------|------|
+| `never` | 群聊命令永不绕过 `@` 校验。 |
+| `single_bot` | 仅当群内机器人数量不超过 1 个时才允许绕过（默认）。 |
+| `always` | 已授权控制命令始终可绕过 `@` 校验。 |
+
+说明：
+- 仅对群聊中的“已授权控制命令”生效。
+- 同一条消息里如果显式 `@` 了任意用户，则不会触发命令免 `@`。
+- 私聊场景不受该配置影响。
 
 #### 连接模式
 

@@ -9,6 +9,7 @@ import {
 import { resolveFeishuAccount } from "./accounts.js";
 import { createFeishuClient } from "./client.js";
 import { buildMentionedCardContent, type MentionTarget } from "./mention.js";
+import { normalizeFeishuMarkdownLinks } from "./text/markdown-links.js";
 import { getFeishuRuntime } from "./runtime.js";
 import { sendMarkdownCardFeishu, sendMessageFeishu } from "./send.js";
 import { FeishuStreamingSession } from "./streaming-card.js";
@@ -120,7 +121,7 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
       if (mentionTargets?.length) {
         text = buildMentionedCardContent(mentionTargets, text);
       }
-      await streaming.close(text);
+      await streaming.close(normalizeFeishuMarkdownLinks(text));
     }
     streaming = null;
     streamingStartPromise = null;
@@ -217,11 +218,12 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
       onModelSelected: prefixContext.onModelSelected,
       onPartialReply: streamingEnabled
         ? (payload: ReplyPayload) => {
-            if (!payload.text || payload.text === lastPartial) {
+            const partialText = normalizeFeishuMarkdownLinks(payload.text ?? "");
+            if (!partialText || partialText === lastPartial) {
               return;
             }
-            lastPartial = payload.text;
-            streamText = payload.text;
+            lastPartial = partialText;
+            streamText = partialText;
             partialUpdateQueue = partialUpdateQueue.then(async () => {
               if (streamingStartPromise) {
                 await streamingStartPromise;

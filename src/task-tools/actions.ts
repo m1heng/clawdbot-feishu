@@ -1,37 +1,42 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { TaskClient } from "./common.js";
-import type {
-  AddTaskToTasklistParams,
-  AddTasklistMembersParams,
+import {
+  TASKLIST_UPDATE_FIELD_VALUES,
+  TASK_UPDATE_FIELD_VALUES,
+  type AddTaskToTasklistParams,
+  type AddTasklistMembersParams,
+  type CreateTasklistParams,
+  CreateSubtaskParams,
   CreateTaskParams,
-  CreateTasklistParams,
+  DeleteTaskAttachmentParams,
+  GetTaskAttachmentParams,
   GetTaskParams,
-  GetTasklistParams,
-  ListTasklistsParams,
-  RemoveTaskFromTasklistParams,
-  RemoveTasklistMembersParams,
+  type GetTasklistParams,
+  ListTaskAttachmentsParams,
+  type ListTasklistsParams,
+  type RemoveTaskFromTasklistParams,
+  type RemoveTasklistMembersParams,
   TaskUpdateTask,
-  TasklistPatchTasklist,
-  UpdateTasklistParams,
+  type TasklistPatchTasklist,
+  UploadTaskAttachmentParams,
+  type UpdateTasklistParams,
   UpdateTaskParams,
 } from "./schemas.js";
+import {
+  DEFAULT_TASK_ATTACHMENT_FILENAME,
+  DEFAULT_TASK_ATTACHMENT_MAX_BYTES,
+  BYTES_PER_MEGABYTE,
+  HEX_RADIX,
+  RANDOM_TOKEN_PREFIX_LENGTH,
+  SIZE_DISPLAY_FRACTION_DIGITS,
+} from "./constants.js";
+import { getFeishuRuntime } from "../runtime.js";
 import { runTaskApiCall } from "./common.js";
 
-const SUPPORTED_PATCH_FIELDS = new Set<keyof TaskUpdateTask>([
-  "summary",
-  "description",
-  "due",
-  "start",
-  "extra",
-  "completed_at",
-  "repeat_rule",
-  "mode",
-  "is_milestone",
-]);
-const SUPPORTED_TASKLIST_PATCH_FIELDS = new Set<keyof TasklistPatchTasklist>([
-  "name",
-  "owner",
-  "archive_tasklist",
-]);
+const SUPPORTED_PATCH_FIELDS = new Set<string>(TASK_UPDATE_FIELD_VALUES);
+const SUPPORTED_TASKLIST_PATCH_FIELDS = new Set<string>(TASKLIST_UPDATE_FIELD_VALUES);
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
   return Object.fromEntries(
@@ -41,24 +46,24 @@ function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
 
 function inferUpdateFields(task: TaskUpdateTask): string[] {
   return Object.keys(task).filter((field) =>
-    SUPPORTED_PATCH_FIELDS.has(field as keyof TaskUpdateTask),
+    SUPPORTED_PATCH_FIELDS.has(field),
   );
 }
 
-function ensureSupportedUpdateFields(updateFields: string[], supported: Set<string>) {
+function ensureSupportedUpdateFields(
+  updateFields: string[],
+  supported: Set<string>,
+  resource: "task" | "tasklist",
+) {
   const invalid = updateFields.filter((field) => !supported.has(field));
   if (invalid.length > 0) {
-    throw new Error(
-      `unsupported update_fields: ${invalid.join(
-        ", ",
-      )}. Use tasklist add/remove tools to move tasks between tasklists.`,
-    );
+    throw new Error(`unsupported ${resource} update_fields: ${invalid.join(", ")}`);
   }
 }
 
 function inferTasklistUpdateFields(tasklist: TasklistPatchTasklist): string[] {
   return Object.keys(tasklist).filter((field) =>
-    SUPPORTED_TASKLIST_PATCH_FIELDS.has(field as keyof TasklistPatchTasklist),
+    SUPPORTED_TASKLIST_PATCH_FIELDS.has(field),
   );
 }
 
@@ -97,6 +102,81 @@ function formatTasklist(tasklist: Record<string, unknown> | undefined) {
   };
 }
 
+function formatAttachment(attachment: Record<string, unknown> | undefined) {
+  if (!attachment) return undefined;
+  return {
+    guid: attachment.guid,
+    file_token: attachment.file_token,
+    name: attachment.name,
+    size: attachment.size,
+    uploader: attachment.uploader,
+    is_cover: attachment.is_cover,
+    uploaded_at: attachment.uploaded_at,
+    url: attachment.url,
+    resource: attachment.resource,
+  };
+}
+
+function sanitizeUploadFilename(input: string) {
+  const base = path.basename(input.trim());
+  return base.length > 0 ? base : DEFAULT_TASK_ATTACHMENT_FILENAME;
+}
+
+async function ensureUploadableLocalFile(filePath: string, maxBytes: number) {
+  let stat: fs.Stats;
+  try {
+    stat = await fs.promises.stat(filePath);
+  } catch {
+    throw new Error(`file_path not found: ${filePath}`);
+  }
+
+  if (!stat.isFile()) {
+    throw new Error(`file_path is not a regular file: ${filePath}`);
+  }
+
+  if (stat.size > maxBytes) {
+    throw new Error(
+      `file_path exceeds ${(maxBytes / BYTES_PER_MEGABYTE).toFixed(SIZE_DISPLAY_FRACTION_DIGITS)}MB limit: ${filePath}`,
+    );
+  }
+}
+
+async function saveBufferToTempFile(buffer: Buffer, fileName: string) {
+  const safeName = sanitizeUploadFilename(fileName);
+  const tempPath = path.join(
+    os.tmpdir(),
+    `feishu-task-attachment-${Date.now()}-${Math.random().toString(HEX_RADIX).slice(RANDOM_TOKEN_PREFIX_LENGTH)}-${safeName}`,
+  );
+
+  await fs.promises.writeFile(tempPath, buffer);
+
+  return {
+    tempPath,
+    cleanup: async () => {
+      await fs.promises.unlink(tempPath).catch(() => undefined);
+    },
+  };
+}
+
+async function downloadToTempFile(fileUrl: string, filename: string | undefined, maxBytes: number) {
+  const loaded = await getFeishuRuntime().media.loadWebMedia(fileUrl, {
+    maxBytes,
+    optimizeImages: false,
+  });
+
+  const parsedPath = (() => {
+    try {
+      return new URL(fileUrl).pathname;
+    } catch {
+      return "";
+    }
+  })();
+
+  const fallbackName = path.basename(parsedPath) || DEFAULT_TASK_ATTACHMENT_FILENAME;
+  const preferredName = filename?.trim() ? filename : loaded.fileName ?? fallbackName;
+  return saveBufferToTempFile(loaded.buffer, preferredName);
+}
+
 export async function createTask(client: TaskClient, params: CreateTaskParams) {
   const res = await runTaskApiCall("task.v2.task.create", () =>
     client.task.v2.task.create({
@@ -124,6 +204,34 @@ export async function createTask(client: TaskClient, params: CreateTaskParams) {
   };
 }
 
+export async function createSubtask(client: TaskClient, params: CreateSubtaskParams) {
+  const res = await runTaskApiCall("task.v2.taskSubtask.create", () =>
+    client.task.v2.taskSubtask.create({
+      path: { task_guid: params.task_guid },
+      data: omitUndefined({
+        summary: params.summary,
+        description: params.description,
+        due: params.due,
+        start: params.start,
+        extra: params.extra,
+        completed_at: params.completed_at,
+        members: params.members,
+        repeat_rule: params.repeat_rule,
+        tasklists: params.tasklists,
+        mode: params.mode,
+        is_milestone: params.is_milestone,
+      }),
+      params: omitUndefined({
+        user_id_type: params.user_id_type,
+      }),
+    }),
+  );
+
+  return {
+    subtask: formatTask((res.data?.subtask ?? undefined) as Record<string, unknown> | undefined),
+  };
+}
+
 export async function createTasklist(client: TaskClient, params: CreateTasklistParams) {
   const res = await runTaskApiCall("task.v2.tasklist.create", () =>
     client.task.v2.tasklist.create({
@@ -142,6 +250,19 @@ export async function createTasklist(client: TaskClient, params: CreateTasklistP
     tasklist: formatTasklist(
       (res.data?.tasklist ?? undefined) as Record<string, unknown> | undefined,
     ),
+  };
+}
+
+export async function deleteTaskAttachment(client: TaskClient, params: DeleteTaskAttachmentParams) {
+  await runTaskApiCall("task.v2.attachment.delete", () =>
+    client.task.v2.attachment.delete({
+      path: { attachment_guid: params.attachment_guid },
+    }),
+  );
+
+  return {
+    success: true,
+    attachment_guid: params.attachment_guid,
   };
 }
 
@@ -223,12 +344,52 @@ export async function listTasklists(client: TaskClient, params: ListTasklistsPar
   };
 }
 
+export async function getTaskAttachment(client: TaskClient, params: GetTaskAttachmentParams) {
+  const res = await runTaskApiCall("task.v2.attachment.get", () =>
+    client.task.v2.attachment.get({
+      path: { attachment_guid: params.attachment_guid },
+      params: omitUndefined({
+        user_id_type: params.user_id_type,
+      }),
+    }),
+  );
+
+  return {
+    attachment: formatAttachment(
+      (res.data?.attachment ?? undefined) as Record<string, unknown> | undefined,
+    ),
+  };
+}
+
+export async function listTaskAttachments(client: TaskClient, params: ListTaskAttachmentsParams) {
+  const res = await runTaskApiCall("task.v2.attachment.list", () =>
+    client.task.v2.attachment.list({
+      params: omitUndefined({
+        resource_type: "task",
+        resource_id: params.task_guid,
+        page_size: params.page_size,
+        page_token: params.page_token,
+        updated_mesc: params.updated_mesc,
+        user_id_type: params.user_id_type,
+      }),
+    }),
+  );
+
+  const items = (res.data?.items ?? []) as Record<string, unknown>[];
+
+  return {
+    items: items.map((item) => formatAttachment(item)),
+    page_token: res.data?.page_token,
+    has_more: res.data?.has_more,
+  };
+}
+
 export async function updateTask(client: TaskClient, params: UpdateTaskParams) {
   const task = omitUndefined(params.task as Record<string, unknown>) as TaskUpdateTask;
   const updateFields = params.update_fields?.length ? params.update_fields : inferUpdateFields(task);
 
   if (params.update_fields?.length) {
-    ensureSupportedUpdateFields(updateFields, SUPPORTED_PATCH_FIELDS as Set<string>);
+    ensureSupportedUpdateFields(updateFields, SUPPORTED_PATCH_FIELDS, "task");
   }
 
   if (Object.keys(task).length === 0) {
@@ -283,9 +444,9 @@ export async function removeTaskFromTasklist(
   const res = await runTaskApiCall("task.v2.task.remove_tasklist", () =>
     client.task.v2.task.removeTasklist({
       path: { task_guid: params.task_guid },
-      data: {
+      data: omitUndefined({
         tasklist_guid: params.tasklist_guid,
-      },
+      }),
       params: omitUndefined({
         user_id_type: params.user_id_type,
       }),
@@ -302,6 +463,10 @@ export async function updateTasklist(client: TaskClient, params: UpdateTasklistP
   const updateFields = params.update_fields?.length
     ? params.update_fields
     : inferTasklistUpdateFields(tasklist);
+
+  if (params.update_fields?.length) {
+    ensureSupportedUpdateFields(updateFields, SUPPORTED_TASKLIST_PATCH_FIELDS, "tasklist");
+  }
 
   if (Object.keys(tasklist).length === 0) {
     throw new Error("tasklist update payload is empty");
@@ -373,4 +538,53 @@ export async function removeTasklistMembers(
       (res.data?.tasklist ?? undefined) as Record<string, unknown> | undefined,
     ),
   };
+}
+
+export async function uploadTaskAttachment(
+  client: TaskClient,
+  params: UploadTaskAttachmentParams,
+  options?: { maxBytes?: number },
+) {
+  const maxBytes =
+    typeof options?.maxBytes === "number" && options.maxBytes > 0
+      ? options.maxBytes
+      : DEFAULT_TASK_ATTACHMENT_MAX_BYTES;
+
+  let tempCleanup: (() => Promise<void>) | undefined;
+  let filePath: string;
+
+  if ("file_path" in params) {
+    filePath = params.file_path;
+    await ensureUploadableLocalFile(filePath, maxBytes);
+  } else {
+    const download = await downloadToTempFile(params.file_url, params.filename, maxBytes);
+    filePath = download.tempPath;
+    tempCleanup = download.cleanup;
+  }
+
+  try {
+    const res = await runTaskApiCall("task.v2.attachment.upload", async () => {
+      const data = await client.task.v2.attachment.upload({
+        data: {
+          resource_type: "task",
+          resource_id: params.task_guid,
+          file: fs.createReadStream(filePath),
+        },
+        params: omitUndefined({
+          user_id_type: params.user_id_type,
+        }),
+      });
+      return { code: 0, data } as { code: number; data: typeof data };
+    });
+
+    const items = (res.data?.items ?? []) as Record<string, unknown>[];
+
+    return {
+      items: items.map((item) => formatAttachment(item)),
+    };
+  } finally {
+    if (tempCleanup) {
+      await tempCleanup();
+    }
+  }
 }
