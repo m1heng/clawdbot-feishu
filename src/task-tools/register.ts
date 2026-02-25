@@ -1,15 +1,35 @@
 import type { TSchema } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { hasFeishuToolEnabledForAnyAccount, withFeishuToolClient } from "../tools-common/tool-exec.js";
-import { createTask, deleteTask, getTask, updateTask } from "./actions.js";
+import {
+  createTaskComment,
+  createTask,
+  deleteTaskComment,
+  deleteTask,
+  getTaskComment,
+  getTask,
+  listTaskComments,
+  updateTaskComment,
+  updateTask,
+} from "./actions.js";
 import { errorResult, json, type TaskClient } from "./common.js";
 import {
+  CreateTaskCommentSchema,
+  type CreateTaskCommentParams,
   CreateTaskSchema,
   type CreateTaskParams,
+  DeleteTaskCommentSchema,
+  type DeleteTaskCommentParams,
   DeleteTaskSchema,
   type DeleteTaskParams,
+  GetTaskCommentSchema,
+  type GetTaskCommentParams,
   GetTaskSchema,
   type GetTaskParams,
+  ListTaskCommentsSchema,
+  type ListTaskCommentsParams,
+  UpdateTaskCommentSchema,
+  type UpdateTaskCommentParams,
   UpdateTaskSchema,
   type UpdateTaskParams,
 } from "./schemas.js";
@@ -73,6 +93,46 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     run: (client, params) => createTask(client, params),
   });
 
+  registerTaskTool<CreateTaskCommentParams>(api, {
+    name: "feishu_task_comment_create",
+    label: "Feishu Task Comment Create",
+    description: "Create a comment for a Feishu task (task v2)",
+    parameters: CreateTaskCommentSchema,
+    run: (client, params) => createTaskComment(client, params),
+  });
+
+  registerTaskTool<ListTaskCommentsParams>(api, {
+    name: "feishu_task_comment_list",
+    label: "Feishu Task Comment List",
+    description: "List comments for a Feishu task (task v2)",
+    parameters: ListTaskCommentsSchema,
+    run: (client, params) => listTaskComments(client, params),
+  });
+
+  registerTaskTool<GetTaskCommentParams>(api, {
+    name: "feishu_task_comment_get",
+    label: "Feishu Task Comment Get",
+    description: "Get a Feishu task comment by comment_id (task v2)",
+    parameters: GetTaskCommentSchema,
+    run: (client, params) => getTaskComment(client, params),
+  });
+
+  registerTaskTool<UpdateTaskCommentParams>(api, {
+    name: "feishu_task_comment_update",
+    label: "Feishu Task Comment Update",
+    description: "Update a Feishu task comment by comment_id (task v2 patch)",
+    parameters: UpdateTaskCommentSchema,
+    run: (client, params) => updateTaskComment(client, params),
+  });
+
+  registerTaskTool<DeleteTaskCommentParams>(api, {
+    name: "feishu_task_comment_delete",
+    label: "Feishu Task Comment Delete",
+    description: "Delete a Feishu task comment by comment_id (task v2)",
+    parameters: DeleteTaskCommentSchema,
+    run: (client, params) => deleteTaskComment(client, params),
+  });
+
   registerTaskTool<DeleteTaskParams>(api, {
     name: "feishu_task_delete",
     label: "Feishu Task Delete",
@@ -97,5 +157,5 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     run: (client, params) => updateTask(client, params),
   });
 
-  api.logger.debug?.("feishu_task: Registered 4 task tools");
+  api.logger.debug?.("feishu_task: Registered task and comment tools");
 }

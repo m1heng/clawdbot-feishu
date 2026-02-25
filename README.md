@@ -77,6 +77,7 @@ openclaw plugins update feishu
 | `wiki:wiki:readonly` | `feishu_wiki` | List spaces, list nodes, get node info, search |
 | `bitable:app:readonly` | `feishu_bitable` | Read bitable records and fields |
 | `task:task:read` | `feishu_task_get` | Get task details |
+| `task:comment:read` | `feishu_task_comment_list`, `feishu_task_comment_get` | List/get task comments |
 
 **Read-write** (optional, for create/edit/delete operations):
 
@@ -88,8 +89,17 @@ openclaw plugins update feishu
 | `wiki:wiki` | `feishu_wiki` | Create/move/rename wiki nodes |
 | `bitable:app` | `feishu_bitable` | Create/update/delete bitable records and manage fields |
 | `task:task:write` | `feishu_task_create`, `feishu_task_update`, `feishu_task_delete` | Create/update/delete tasks |
+| `task:comment:write` | `feishu_task_comment_create`, `feishu_task_comment_update`, `feishu_task_comment_delete` | Create/update/delete task comments |
 
-> Task scope names may vary slightly in Feishu console UI. If needed, search for Task-related permissions and grant read/write accordingly.
+> Task scope names may vary slightly in Feishu console UI. If needed, search for Task / Comment-related permissions and grant read/write accordingly.
+
+#### Task Limitations ⚠️
+
+Task comments require dedicated scopes:
+1. Read comments: grant `task:comment:read`.
+2. Create/update/delete comments: grant `task:comment:write`.
+
+If these scopes are missing, comment APIs will return permission-denied errors.
 
 #### Drive Access ⚠️
 
@@ -471,6 +481,7 @@ openclaw plugins update feishu
 | `wiki:wiki:readonly` | `feishu_wiki` | 列出空间、列出节点、获取节点详情、搜索 |
 | `bitable:app:readonly` | `feishu_bitable` | 读取多维表格记录和字段 |
 | `task:task:read` | `feishu_task_get` | 获取任务详情 |
+| `task:comment:read` | `feishu_task_comment_list`, `feishu_task_comment_get` | 列出/获取任务评论 |
 
 **读写权限**（可选，用于创建/编辑/删除操作）：
 
@@ -482,8 +493,17 @@ openclaw plugins update feishu
 | `wiki:wiki` | `feishu_wiki` | 创建/移动/重命名知识库节点 |
 | `bitable:app` | `feishu_bitable` | 创建/更新/删除多维表格记录并管理字段 |
 | `task:task:write` | `feishu_task_create`, `feishu_task_update`, `feishu_task_delete` | 创建/更新/删除任务 |
+| `task:comment:write` | `feishu_task_comment_create`, `feishu_task_comment_update`, `feishu_task_comment_delete` | 创建/更新/删除任务评论 |
 
-> 飞书控制台中任务权限的显示名称可能略有差异，必要时可按关键字 `task` 搜索并授予对应读写权限。
+> 飞书控制台中任务权限的显示名称可能略有差异，必要时可按关键字 `task` / `comment` 搜索并授予对应读写权限。
+
+#### 任务限制 ⚠️
+
+任务评论需要单独授权：
+1. 读取评论：授予 `task:comment:read`。
+2. 创建/更新/删除评论：授予 `task:comment:write`。
+
+缺少上述权限时，评论相关接口会返回权限不足错误。
 
 #### 云空间访问权限 ⚠️
 
