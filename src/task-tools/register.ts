@@ -1,15 +1,32 @@
 import type { TSchema } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { hasFeishuToolEnabledForAnyAccount, withFeishuToolClient } from "../tools-common/tool-exec.js";
-import { createTask, deleteTask, getTask, updateTask } from "./actions.js";
+import {
+  createTask,
+  deleteTaskAttachment,
+  deleteTask,
+  getTaskAttachment,
+  getTask,
+  listTaskAttachments,
+  uploadTaskAttachment,
+  updateTask,
+} from "./actions.js";
 import { errorResult, json, type TaskClient } from "./common.js";
 import {
   CreateTaskSchema,
   type CreateTaskParams,
+  DeleteTaskAttachmentSchema,
+  type DeleteTaskAttachmentParams,
   DeleteTaskSchema,
   type DeleteTaskParams,
+  GetTaskAttachmentSchema,
+  type GetTaskAttachmentParams,
   GetTaskSchema,
   type GetTaskParams,
+  ListTaskAttachmentsSchema,
+  type ListTaskAttachmentsParams,
+  UploadTaskAttachmentSchema,
+  type UploadTaskAttachmentParams,
   UpdateTaskSchema,
   type UpdateTaskParams,
 } from "./schemas.js";
@@ -73,6 +90,38 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     run: (client, params) => createTask(client, params),
   });
 
+  registerTaskTool<UploadTaskAttachmentParams>(api, {
+    name: "feishu_task_attachment_upload",
+    label: "Feishu Task Attachment Upload",
+    description: "Upload an attachment to a Feishu task (task v2)",
+    parameters: UploadTaskAttachmentSchema,
+    run: (client, params) => uploadTaskAttachment(client, params),
+  });
+
+  registerTaskTool<ListTaskAttachmentsParams>(api, {
+    name: "feishu_task_attachment_list",
+    label: "Feishu Task Attachment List",
+    description: "List attachments for a Feishu task (task v2)",
+    parameters: ListTaskAttachmentsSchema,
+    run: (client, params) => listTaskAttachments(client, params),
+  });
+
+  registerTaskTool<GetTaskAttachmentParams>(api, {
+    name: "feishu_task_attachment_get",
+    label: "Feishu Task Attachment Get",
+    description: "Get a Feishu task attachment by attachment_guid (task v2)",
+    parameters: GetTaskAttachmentSchema,
+    run: (client, params) => getTaskAttachment(client, params),
+  });
+
+  registerTaskTool<DeleteTaskAttachmentParams>(api, {
+    name: "feishu_task_attachment_delete",
+    label: "Feishu Task Attachment Delete",
+    description: "Delete a Feishu task attachment by attachment_guid (task v2)",
+    parameters: DeleteTaskAttachmentSchema,
+    run: (client, params) => deleteTaskAttachment(client, params),
+  });
+
   registerTaskTool<DeleteTaskParams>(api, {
     name: "feishu_task_delete",
     label: "Feishu Task Delete",
@@ -97,5 +146,5 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     run: (client, params) => updateTask(client, params),
   });
 
-  api.logger.debug?.("feishu_task: Registered 4 task tools");
+  api.logger.debug?.("feishu_task: Registered task and attachment tools");
 }

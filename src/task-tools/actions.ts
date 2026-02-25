@@ -1,8 +1,18 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import type { TaskClient } from "./common.js";
 import type {
   CreateTaskParams,
+  DeleteTaskAttachmentParams,
+  GetTaskAttachmentParams,
   GetTaskParams,
+  ListTaskAttachmentsParams,
   TaskUpdateTask,
+  UploadTaskAttachmentParams,
   UpdateTaskParams,
 } from "./schemas.js";
 import { runTaskApiCall } from "./common.js";
@@ -51,6 +61,50 @@ function formatTask(task: Record<string, unknown> | undefined) {
   };
 }
 
+function formatAttachment(attachment: Record<string, unknown> | undefined) {
+  if (!attachment) return undefined;
+  return {
+    guid: attachment.guid,
+    file_token: attachment.file_token,
+    name: attachment.name,
+    size: attachment.size,
+    uploader: attachment.uploader,
+    is_cover: attachment.is_cover,
+    uploaded_at: attachment.uploaded_at,
+    url: attachment.url,
+    resource: attachment.resource,
+  };
+}
+
+async function downloadToTempFile(fileUrl: string, filename?: string) {
+  const url = new URL(fileUrl);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`unsupported file_url protocol: ${url.protocol}`);
+  }
+
+  const inferredName = path.basename(url.pathname) || filename || "attachment";
+  const tempPath = path.join(
+    os.tmpdir(),
+    `feishu-task-attachment-${Date.now()}-${Math.random().toString(16).slice(2)}-${inferredName}`,
+  );
+
+  const res = await fetch(fileUrl);
+  if (!res.ok || !res.body) {
+    throw new Error(`failed to download file_url: ${res.status} ${res.statusText}`);
+  }
+
+  const readable = Readable.fromWeb(res.body as unknown as WebReadableStream);
+  const writeStream = fs.createWriteStream(tempPath);
+  await pipeline(readable, writeStream);
+
+  return {
+    tempPath,
+    cleanup: async () => {
+      await fs.promises.unlink(tempPath).catch(() => undefined);
+    },
+  };
+}
+
 export async function createTask(client: TaskClient, params: CreateTaskParams) {
   const res = await runTaskApiCall("task.v2.task.create", () =>
     client.task.v2.task.create({
@@ -75,6 +129,19 @@ export async function createTask(client: TaskClient, params: CreateTaskParams) {
 
   return {
     task: formatTask((res.data?.task ?? undefined) as Record<string, unknown> | undefined),
+  };
+}
+
+export async function deleteTaskAttachment(client: TaskClient, params: DeleteTaskAttachmentParams) {
+  await runTaskApiCall("task.v2.attachment.delete", () =>
+    client.task.v2.attachment.delete({
+      path: { attachment_guid: params.attachment_guid },
+    }),
+  );
+
+  return {
+    success: true,
+    attachment_guid: params.attachment_guid,
   };
 }
 
@@ -106,6 +173,46 @@ export async function getTask(client: TaskClient, params: GetTaskParams) {
   };
 }
 
+export async function getTaskAttachment(client: TaskClient, params: GetTaskAttachmentParams) {
+  const res = await runTaskApiCall("task.v2.attachment.get", () =>
+    client.task.v2.attachment.get({
+      path: { attachment_guid: params.attachment_guid },
+      params: omitUndefined({
+        user_id_type: params.user_id_type,
+      }),
+    }),
+  );
+
+  return {
+    attachment: formatAttachment(
+      (res.data?.attachment ?? undefined) as Record<string, unknown> | undefined,
+    ),
+  };
+}
+
+export async function listTaskAttachments(client: TaskClient, params: ListTaskAttachmentsParams) {
+  const res = await runTaskApiCall("task.v2.attachment.list", () =>
+    client.task.v2.attachment.list({
+      params: omitUndefined({
+        resource_type: "task",
+        resource_id: params.task_guid,
+        page_size: params.page_size,
+        page_token: params.page_token,
+        updated_mesc: params.updated_mesc,
+        user_id_type: params.user_id_type,
+      }),
+    }),
+  );
+
+  const items = (res.data?.items ?? []) as Record<string, unknown>[];
+
+  return {
+    items: items.map((item) => formatAttachment(item)),
+    page_token: res.data?.page_token,
+    has_more: res.data?.has_more,
+  };
+}
+
 export async function updateTask(client: TaskClient, params: UpdateTaskParams) {
   const task = omitUndefined(params.task as Record<string, unknown>) as TaskUpdateTask;
   const updateFields = params.update_fields?.length ? params.update_fields : inferUpdateFields(task);
@@ -134,4 +241,43 @@ export async function updateTask(client: TaskClient, params: UpdateTaskParams) {
     task: formatTask((res.data?.task ?? undefined) as Record<string, unknown> | undefined),
     update_fields: updateFields,
   };
+}
+
+export async function uploadTaskAttachment(client: TaskClient, params: UploadTaskAttachmentParams) {
+  let tempCleanup: (() => Promise<void>) | undefined;
+  let filePath: string | undefined;
+
+  if ("file_path" in params) {
+    filePath = params.file_path;
+  } else {
+    const download = await downloadToTempFile(params.file_url, params.filename);
+    filePath = download.tempPath;
+    tempCleanup = download.cleanup;
+  }
+
+  try {
+    const res = await runTaskApiCall("task.v2.attachment.upload", async () => {
+      const data = await client.task.v2.attachment.upload({
+        data: {
+          resource_type: "task",
+          resource_id: params.task_guid,
+          file: fs.createReadStream(filePath),
+        },
+        params: omitUndefined({
+          user_id_type: params.user_id_type,
+        }),
+      });
+      return { code: 0, data } as { code: number; data: typeof data };
+    });
+
+    const items = (res.data?.items ?? []) as Record<string, unknown>[];
+
+    return {
+      items: items.map((item) => formatAttachment(item)),
+    };
+  } finally {
+    if (tempCleanup) {
+      await tempCleanup();
+    }
+  }
 }

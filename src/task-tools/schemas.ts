@@ -5,6 +5,18 @@ type TaskCreatePayload = NonNullable<Parameters<TaskClient["task"]["v2"]["task"]
 type TaskUpdatePayload = NonNullable<Parameters<TaskClient["task"]["v2"]["task"]["patch"]>[0]>;
 type TaskDeletePayload = NonNullable<Parameters<TaskClient["task"]["v2"]["task"]["delete"]>[0]>;
 type TaskGetPayload = NonNullable<Parameters<TaskClient["task"]["v2"]["task"]["get"]>[0]>;
+type TaskAttachmentUploadPayload = NonNullable<
+  Parameters<TaskClient["task"]["v2"]["attachment"]["upload"]>[0]
+>;
+type TaskAttachmentGetPayload = NonNullable<
+  Parameters<TaskClient["task"]["v2"]["attachment"]["get"]>[0]
+>;
+type TaskAttachmentListPayload = NonNullable<
+  Parameters<TaskClient["task"]["v2"]["attachment"]["list"]>[0]
+>;
+type TaskAttachmentDeletePayload = NonNullable<
+  Parameters<TaskClient["task"]["v2"]["attachment"]["delete"]>[0]
+>;
 
 export type TaskCreateData = TaskCreatePayload["data"];
 export type TaskUpdateData = TaskUpdatePayload["data"];
@@ -39,6 +51,36 @@ export type UpdateTaskParams = {
   task: TaskUpdateTask;
   update_fields?: TaskUpdateData["update_fields"];
   user_id_type?: NonNullable<TaskUpdatePayload["params"]>["user_id_type"];
+};
+
+export type UploadTaskAttachmentParams =
+  | {
+      task_guid: string;
+      file_path: string;
+      user_id_type?: NonNullable<TaskAttachmentUploadPayload["params"]>["user_id_type"];
+    }
+  | {
+      task_guid: string;
+      file_url: string;
+      filename?: string;
+      user_id_type?: NonNullable<TaskAttachmentUploadPayload["params"]>["user_id_type"];
+    };
+
+export type ListTaskAttachmentsParams = {
+  task_guid: NonNullable<TaskAttachmentListPayload["params"]>["resource_id"];
+  page_size?: NonNullable<TaskAttachmentListPayload["params"]>["page_size"];
+  page_token?: NonNullable<TaskAttachmentListPayload["params"]>["page_token"];
+  updated_mesc?: NonNullable<TaskAttachmentListPayload["params"]>["updated_mesc"];
+  user_id_type?: NonNullable<TaskAttachmentListPayload["params"]>["user_id_type"];
+};
+
+export type GetTaskAttachmentParams = {
+  attachment_guid: TaskAttachmentGetPayload["path"]["attachment_guid"];
+  user_id_type?: NonNullable<TaskAttachmentGetPayload["params"]>["user_id_type"];
+};
+
+export type DeleteTaskAttachmentParams = {
+  attachment_guid: NonNullable<TaskAttachmentDeletePayload["path"]>["attachment_guid"];
 };
 
 const TaskDateSchema = Type.Object({
@@ -135,4 +177,49 @@ export const UpdateTaskSchema = Type.Object({
       description: "User ID type when task body contains user-related fields",
     }),
   ),
+});
+
+export const UploadTaskAttachmentSchema = Type.Union([
+  Type.Object({
+    task_guid: Type.String({ description: "Task GUID to upload attachment to" }),
+    file_path: Type.String({ description: "Local file path on the OpenClaw host" }),
+    user_id_type: Type.Optional(
+      Type.String({ description: "User ID type for returned uploader" }),
+    ),
+  }),
+  Type.Object({
+    task_guid: Type.String({ description: "Task GUID to upload attachment to" }),
+    file_url: Type.String({ description: "OSS file URL to download and upload" }),
+    filename: Type.Optional(Type.String({ description: "Override filename for uploaded attachment" })),
+    user_id_type: Type.Optional(
+      Type.String({ description: "User ID type for returned uploader" }),
+    ),
+  }),
+]);
+
+export const ListTaskAttachmentsSchema = Type.Object({
+  task_guid: Type.String({ description: "Task GUID to list attachments for" }),
+  page_size: Type.Optional(
+    Type.Number({
+      description: "Page size (1-100)",
+      minimum: 1,
+      maximum: 100,
+    }),
+  ),
+  page_token: Type.Optional(Type.String({ description: "Pagination token" })),
+  updated_mesc: Type.Optional(Type.String({ description: "Updated timestamp filter" })),
+  user_id_type: Type.Optional(
+    Type.String({ description: "User ID type for returned uploader" }),
+  ),
+});
+
+export const GetTaskAttachmentSchema = Type.Object({
+  attachment_guid: Type.String({ description: "Attachment GUID to retrieve" }),
+  user_id_type: Type.Optional(
+    Type.String({ description: "User ID type for returned uploader" }),
+  ),
+});
+
+export const DeleteTaskAttachmentSchema = Type.Object({
+  attachment_guid: Type.String({ description: "Attachment GUID to delete" }),
 });
