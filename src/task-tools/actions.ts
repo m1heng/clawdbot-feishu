@@ -13,6 +13,14 @@ import type {
   UploadTaskAttachmentParams,
   UpdateTaskParams,
 } from "./schemas.js";
+import {
+  DEFAULT_TASK_ATTACHMENT_FILENAME,
+  DEFAULT_TASK_ATTACHMENT_MAX_BYTES,
+  BYTES_PER_MEGABYTE,
+  HEX_RADIX,
+  RANDOM_TOKEN_PREFIX_LENGTH,
+  SIZE_DISPLAY_FRACTION_DIGITS,
+} from "./constants.js";
 import { getFeishuRuntime } from "../runtime.js";
 import { runTaskApiCall } from "./common.js";
 
@@ -27,7 +35,6 @@ const SUPPORTED_PATCH_FIELDS = new Set<keyof TaskUpdateTask>([
   "mode",
   "is_milestone",
 ]);
-const DEFAULT_ATTACHMENT_MAX_BYTES = 30 * 1024 * 1024;
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
   return Object.fromEntries(
@@ -78,7 +85,7 @@ function formatAttachment(attachment: Record<string, unknown> | undefined) {
 
 function sanitizeUploadFilename(input: string) {
   const base = path.basename(input.trim());
-  return base.length > 0 ? base : "attachment";
+  return base.length > 0 ? base : DEFAULT_TASK_ATTACHMENT_FILENAME;
 }
 
 async function ensureUploadableLocalFile(filePath: string, maxBytes: number) {
@@ -95,7 +102,7 @@ async function ensureUploadableLocalFile(filePath: string, maxBytes: number) {
 
   if (stat.size > maxBytes) {
     throw new Error(
-      `file_path exceeds ${(maxBytes / (1024 * 1024)).toFixed(0)}MB limit: ${filePath}`,
+      `file_path exceeds ${(maxBytes / BYTES_PER_MEGABYTE).toFixed(SIZE_DISPLAY_FRACTION_DIGITS)}MB limit: ${filePath}`,
     );
   }
 }
@@ -104,7 +111,7 @@ async function saveBufferToTempFile(buffer: Buffer, fileName: string) {
   const safeName = sanitizeUploadFilename(fileName);
   const tempPath = path.join(
     os.tmpdir(),
-    `feishu-task-attachment-${Date.now()}-${Math.random().toString(16).slice(2)}-${safeName}`,
+    `feishu-task-attachment-${Date.now()}-${Math.random().toString(HEX_RADIX).slice(RANDOM_TOKEN_PREFIX_LENGTH)}-${safeName}`,
   );
 
   await fs.promises.writeFile(tempPath, buffer);
@@ -131,7 +138,7 @@ async function downloadToTempFile(fileUrl: string, filename: string | undefined,
     }
   })();
 
-  const fallbackName = path.basename(parsedPath) || "attachment";
+  const fallbackName = path.basename(parsedPath) || DEFAULT_TASK_ATTACHMENT_FILENAME;
   const preferredName = filename?.trim() ? filename : loaded.fileName ?? fallbackName;
   return saveBufferToTempFile(loaded.buffer, preferredName);
 }
@@ -310,7 +317,7 @@ export async function uploadTaskAttachment(
   const maxBytes =
     typeof options?.maxBytes === "number" && options.maxBytes > 0
       ? options.maxBytes
-      : DEFAULT_ATTACHMENT_MAX_BYTES;
+      : DEFAULT_TASK_ATTACHMENT_MAX_BYTES;
 
   let tempCleanup: (() => Promise<void>) | undefined;
   let filePath: string;

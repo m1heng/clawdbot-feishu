@@ -34,6 +34,7 @@ import {
   UpdateTaskSchema,
   type UpdateTaskParams,
 } from "./schemas.js";
+import { BYTES_PER_MEGABYTE, DEFAULT_TASK_MEDIA_MAX_MB } from "./constants.js";
 
 type TaskToolSpec<P> = {
   name: string;
@@ -106,7 +107,7 @@ export function registerFeishuTaskTools(api: OpenClawPluginApi) {
     description: "Upload an attachment to a Feishu task (task v2)",
     parameters: UploadTaskAttachmentSchema,
     run: async ({ client, account }, params) => {
-      const mediaMaxBytes = (account.config?.mediaMaxMb ?? 30) * 1024 * 1024;
+      const mediaMaxBytes = (account.config?.mediaMaxMb ?? DEFAULT_TASK_MEDIA_MAX_MB) * BYTES_PER_MEGABYTE;
       return uploadTaskAttachment(client, params, { maxBytes: mediaMaxBytes });
     },
   });
