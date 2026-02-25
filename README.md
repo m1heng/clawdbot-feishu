@@ -412,6 +412,16 @@ https://your-domain.com/feishu/events
 
 When enabled, each DM user automatically gets their own isolated agent instance with a dedicated workspace. This provides complete isolation including separate conversation history, memory (MEMORY.md), and workspace files.
 
+#### Chat Management Limitations ⚠️
+
+> **Important:** Due to Feishu API limitations, **bots cannot directly delete or disband group chats**.
+>
+> To delete a group chat:
+> 1. The **group owner** (not the bot) must manually remove all bots from the group
+> 2. Only then can the group owner obtain management permissions to disband the group
+>
+> This is a Feishu platform security restriction and cannot be bypassed by API.
+
 ```yaml
 channels:
   feishu:
@@ -903,6 +913,16 @@ https://your-domain.com/feishu/events
 #### 渲染模式
 
 | 模式 | 说明 |
+#### 群管理限制 ⚠️
+
+> **重要提示：** 由于飞书 API 限制，**机器人无法直接删除或解散群聊**。
+>
+> 要删除群聊，需要：
+> 1. **群主**（非机器人）手动移除群里的所有机器人
+> 2. 只有这样，群主才能获得群管理权限并解散群聊
+>
+> 这是飞书平台的安全限制，无法通过 API 绕过。
+
 |------|------|
 | `auto` | （默认）自动检测：有代码块或表格时用卡片，否则纯文本 |
 | `raw` | 始终纯文本，表格转为 ASCII |

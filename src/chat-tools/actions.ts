@@ -206,6 +206,148 @@ async function batchUpdateAnnouncementBlocks(
   };
 }
 
+// ============== New Chat Management Functions ==============
+
+async function createChat(client: ChatClient, name: string, userIds?: string[], description?: string) {
+  const data: any = { name };
+  if (userIds && userIds.length > 0) {
+    data.user_id_list = userIds;
+  }
+  if (description) {
+    data.description = description;
+  }
+
+  const res = await runChatApiCall("im.chat.create", () =>
+    (client as any).im.chat.create({ data }),
+  );
+
+  return {
+    success: true,
+    chat_id: (res as any).data?.chat_id,
+    ...(res as any).data,
+  };
+}
+
+async function addMembers(client: ChatClient, chatId: string, userIds: string[]) {
+  const res = await runChatApiCall("im.chat.member.add", () =>
+    (client as any).im.chat.member.add({
+      path: { chat_id: chatId },
+      data: { id_list: userIds },
+    }),
+  );
+
+  return {
+    success: true,
+    chat_id: chatId,
+    added_user_ids: userIds,
+    ...(res as any).data,
+  };
+}
+
+async function checkBotInChat(client: ChatClient, chatId: string) {
+  try {
+    const res = await runChatApiCall("im.chat.get", () =>
+      (client as any).im.chat.get({ path: { chat_id: chatId } }),
+    );
+    
+    return {
+      success: true,
+      chat_id: chatId,
+      in_chat: true,
+      chat_info: (res as any).data,
+    };
+  } catch (err: any) {
+    if (err?.response?.data?.code === 90003) {
+      return {
+        success: true,
+        chat_id: chatId,
+        in_chat: false,
+        error: "Bot is not in this chat",
+      };
+    }
+    throw err;
+  }
+}
+
+async function sendMessage(client: ChatClient, chatId: string, content: string) {
+  const res = await runChatApiCall("im.message.create", () =>
+    (client as any).im.message.create({
+      params: { receive_id_type: "chat_id" },
+      data: {
+        receive_id: chatId,
+        msg_type: "text",
+        content: JSON.stringify({ text: content }),
+      },
+    }),
+  );
+
+  return {
+    success: true,
+    message_id: (res as any).data?.message_id,
+    ...(res as any).data,
+  };
+}
+
+async function createSessionChat(
+  client: ChatClient,
+  name: string,
+  userIds: string[],
+  greeting?: string,
+  description?: string,
+) {
+  // Step 1: Create the chat
+  const createResult = await createChat(client, name, userIds, description);
+  const chatId = createResult.chat_id;
+  
+  if (!chatId) {
+    return {
+      success: false,
+      error: "Failed to create chat - no chat_id returned",
+      create_result: createResult,
+    };
+  }
+
+  // Step 2: Send greeting message
+  const defaultGreeting = "Hello! I've created this group chat for us to collaborate.";
+  const greetingMessage = greeting || defaultGreeting;
+  
+  let messageResult;
+  try {
+    messageResult = await sendMessage(client, chatId, greetingMessage);
+  } catch (err: any) {
+    // Even if message fails, the chat was created successfully
+    return {
+      success: true,
+      chat_id: chatId,
+      create_result: createResult,
+      message_error: err?.message || "Failed to send greeting message",
+    };
+  }
+
+  return {
+    success: true,
+    chat_id: chatId,
+    create_result: createResult,
+    message_result: messageResult,
+  };
+}
+
+async function deleteChat(client: ChatClient, chatId: string) {
+  const res = await runChatApiCall("im.chat.disband", () =>
+    (client as any).im.chat.disband({
+      path: { chat_id: chatId },
+    }),
+  );
+
+  return {
+    success: true,
+    chat_id: chatId,
+    message: "Chat has been successfully disbanded/deleted",
+    ...(res as any).data,
+  };
+}
+
+// Main action handler - MUST BE EXPORTED
 export async function runChatAction(client: ChatClient, params: FeishuChatParams) {
   switch (params.action) {
     case "get_announcement_info":
@@ -257,6 +399,28 @@ export async function runChatAction(client: ChatClient, params: FeishuChatParams
       return {
         error: "delete_announcement_block requires parent block ID and child indices. Use list_announcement_blocks to view the structure first.",
       };
+    }
+    // ============== New Chat Management Actions ==============
+    case "create_chat": {
+      return createChat(client, params.name, params.user_ids, params.description);
+    }
+    case "add_members": {
+      return addMembers(client, params.chat_id, params.user_ids);
+    }
+    case "check_bot_in_chat": {
+      return checkBotInChat(client, params.chat_id);
+    }
+    case "delete_chat": {
+      return deleteChat(client, params.chat_id);
+    }
+    case "create_session_chat": {
+      return createSessionChat(
+        client,
+        params.name,
+        params.user_ids,
+        params.greeting,
+        params.description,
+      );
     }
     default:
       return { error: `Unknown action: ${(params as any).action}` };

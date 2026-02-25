@@ -58,7 +58,7 @@ export function registerFeishuChatTools(api: OpenClawPluginApi) {
       name: "feishu_chat",
       label: "Feishu Chat",
       description:
-        "Feishu chat operations. Actions: get_announcement, get_announcement_info, list_announcement_blocks, get_announcement_block. Use to read group announcements.",
+        "Feishu chat operations. Actions: get_announcement, get_announcement_info, list_announcement_blocks, get_announcement_block, create_chat, add_members, check_bot_in_chat, create_session_chat, delete_chat. Use to manage group chats and announcements.",
       parameters: FeishuChatSchema,
       requiredTool: "chat",
       run: async ({ client }, params) => runChatAction(client, params),
