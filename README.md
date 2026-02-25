@@ -83,6 +83,7 @@ openclaw plugins update feishu
 | `wiki:wiki:readonly` | `feishu_wiki` | List spaces, list nodes, get node info, search |
 | `bitable:app:readonly` | `feishu_bitable` | Read bitable records and fields |
 | `task:task:read` | `feishu_task_get` | Get task details |
+| `im:chat:readonly` | `feishu_chat` | Check whether current bot is in a chat (`group_chat_is_in_chat`) |
 
 **Read-write** (optional, for create/edit/delete operations):
 
@@ -94,6 +95,7 @@ openclaw plugins update feishu
 | `wiki:wiki` | `feishu_wiki` | Create/move/rename wiki nodes |
 | `bitable:app` | `feishu_bitable` | Create/update/delete bitable records and manage fields |
 | `task:task:write` | `feishu_task_create`, `feishu_task_update`, `feishu_task_delete` | Create/update/delete tasks |
+| `im:chat` | `feishu_chat` | Create groups, create one-step session groups, add users/bots to groups |
 
 > Task scope names may vary slightly in Feishu console UI. If needed, search for Task-related permissions and grant read/write accordingly.
 
@@ -496,6 +498,7 @@ openclaw plugins update feishu
 | `wiki:wiki:readonly` | `feishu_wiki` | 列出空间、列出节点、获取节点详情、搜索 |
 | `bitable:app:readonly` | `feishu_bitable` | 读取多维表格记录和字段 |
 | `task:task:read` | `feishu_task_get` | 获取任务详情 |
+| `im:chat:readonly` | `feishu_chat` | 判断当前机器人是否在群里（`group_chat_is_in_chat`） |
 
 **读写权限**（可选，用于创建/编辑/删除操作）：
 
@@ -507,6 +510,7 @@ openclaw plugins update feishu
 | `wiki:wiki` | `feishu_wiki` | 创建/移动/重命名知识库节点 |
 | `bitable:app` | `feishu_bitable` | 创建/更新/删除多维表格记录并管理字段 |
 | `task:task:write` | `feishu_task_create`, `feishu_task_update`, `feishu_task_delete` | 创建/更新/删除任务 |
+| `im:chat` | `feishu_chat` | 创建群、创建一键会话群、拉用户或机器人进群 |
 
 > 飞书控制台中任务权限的显示名称可能略有差异，必要时可按关键字 `task` 搜索并授予对应读写权限。
 

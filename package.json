@@ -68,5 +68,9 @@
   },
   "peerDependencies": {
     "openclaw": ">=2026.2.13"
+  },
+  "scripts": {
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
   }
 }
