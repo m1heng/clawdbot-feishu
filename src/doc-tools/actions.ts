@@ -51,7 +51,7 @@ function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
 async function readLegacyDoc(client: DocClient, docToken: string) {
   const domain = (client as any).domain ?? "https://open.feishu.cn";
   const token = await client.tokenManager.getTenantAccessToken();
-  const response = await runDocApiCall("doc.v2.raw_content", () =>
+  const response = await runDocApiCall("doc.v2.rawContent", () =>
     client.httpInstance.get<{ code?: number; msg?: string; data?: { content?: string } }>(
       `${domain}/open-apis/doc/v2/${docToken}/raw_content`,
       {
