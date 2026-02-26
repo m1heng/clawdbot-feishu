@@ -470,9 +470,12 @@ export async function sendMediaFeishu(params: {
     buffer = mediaBuffer;
     name = fileName ?? "file";
   } else if (mediaUrl) {
+    // Get mediaLocalRoots from config, fallback to default roots
+    const mediaLocalRoots = cfg.channels?.feishu?.mediaLocalRoots ?? [];
     const loaded = await getFeishuRuntime().media.loadWebMedia(mediaUrl, {
       maxBytes: mediaMaxBytes,
       optimizeImages: false,
+      localRoots: mediaLocalRoots.length > 0 ? mediaLocalRoots : undefined,
     });
     buffer = loaded.buffer;
     name = fileName ?? loaded.fileName ?? "file";
