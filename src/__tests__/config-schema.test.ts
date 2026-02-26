@@ -72,4 +72,18 @@ describe("config-schema contract", () => {
     expect(parsed.accounts?.teamA?.tools?.doc).toBe(false);
     expect(parsed.accounts?.teamA?.tools?.task).toBe(true);
   });
+
+  it("Given mediaLocalRoots config, When parsing, Then top-level and account-level values are preserved", () => {
+    const parsed = FeishuConfigSchema.parse({
+      mediaLocalRoots: ["/tmp/custom"],
+      accounts: {
+        teamA: {
+          mediaLocalRoots: ["/data/media"],
+        },
+      },
+    });
+
+    expect(parsed.mediaLocalRoots).toEqual(["/tmp/custom"]);
+    expect(parsed.accounts?.teamA?.mediaLocalRoots).toEqual(["/data/media"]);
+  });
 });
