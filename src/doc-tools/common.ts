@@ -21,11 +21,12 @@ export type DocFormat = "docx" | "doc";
 
 /**
  * Detect document format from token.
- * Legacy doc tokens: doccnXXXXXXXXXXXXXXXXXXXXXXX (starts with "docc", 27 chars total)
- * Docx tokens: Various formats without "docc" prefix
+ * Legacy doc tokens: usually start with "doccn" and contain only alphanumeric chars.
+ * Docx tokens: Various formats that do not match legacy "doccn..." pattern.
  */
 export function detectDocFormat(token: string): DocFormat {
-  if (token.startsWith("docc")) {
+  const normalizedToken = token.trim();
+  if (/^doccn[a-zA-Z0-9]+$/.test(normalizedToken)) {
     return "doc";
   }
   return "docx";
