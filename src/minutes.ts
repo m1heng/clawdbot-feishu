@@ -244,6 +244,11 @@ export function registerFeishuMinutesTools(api: OpenClawPluginApi) {
                     : ""),
               },
             ],
+            details: {
+              transcript: transcriptText,
+              usedTenantToken,
+              minutesToken: p.minutes_token,
+            },
           };
         } catch (err) {
           return json({ error: err instanceof Error ? err.message : String(err) });

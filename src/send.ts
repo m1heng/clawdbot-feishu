@@ -3,6 +3,7 @@ import type { FeishuSendResult, ResolvedFeishuAccount } from "./types.js";
 import type { MentionTarget } from "./mention.js";
 import { buildMentionedMessage, buildMentionedCardContent } from "./mention.js";
 import { createFeishuClient } from "./client.js";
+import { normalizeFeishuMarkdownLinks } from "./text/markdown-links.js";
 import { resolveReceiveIdType, normalizeFeishuTarget } from "./targets.js";
 import { getFeishuRuntime } from "./runtime.js";
 import { resolveFeishuAccount } from "./accounts.js";
@@ -71,6 +72,31 @@ export async function getMessageFeishu(params: {
       const parsed = JSON.parse(content);
       if (item.msg_type === "text" && parsed.text) {
         content = parsed.text;
+      } else if (parsed.content || parsed.elements) {
+        // Extract plain text from rich text (post) or interactive (card) format.
+        // Both use nested arrays: Array<Array<{tag, text?, href?, ...}>>
+        const blocks = parsed.content ?? parsed.elements ?? [];
+        const lines: string[] = [];
+        for (const paragraph of blocks) {
+          if (!Array.isArray(paragraph)) continue;
+          const line = paragraph
+            .map((node: { tag?: string; text?: string; href?: string }) => {
+              if (node.tag === "text") return node.text ?? "";
+              if (node.tag === "a") return node.text ?? node.href ?? "";
+              if (node.tag === "at") return "";
+              if (node.tag === "img") return "[图片]";
+              return node.text ?? "";
+            })
+            .join("");
+          if (line.trim()) lines.push(line);
+        }
+        const extracted = (parsed.title ? parsed.title + "\n" : "") + lines.join("\n");
+        // Filter out Feishu's degraded card placeholder text
+        if (extracted.trim() && !extracted.includes("请升级至最新版本客户端")) {
+          content = extracted;
+        } else if (extracted.includes("请升级至最新版本客户端")) {
+          content = "[卡片消息]";
+        }
       }
     } catch {
       // Keep raw content if parsing fails
@@ -147,7 +173,9 @@ export async function sendMessageFeishu(params: SendFeishuMessageParams): Promis
   if (mentions && mentions.length > 0) {
     rawText = buildMentionedMessage(mentions, rawText);
   }
-  const messageText = getFeishuRuntime().channel.text.convertMarkdownTables(rawText, tableMode);
+  const messageText = normalizeFeishuMarkdownLinks(
+    getFeishuRuntime().channel.text.convertMarkdownTables(rawText, tableMode),
+  );
 
   const { content, msgType } = buildFeishuPostMessagePayload({ messageText });
 
@@ -317,6 +345,7 @@ export async function sendMarkdownCardFeishu(params: {
   if (mentions && mentions.length > 0) {
     cardText = buildMentionedCardContent(mentions, text);
   }
+  cardText = normalizeFeishuMarkdownLinks(cardText);
   const card = buildMarkdownCard(cardText);
   return sendCardFeishu({ cfg, to, card, replyToMessageId, accountId });
 }
@@ -342,7 +371,9 @@ export async function editMessageFeishu(params: {
     cfg,
     channel: "feishu",
   });
-  const messageText = getFeishuRuntime().channel.text.convertMarkdownTables(text ?? "", tableMode);
+  const messageText = normalizeFeishuMarkdownLinks(
+    getFeishuRuntime().channel.text.convertMarkdownTables(text ?? "", tableMode),
+  );
 
   const { content, msgType } = buildFeishuPostMessagePayload({ messageText });
 

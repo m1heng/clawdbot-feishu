@@ -1,0 +1,43 @@
+name: PR Title Check
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+jobs:
+  validate-title:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Conventional Commit title
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.pull_request?.title || "";
+            const pattern = /^(feat|fix|docs|refactor|test|chore)(\([a-z0-9._/-]+\))?:\s.+$/;
+
+            if (!pattern.test(title)) {
+              core.setFailed(
+                [
+                  "PR title must follow Conventional Commits:",
+                  "  type(scope): description",
+                  "  or type: description",
+                  "",
+                  "Allowed types: feat, fix, docs, refactor, test, chore",
+                  "",
+                  "Examples:",
+                  "  feat: add webhook retry",
+                  "  fix(channel): handle empty mention",
+                  "  docs: update setup guide",
+                  "",
+                  "PR 标题需使用 Conventional Commits 规范，",
+                  "可用类型：feat/fix/docs/refactor/test/chore。"
+                ].join("\n")
+              );
+            } else {
+              core.info(`PR title is valid: "${title}"`);
+            }

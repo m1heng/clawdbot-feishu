@@ -17,6 +17,39 @@ OpenClaw references:
 - Submit a Pull Request to fix bugs, add features, or improve docs.
 - Help review PRs and verify fixes from other contributors.
 
+### Issue Reporting Standard
+
+Before opening an issue, search [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) and existing issues for known fixes or duplicates.
+
+Use the GitHub Issue Forms and pick the correct type:
+
+- `Bug Report / 缺陷反馈`
+- `Config or Integration Issue / 配置或接入问题`
+- `Feature Request / 功能建议`
+- `Documentation Improvement / 文档改进`
+- `Question / 使用咨询`
+
+For usage questions, please use:
+
+- Use [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) for open-ended usage Q&A and idea exchange.
+- If no existing answer applies and troubleshooting details are needed, open a `Question` issue.
+
+For bug/config issues, include this recommended context:
+
+- OpenClaw version
+- Feishu plugin version
+- Setup method (`openclaw.json` manual edit / CLI command / onboarding/UI)
+- Repro steps
+- Relevant startup and runtime logs
+
+Recommended commands to collect environment details:
+
+```bash
+openclaw --version
+openclaw plugins list | rg -i feishu
+node -v
+```
+
 ### Development requirements
 
 - Node.js `>= 22` (matches OpenClaw development requirement)
@@ -104,6 +137,13 @@ pnpm openclaw gateway
 - Provide verification steps and results (basic flow + your changed feature).
 - Include logs/screenshots when they help review.
 - Do not include secrets or sensitive data in commits/logs.
+- Please use the PR template. Short and clear notes are enough.
+- Default template is English. If you prefer Chinese, you can use:
+  - `.github/PULL_REQUEST_TEMPLATE/pull_request_template_zh.md`
+- PR title format:
+  - `type: description` or `type(scope): description`
+  - Allowed `type`: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
+  - Examples: `feat: add webhook retry`, `fix(channel): handle empty mention`
 
 ### Quick troubleshooting
 
@@ -130,6 +170,39 @@ OpenClaw 参考文档：
 - 提交 Issue 讨论新功能需求。
 - 提交 Pull Request 修复 Bug、增加功能或改进文档。
 - 参与 PR 评审，协助验证其他贡献者的修复。
+
+### Issue 反馈规范
+
+提交 issue 前，请先搜索 [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions) 和现有 issues，确认是否已有解答或重复问题。
+
+请优先使用 GitHub Issue Forms，并选择正确类型：
+
+- `Bug Report / 缺陷反馈`
+- `Config or Integration Issue / 配置或接入问题`
+- `Feature Request / 功能建议`
+- `Documentation Improvement / 文档改进`
+- `Question / 使用咨询`
+
+使用咨询请使用：
+
+- 开放式使用交流和想法讨论，使用 [Discussions](https://github.com/m1heng/clawdbot-feishu/discussions)。
+- 若 Discussions 中没有可用答案，且需要日志/配置排查，再提交 `Question` Issue。
+
+对于 Bug/配置问题，建议提供以下信息：
+
+- OpenClaw 版本
+- 飞书插件版本
+- 配置方式（手工 `openclaw.json` / 命令行 / onboarding 或 UI）
+- 可复现步骤
+- 相关启动日志和运行日志
+
+建议用于采集环境信息的命令：
+
+```bash
+openclaw --version
+openclaw plugins list | rg -i feishu
+node -v
+```
 
 ### 开发环境要求
 
@@ -218,6 +291,13 @@ pnpm openclaw gateway
 - 给出验证步骤和结果（最基本流程 + 你改动的功能）。
 - 必要时附上日志或截图，便于评审。
 - 提交内容和日志中不包含密钥等敏感信息。
+- 请使用 PR 模板，简洁写清楚即可，不需要长篇描述。
+- 默认模板为英文。如需中文模板，可使用：
+  - `.github/PULL_REQUEST_TEMPLATE/pull_request_template_zh.md`
+- PR 标题建议使用：
+  - `type: description` 或 `type(scope): description`
+  - `type` 可选：`feat`、`fix`、`docs`、`refactor`、`test`、`chore`
+  - 示例：`feat: add webhook retry`、`fix(channel): handle empty mention`
 
 ### 快速排查
 

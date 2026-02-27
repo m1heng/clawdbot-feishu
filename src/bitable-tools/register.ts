@@ -1,7 +1,6 @@
 import type { TSchema } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { createFeishuClient } from "../client.js";
-import type { FeishuConfig } from "../types.js";
+import { hasFeishuToolEnabledForAnyAccount, withFeishuToolClient } from "../tools-common/tool-exec.js";
 import {
   batchDeleteRecords,
   createField,
@@ -53,7 +52,6 @@ type ToolSpec<P> = {
 // same response envelope and same error conversion path.
 function registerBitableTool<P>(
   api: OpenClawPluginApi,
-  getClient: () => BitableClient,
   spec: ToolSpec<P>,
 ) {
   api.registerTool(
@@ -64,7 +62,11 @@ function registerBitableTool<P>(
       parameters: spec.parameters,
       async execute(_toolCallId, params) {
         try {
-          return json(await spec.run(getClient(), params as P));
+          return await withFeishuToolClient({
+            api,
+            toolName: spec.name,
+            run: async ({ client }) => json(await spec.run(client as BitableClient, params as P)),
+          });
         } catch (err) {
           return errorResult(err);
         }
@@ -75,16 +77,15 @@ function registerBitableTool<P>(
 }
 
 export function registerFeishuBitableTools(api: OpenClawPluginApi) {
-  const feishuCfg = api.config?.channels?.feishu as FeishuConfig | undefined;
-  if (!feishuCfg?.appId || !feishuCfg?.appSecret) {
+  if (!api.config || !hasFeishuToolEnabledForAnyAccount(api.config)) {
     api.logger.debug?.("feishu_bitable: Feishu credentials not configured, skipping bitable tools");
     return;
   }
 
-  const getClient = () => createFeishuClient(feishuCfg);
-
+  // Bitable tools are globally registered once, but each execution resolves
+  // the effective account through withFeishuToolClient().
   // Keep registration explicit and flat so each tool is easy to locate and modify.
-  registerBitableTool<GetMetaParams>(api, getClient, {
+  registerBitableTool<GetMetaParams>(api, {
     name: "feishu_bitable_get_meta",
     label: "Feishu Bitable Get Meta",
     description:
@@ -93,7 +94,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     run: (client, { url }) => getBitableMeta(client, url),
   });
 
-  registerBitableTool<ListFieldsParams>(api, getClient, {
+  registerBitableTool<ListFieldsParams>(api, {
     name: "feishu_bitable_list_fields",
     label: "Feishu Bitable List Fields",
     description: "List all fields (columns) in a Bitable table with their types and properties",
@@ -101,7 +102,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     run: (client, { app_token, table_id }) => listFields(client, app_token, table_id),
   });
 
-  registerBitableTool<ListRecordsParams>(api, getClient, {
+  registerBitableTool<ListRecordsParams>(api, {
     name: "feishu_bitable_list_records",
     label: "Feishu Bitable List Records",
     description: "List records (rows) from a Bitable table with pagination support",
@@ -110,7 +111,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
       listRecords(client, app_token, table_id, page_size, page_token),
   });
 
-  registerBitableTool<CreateFieldParams>(api, getClient, {
+  registerBitableTool<CreateFieldParams>(api, {
     name: "feishu_bitable_create_field",
     label: "Feishu Bitable Create Field",
     description: "Create a new field (column) in a Bitable table",
@@ -125,7 +126,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
       }),
   });
 
-  registerBitableTool<UpdateFieldParams>(api, getClient, {
+  registerBitableTool<UpdateFieldParams>(api, {
     name: "feishu_bitable_update_field",
     label: "Feishu Bitable Update Field",
     description: "Update an existing field (column) in a Bitable table",
@@ -140,7 +141,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
       }),
   });
 
-  registerBitableTool<DeleteFieldParams>(api, getClient, {
+  registerBitableTool<DeleteFieldParams>(api, {
     name: "feishu_bitable_delete_field",
     label: "Feishu Bitable Delete Field",
     description: "Delete a field (column) from a Bitable table",
@@ -148,7 +149,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     run: (client, { app_token, table_id, field_id }) => deleteField(client, app_token, table_id, field_id),
   });
 
-  registerBitableTool<GetRecordParams>(api, getClient, {
+  registerBitableTool<GetRecordParams>(api, {
     name: "feishu_bitable_get_record",
     label: "Feishu Bitable Get Record",
     description: "Get a single record by ID from a Bitable table",
@@ -156,7 +157,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     run: (client, { app_token, table_id, record_id }) => getRecord(client, app_token, table_id, record_id),
   });
 
-  registerBitableTool<CreateRecordParams>(api, getClient, {
+  registerBitableTool<CreateRecordParams>(api, {
     name: "feishu_bitable_create_record",
     label: "Feishu Bitable Create Record",
     description: "Create a new record (row) in a Bitable table",
@@ -164,7 +165,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     run: (client, { app_token, table_id, fields }) => createRecord(client, app_token, table_id, fields),
   });
 
-  registerBitableTool<UpdateRecordParams>(api, getClient, {
+  registerBitableTool<UpdateRecordParams>(api, {
     name: "feishu_bitable_update_record",
     label: "Feishu Bitable Update Record",
     description: "Update an existing record (row) in a Bitable table",
@@ -173,7 +174,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
       updateRecord(client, app_token, table_id, record_id, fields),
   });
 
-  registerBitableTool<DeleteRecordParams>(api, getClient, {
+  registerBitableTool<DeleteRecordParams>(api, {
     name: "feishu_bitable_delete_record",
     label: "Feishu Bitable Delete Record",
     description: "Delete a single record (row) from a Bitable table",
@@ -181,7 +182,7 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
     run: (client, { app_token, table_id, record_id }) => deleteRecord(client, app_token, table_id, record_id),
   });
 
-  registerBitableTool<BatchDeleteRecordsParams>(api, getClient, {
+  registerBitableTool<BatchDeleteRecordsParams>(api, {
     name: "feishu_bitable_batch_delete_records",
     label: "Feishu Bitable Batch Delete Records",
     description: "Delete multiple records (rows) from a Bitable table in one request",
@@ -190,5 +191,5 @@ export function registerFeishuBitableTools(api: OpenClawPluginApi) {
       batchDeleteRecords(client, app_token, table_id, record_ids),
   });
 
-  api.logger.info?.("feishu_bitable: Registered 11 bitable tools");
+  api.logger.debug?.("feishu_bitable: Registered 11 bitable tools");
 }

@@ -1,0 +1,274 @@
+name: Release Publish
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate Release Tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      dist_tag: ${{ steps.version.outputs.dist_tag }}
+      package_name: ${{ steps.version.outputs.package_name }}
+      package_version: ${{ steps.version.outputs.package_version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck and tests
+        run: npm run ci:check
+
+      - name: Ensure tag commit is on main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"; then
+            echo "::error::Tagged commit is not reachable from origin/main."
+            exit 1
+          fi
+
+      - name: Validate tag and package version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG_NAME="${GITHUB_REF_NAME}"
+          TAG_VERSION="${TAG_NAME#v}"
+          PKG_NAME="$(node -p "require('./package.json').name")"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          SEMVER_REGEX='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+
+          if [[ ! "$TAG_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "::error::Tag version '$TAG_VERSION' is not valid semver."
+            exit 1
+          fi
+
+          if [[ "$TAG_VERSION" != "$PKG_VERSION" ]]; then
+            echo "::error::Tag version '$TAG_VERSION' does not match package.json version '$PKG_VERSION'."
+            exit 1
+          fi
+
+          DIST_TAG="latest"
+          PRERELEASE="false"
+          if [[ "$PKG_VERSION" == *-* ]]; then
+            DIST_TAG="next"
+            PRERELEASE="true"
+          fi
+
+          echo "dist_tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+          echo "package_name=$PKG_NAME" >> "$GITHUB_OUTPUT"
+          echo "package_version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG_NAME"
+          echo "Package name: $PKG_NAME"
+          echo "Package version: $PKG_VERSION"
+          echo "npm dist-tag: $DIST_TAG"
+
+      - name: Guard package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pack --dry-run --json > pack-result.json
+          node -e '
+            const fs = require("node:fs");
+            const data = JSON.parse(fs.readFileSync("pack-result.json", "utf8"));
+            const files = (data?.[0]?.files ?? []).map((f) => f.path);
+            const banned = files.filter((p) =>
+              /(^|\/)(__tests__|tests?)\/|\.test\.[cm]?[jt]sx?$|\.spec\.[cm]?[jt]sx?$/.test(p)
+            );
+            if (banned.length > 0) {
+              console.error("Found banned test files in npm package:");
+              for (const file of banned) console.error(` - ${file}`);
+              process.exit(1);
+            }
+            console.log(`Pack guard passed. Checked ${files.length} files.`);
+          '
+
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: validate
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          always-auth: true
+
+      - name: Check if version already exists on npm
+        id: npm_state
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG_NAME="${{ needs.validate.outputs.package_name }}"
+          PKG_VERSION="${{ needs.validate.outputs.package_version }}"
+          if npm view "${PKG_NAME}@${PKG_VERSION}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "Package ${PKG_NAME}@${PKG_VERSION} already exists on npm, skipping publish."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish package
+        if: steps.npm_state.outputs.already_published != 'true'
+        run: npm publish --access public --provenance --tag "${{ needs.validate.outputs.dist_tag }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Report publish status
+        if: steps.npm_state.outputs.already_published == 'true'
+        run: echo "Publish skipped because this version is already present on npm."
+
+  release:
+    name: Create or update GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [validate, publish]
+    if: always() && needs.validate.result == 'success' && needs.publish.result == 'success'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract annotated tag notes
+        id: tag_notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          NOTES="$(git for-each-ref "refs/tags/${GITHUB_REF_NAME}" --format='%(contents)')"
+          if [[ -n "${NOTES}" ]]; then
+            echo "has_notes=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "notes<<EOF"
+              echo "${NOTES}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "has_notes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upsert release from tag notes
+        if: steps.tag_notes.outputs.has_notes == 'true'
+        uses: actions/github-script@v7
+        env:
+          RELEASE_NOTES: ${{ steps.tag_notes.outputs.notes }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const tag = context.ref.replace("refs/tags/", "");
+            const prerelease = process.env.PRERELEASE === "true";
+            const body = process.env.RELEASE_NOTES;
+
+            let existing;
+            try {
+              existing = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+            if (existing?.data?.id) {
+              await github.rest.repos.updateRelease({
+                owner,
+                repo,
+                release_id: existing.data.id,
+                tag_name: tag,
+                name: tag,
+                body,
+                prerelease,
+                draft: false,
+              });
+              core.info(`Updated release ${tag}`);
+            } else {
+              await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: tag,
+                name: tag,
+                body,
+                prerelease,
+                draft: false,
+              });
+              core.info(`Created release ${tag}`);
+            }
+
+      - name: Upsert release with generated notes
+        if: steps.tag_notes.outputs.has_notes != 'true'
+        uses: actions/github-script@v7
+        env:
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const tag = context.ref.replace("refs/tags/", "");
+            const prerelease = process.env.PRERELEASE === "true";
+
+            let existing;
+            try {
+              existing = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+            if (existing?.data?.id) {
+              await github.rest.repos.updateRelease({
+                owner,
+                repo,
+                release_id: existing.data.id,
+                tag_name: tag,
+                name: tag,
+                prerelease,
+                draft: false,
+              });
+              core.info(`Updated release ${tag} (generated notes retained).`);
+            } else {
+              await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: tag,
+                name: tag,
+                prerelease,
+                draft: false,
+                generate_release_notes: true,
+              });
+              core.info(`Created release ${tag} with generated notes.`);
+            }
