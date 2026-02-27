@@ -50,7 +50,7 @@ After:
         "peer": {
           "kind": "group",
           "id": "oc_f1c3487263639889eedb076c5afd4ad3",
-          "name": "AI影视台风开发群"
+          "name": "Project Discussion Group"
         }
       }
     }
