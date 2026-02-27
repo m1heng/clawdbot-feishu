@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseFeishuMessageEvent, type FeishuMessageEvent } from "../bot.js";
+import {
+  normalizeFeishuInboundMessageType,
+  parseFeishuMessageEvent,
+  selectFeishuMessageResourceKey,
+  type FeishuMessageEvent,
+} from "../bot.js";
 
 function buildTextEvent(params: {
   chatType: "p2p" | "group";
@@ -103,5 +108,61 @@ describe("parseFeishuMessageEvent", () => {
     expect(ctx.content).toContain("Daily");
     expect(ctx.content).toContain("@Bot hello");
     expect(ctx.content).toContain("world");
+  });
+
+  it("normalizes media message content into a video placeholder", () => {
+    const event: FeishuMessageEvent = {
+      sender: {
+        sender_id: {
+          open_id: "ou_sender",
+          user_id: "u_sender",
+        },
+      },
+      message: {
+        message_id: "om_media_1",
+        chat_id: "oc_dm",
+        chat_type: "p2p",
+        message_type: "media",
+        content: JSON.stringify({
+          file_key: "file_v3_1",
+          image_key: "img_v3_1",
+          duration: 15016,
+        }),
+      },
+    };
+
+    const ctx = parseFeishuMessageEvent(event, botOpenId);
+    expect(ctx.contentType).toBe("media");
+    expect(ctx.content).toBe("<media:video>");
+  });
+});
+
+describe("normalizeFeishuInboundMessageType", () => {
+  it("normalizes media to video", () => {
+    expect(normalizeFeishuInboundMessageType("media")).toBe("video");
+  });
+
+  it("keeps non-media message types unchanged", () => {
+    expect(normalizeFeishuInboundMessageType("image")).toBe("image");
+    expect(normalizeFeishuInboundMessageType("video")).toBe("video");
+    expect(normalizeFeishuInboundMessageType("text")).toBe("text");
+  });
+});
+
+describe("selectFeishuMessageResourceKey", () => {
+  it("prefers file_key for video/media messages", () => {
+    const keys = { fileKey: "file_v3_1", imageKey: "img_v3_1" };
+    expect(selectFeishuMessageResourceKey("video", keys)).toBe("file_v3_1");
+    expect(selectFeishuMessageResourceKey("media", keys)).toBe("file_v3_1");
+  });
+
+  it("prefers image_key for image messages", () => {
+    const keys = { fileKey: "file_v3_1", imageKey: "img_v3_1" };
+    expect(selectFeishuMessageResourceKey("image", keys)).toBe("img_v3_1");
+  });
+
+  it("falls back when preferred key is missing", () => {
+    expect(selectFeishuMessageResourceKey("video", { imageKey: "img_v3_1" })).toBe("img_v3_1");
+    expect(selectFeishuMessageResourceKey("image", { fileKey: "file_v3_1" })).toBe("file_v3_1");
   });
 });

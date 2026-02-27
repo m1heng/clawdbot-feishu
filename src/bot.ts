@@ -226,18 +226,46 @@ export type FeishuBotAddedEvent = {
 function parseMessageContent(content: string, messageType: string): string {
   try {
     const parsed = JSON.parse(content);
-    if (messageType === "text") {
+    const normalizedMessageType = normalizeFeishuInboundMessageType(messageType);
+    if (normalizedMessageType === "text") {
       return parsed.text || "";
     }
-    if (messageType === "post") {
+    if (normalizedMessageType === "post") {
       // Extract text content from rich text post
       const { textContent } = parsePostContent(content);
       return textContent;
+    }
+    if (["image", "file", "audio", "video", "sticker"].includes(normalizedMessageType)) {
+      return inferPlaceholder(normalizedMessageType);
     }
     return content;
   } catch {
     return content;
   }
+}
+
+/**
+ * Feishu may use "media" for inbound video messages.
+ * Normalize to "video" so downstream media handling is consistent.
+ */
+export function normalizeFeishuInboundMessageType(messageType: string): string {
+  return messageType === "media" ? "video" : messageType;
+}
+
+/**
+ * Select the correct resource key for messageResource download.
+ * - image message: prefer image_key
+ * - other media (video/audio/file/sticker): prefer file_key
+ */
+export function selectFeishuMessageResourceKey(
+  messageType: string,
+  keys: { imageKey?: string; fileKey?: string },
+): string | undefined {
+  const normalized = normalizeFeishuInboundMessageType(messageType);
+  if (normalized === "image") {
+    return keys.imageKey ?? keys.fileKey;
+  }
+  return keys.fileKey ?? keys.imageKey;
 }
 
 function checkBotMentioned(
@@ -288,6 +316,7 @@ function parseMediaKeys(
       case "audio":
         return { fileKey: parsed.file_key };
       case "video":
+      case "media":
         // Video has both file_key (video) and image_key (thumbnail)
         return { fileKey: parsed.file_key, imageKey: parsed.image_key };
       case "sticker":
@@ -363,6 +392,7 @@ function inferPlaceholder(messageType: string): string {
     case "audio":
       return "<media:audio>";
     case "video":
+    case "media":
       return "<media:video>";
     case "sticker":
       return "<media:sticker>";
@@ -385,10 +415,11 @@ async function resolveFeishuMediaList(params: {
   accountId?: string;
 }): Promise<FeishuMediaInfo[]> {
   const { cfg, messageId, messageType, content, maxBytes, log, accountId } = params;
+  const normalizedMessageType = normalizeFeishuInboundMessageType(messageType);
 
   // Only process media message types (including post for embedded images)
   const mediaTypes = ["image", "file", "audio", "video", "sticker", "post"];
-  if (!mediaTypes.includes(messageType)) {
+  if (!mediaTypes.includes(normalizedMessageType)) {
     return [];
   }
 
@@ -396,7 +427,7 @@ async function resolveFeishuMediaList(params: {
   const core = getFeishuRuntime();
 
   // Handle post (rich text) messages with embedded images
-  if (messageType === "post") {
+  if (normalizedMessageType === "post") {
     const { imageKeys } = parsePostContent(content);
     if (imageKeys.length === 0) {
       return [];
@@ -443,7 +474,7 @@ async function resolveFeishuMediaList(params: {
   }
 
   // Handle other media types
-  const mediaKeys = parseMediaKeys(content, messageType);
+  const mediaKeys = parseMediaKeys(content, normalizedMessageType);
   if (!mediaKeys.imageKey && !mediaKeys.fileKey) {
     return [];
   }
@@ -455,12 +486,12 @@ async function resolveFeishuMediaList(params: {
 
     // For message media, always use messageResource API
     // The image.get API is only for images uploaded via im/v1/images, not for message attachments
-    const fileKey = mediaKeys.imageKey || mediaKeys.fileKey;
+    const fileKey = selectFeishuMessageResourceKey(normalizedMessageType, mediaKeys);
     if (!fileKey) {
       return [];
     }
 
-    const resourceType = messageType === "image" ? "image" : "file";
+    const resourceType = normalizedMessageType === "image" ? "image" : "file";
     const result = await downloadMessageResourceFeishu({
       cfg,
       messageId,
@@ -489,12 +520,12 @@ async function resolveFeishuMediaList(params: {
     out.push({
       path: saved.path,
       contentType: saved.contentType,
-      placeholder: inferPlaceholder(messageType),
+      placeholder: inferPlaceholder(normalizedMessageType),
     });
 
-    log?.(`feishu: downloaded ${messageType} media, saved to ${saved.path}`);
+    log?.(`feishu: downloaded ${normalizedMessageType} media, saved to ${saved.path}`);
   } catch (err) {
-    log?.(`feishu: failed to download ${messageType} media: ${String(err)}`);
+    log?.(`feishu: failed to download ${normalizedMessageType} media: ${String(err)}`);
   }
 
   return out;
