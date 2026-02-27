@@ -39,8 +39,6 @@ export type FeishuMessageContext = {
   contentType: string;
   /** Mention forward targets (excluding the bot itself) */
   mentionTargets?: MentionTarget[];
-  /** Extracted message body (after removing @ placeholders) */
-  mentionMessageBody?: string;
 };
 
 export type FeishuSendResult = {

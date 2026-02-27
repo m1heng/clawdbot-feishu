@@ -24,7 +24,6 @@ import { getMessageFeishu, sendMessageFeishu } from "./send.js";
 import { downloadImageFeishu, downloadMessageResourceFeishu } from "./media.js";
 import {
   extractMentionTargets,
-  extractMessageBody,
   isMentionForwardRequest,
 } from "./mention.js";
 import { maybeCreateDynamicAgent } from "./dynamic-agent.js";
@@ -416,13 +415,23 @@ function checkBotMentioned(
   );
 }
 
-function stripBotMention(text: string, mentions?: FeishuMessageEvent["message"]["mentions"]): string {
+function normalizeMentions(text: string, mentions?: FeishuMessageEvent["message"]["mentions"]): string {
   if (!mentions || mentions.length === 0) return text;
+
+  const escaped = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const xmlEscaped = (value: string) =>
+    value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
   let result = text;
+
   for (const mention of mentions) {
-    result = result.replace(new RegExp(`@${mention.name}\\s*`, "g"), "").trim();
-    result = result.replace(new RegExp(mention.key, "g"), "").trim();
+    const mentionId = mention.id.open_id || mention.id.user_id;
+    const replacement = mentionId
+      ? `<at user_id="${mentionId}">${xmlEscaped(mention.name)}</at>`
+      : `@${mention.name}`;
+
+    result = result.replace(new RegExp(escaped(mention.key), "g"), replacement).trim();
   }
+
   return result;
 }
 
@@ -699,7 +708,7 @@ export function parseFeishuMessageEvent(
   const mentionedBot = checkBotMentioned(event, botOpenId, parsedPost?.mentionIds ?? []);
   const hasAnyMention =
     (event.message.mentions?.length ?? 0) > 0 || (parsedPost?.mentionIds.length ?? 0) > 0;
-  const content = stripBotMention(rawContent, event.message.mentions);
+  const content = normalizeMentions(rawContent, event.message.mentions);
 
   const ctx: FeishuMessageContext = {
     chatId: event.message.chat_id,
@@ -720,9 +729,6 @@ export function parseFeishuMessageEvent(
     const mentionTargets = extractMentionTargets(event, botOpenId);
     if (mentionTargets.length > 0) {
       ctx.mentionTargets = mentionTargets;
-      // Extract message body (remove all @ placeholders)
-      const allMentionKeys = (event.message.mentions ?? []).map((m) => m.key);
-      ctx.mentionMessageBody = extractMessageBody(content, allMentionKeys);
     }
   }
 
@@ -1085,6 +1091,16 @@ export async function handleFeishuMessage(params: {
     // (DMs already have per-sender sessions, but the prefix is still useful for clarity.)
     const speaker = ctx.senderName ?? ctx.senderOpenId;
     messageBody = `${speaker}: ${messageBody}`;
+
+    if (ctx.hasAnyMention) {
+      const botIdHint = botOpenId?.trim();
+      messageBody +=
+        `\n\n[System: The content may include mention tags in the form <at user_id="...">name</at>. ` +
+        `Treat these as real mentions of Feishu entities (users or bots).]`;
+      if (botIdHint) {
+        messageBody += `\n[System: If user_id is "${botIdHint}", that mention refers to you.]`;
+      }
+    }
 
     // If there are mention targets, inform the agent that replies will auto-mention them
     if (ctx.mentionTargets && ctx.mentionTargets.length > 0) {
