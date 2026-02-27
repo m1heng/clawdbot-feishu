@@ -1,13 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
 
-// 时间对象 Schema
-const TimeSchema = Type.Object({
-  timestamp: Type.String({ description: "Unix时间戳(秒)" }),
-  timezone: Type.Optional(
-    Type.String({ description: "时区，默认 Asia/Shanghai" })
-  ),
-});
-
 // 公共字段：所有 action 都需要的 token 字段
 const UserTokenFields = {
   user_access_token: Type.String({
@@ -18,6 +10,17 @@ const UserTokenFields = {
       description: "刷新令牌 (refresh_token)，以 ur- 开头。提供后可自动续期约30天",
     })
   ),
+};
+
+// 时间字段：支持 Unix 时间戳(秒) 或自然语言日期
+// 模型应传入如 "1772073741" 格式的时间戳，代码会自动处理转换
+const TimeFields = {
+  start_time: Type.String({
+    description: "开始时间，Unix时间戳(秒)，如 1772073600（对应 2026-02-26 00:00:00 北京时间）",
+  }),
+  end_time: Type.String({
+    description: "结束时间，Unix时间戳(秒)，如 1772159999（对应 2026-02-26 23:59:59 北京时间）",
+  }),
 };
 
 export const FeishuCalendarSchema = Type.Union([
@@ -35,8 +38,7 @@ export const FeishuCalendarSchema = Type.Union([
         description: "日历ID，不填则自动获取主日历",
       })
     ),
-    start_time: Type.String({ description: "开始时间，Unix时间戳(秒)" }),
-    end_time: Type.String({ description: "结束时间，Unix时间戳(秒)" }),
+    ...TimeFields,
     page_size: Type.Optional(
       Type.Number({ description: "每页数量，默认50" })
     ),
@@ -76,8 +78,7 @@ export const FeishuCalendarSchema = Type.Union([
       })
     ),
     summary: Type.String({ description: "日程标题" }),
-    start_time: Type.String({ description: "开始时间，Unix时间戳(秒)" }),
-    end_time: Type.String({ description: "结束时间，Unix时间戳(秒)" }),
+    ...TimeFields,
     description: Type.Optional(Type.String({ description: "日程描述" })),
     location: Type.Optional(Type.String({ description: "地点名称" })),
     need_notification: Type.Optional(

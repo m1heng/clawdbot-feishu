@@ -11,6 +11,7 @@ description: Feishu calendar operations using user_access_token. Activate when u
 - 日历功能必须使用用户级 `user_access_token`（以 `u-` 开头）
 - 不能使用机器人应用的 `app_key` 访问用户个人日程
 - 插件内置 refresh_token 自动续期机制，用户提供一次 token 后可自动续期约30天
+- **时间参数可以直接传入自然语言，代码会自动转换为 Unix 时间戳**
 
 ## Token 管理流程（必须严格遵守）
 
@@ -84,10 +85,72 @@ description: Feishu calendar operations using user_access_token. Activate when u
   2. 提示: "您的授权已过期（约30天），请重新提供 token"
 ```
 
+## 时间参数自动转换（重要）
+
+**插件会自动将自然语言时间转换为 Unix 时间戳**，无需模型手动计算。
+
+### 支持的时间格式
+
+| 用户输入 | 转换结果 | 说明 |
+|---------|---------|------|
+| `今天下午3点半` | `start_time: 1772073600`（当日15:30）| 代码自动解析 |
+| `今天上午9点` | 当天 09:00 | 支持上午/下午 |
+| `明天` | 明天 00:00 | 仅日期 |
+| `明天上午10点到11点半` | 自动解析为两个时间戳 | 结束时间自动估算 |
+| `本周五下午2点` | 本周五 14:00 | 周几 + 时间 |
+| `2026-02-26 15:30` | 解析为时间戳 | 标准日期格式 |
+| `1772073600` | 直接使用 | Unix时间戳 |
+
+### 使用示例
+
+**不要手动计算时间戳**，直接传入自然语言：
+
+```json
+// ❌ 错误：手动计算时间容易出错
+{
+  "action": "create_event",
+  "user_access_token": "u-xxx",
+  "summary": "团队会议",
+  "start_time": "1772073600",
+  "end_time": "1772077200"
+}
+
+// ✅ 正确：直接传入自然语言，代码自动转换
+{
+  "action": "create_event",
+  "user_access_token": "u-xxx",
+  "summary": "团队会议",
+  "start_time": "今天下午3点半",
+  "end_time": "今天下午4点"
+}
+
+// ✅ 也正确：只传开始时间，代码自动估算结束时间（1小时）
+{
+  "action": "create_event",
+  "user_access_token": "u-xxx",
+  "summary": "团队会议",
+  "start_time": "今天下午3点半"
+}
+```
+
+### 持续时间支持
+
+如果只提供开始时间，结束时间会自动估算（默认1小时）：
+
+```json
+{
+  "action": "create_event",
+  "user_access_token": "u-xxx",
+  "summary": "1小时会议",
+  "start_time": "今天上午10点"
+  // 结束时间自动设为 11:00
+}
+```
+
 ## 标准使用流程
 
 1. **Token 检查** (从全局记忆获取，或请求用户提供)
-2. 调用 `get_primary` 获取主日历 `calendar_id`
+2. 调用 `get_primary` 获取主日历 `calendar_id`（可选，工具会自动获取）
 3. 使用 `calendar_id` 调用其他操作
 
 ## Actions
@@ -109,10 +172,14 @@ description: Feishu calendar operations using user_access_token. Activate when u
 {
   "action": "list_events",
   "user_access_token": "u-xxxxx",
-  "start_time": "1769961600",
-  "end_time": "1770566399"
+  "start_time": "今天",
+  "end_time": "明天"
 }
 ```
+
+**推荐使用自然语言**：
+- `start_time`: "今天"、"明天"、"本周一" 等
+- `end_time`: "今天"、"明天"、"后天" 等
 
 指定日历（可选）:
 ```json
@@ -120,14 +187,12 @@ description: Feishu calendar operations using user_access_token. Activate when u
   "action": "list_events",
   "user_access_token": "u-xxxxx",
   "calendar_id": "feishu.cn_xxx@group.calendar.feishu.cn",
-  "start_time": "1769961600",
-  "end_time": "1770566399",
-  "page_size": 50
+  "start_time": "今天",
+  "end_time": "今天"
 }
 ```
 
 **注意**:
-- 时间为 Unix 时间戳（秒）
 - 如果不提供 `calendar_id`，自动获取主日历
 - 已取消的日程会被自动过滤
 - 重复性日程会被过滤，只保留实际发生在时间范围内的日程
@@ -163,20 +228,22 @@ description: Feishu calendar operations using user_access_token. Activate when u
   "action": "search_events",
   "user_access_token": "u-xxxxx",
   "query": "周会",
-  "start_time": "1769961600",
-  "end_time": "1770566399"
+  "start_time": "本周",
+  "end_time": "下周"
 }
 ```
 
 ### 创建日程
+
+**推荐使用自然语言时间**：
 
 ```json
 {
   "action": "create_event",
   "user_access_token": "u-xxxxx",
   "summary": "团队周会",
-  "start_time": "1770048000",
-  "end_time": "1770051600"
+  "start_time": "今天下午3点半",
+  "end_time": "今天下午4点半"
 }
 ```
 
@@ -187,8 +254,8 @@ description: Feishu calendar operations using user_access_token. Activate when u
   "user_access_token": "u-xxxxx",
   "calendar_id": "feishu.cn_xxx@group.calendar.feishu.cn",
   "summary": "团队周会",
-  "start_time": "1770048000",
-  "end_time": "1770051600",
+  "start_time": "今天下午3点半",
+  "end_time": "今天下午4点半",
   "description": "讨论项目进展",
   "location": "301会议室",
   "need_notification": true,
@@ -204,8 +271,8 @@ description: Feishu calendar operations using user_access_token. Activate when u
 | 参数 | 必填 | 说明 |
 |------|------|------|
 | `summary` | ✅ | 日程标题 |
-| `start_time` | ✅ | 开始时间（Unix 时间戳秒） |
-| `end_time` | ✅ | 结束时间（Unix 时间戳秒） |
+| `start_time` | ✅ | 开始时间（支持自然语言如"今天下午3点半"或Unix时间戳） |
+| `end_time` | ✅ | 结束时间（支持自然语言如"今天下午4点半"或Unix时间戳） |
 | `calendar_id` | ❌ | 日历 ID，不填使用主日历 |
 | `description` | ❌ | 日程描述 |
 | `location` | ❌ | 地点名称 |
@@ -227,11 +294,8 @@ description: Feishu calendar operations using user_access_token. Activate when u
   "calendar_id": "feishu.cn_xxx@group.calendar.feishu.cn",
   "event_id": "a8e131a1-3747-48e2-a808-683cdbcddf0b_0",
   "summary": "团队周会（改期）",
-  "start_time": "1770134400",
-  "end_time": "1770138000",
-  "description": "讨论项目进展",
-  "location": "401会议室",
-  "need_notification": true
+  "start_time": "明天下午3点",
+  "end_time": "明天下午4点"
 }
 ```
 
@@ -271,9 +335,10 @@ description: Feishu calendar operations using user_access_token. Activate when u
 | `FREQ=WEEKLY;INTERVAL=2;BYDAY=TH` | 每两周的周四 |
 | `FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=15` | 每月15日 |
 
-## 时间格式
+## 时间格式总结
 
-所有时间参数使用 **Unix 时间戳（秒）**。
+- **推荐**：直接使用自然语言（"今天下午3点半"），代码会自动转换
+- **也支持**：Unix 时间戳（秒），如 `1772073600`
 
 常用时间戳示例（北京时间）：
 | 日期 | 时间戳 |
@@ -286,15 +351,20 @@ description: Feishu calendar operations using user_access_token. Activate when u
 ### 查看本周日程
 
 ```
-1. get_primary → 获取 calendar_id
-2. list_events → 使用本周时间范围查询
+1. list_events → start_time: "今天", end_time: "下周今天"
 ```
 
-### 搜索特定会议
+### 创建今天下午3点的会议
 
 ```
-1. search_events → 使用关键词搜索
-2. get_event → 获取详细信息（如需要）
+1. create_event → start_time: "今天下午3点", end_time: "今天下午4点"
+（结束时间会自动估算）
+```
+
+### 查看指定日期的日程
+
+```
+1. list_events → start_time: "2026-02-26", end_time: "2026-02-27"
 ```
 
 ## 返回字段说明
