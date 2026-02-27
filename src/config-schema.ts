@@ -112,6 +112,7 @@ const FeishuToolsConfigSchema = z
     minutes: z.boolean().optional(), // Minutes transcript (default: false, requires user auth)
     search: z.boolean().optional(), // Document/wiki search (default: false, requires user auth)
     userAuth: z.boolean().optional(), // User OAuth management (default: false)
+    calendar: z.boolean().optional(), // Calendar and schedule operations (default: false, requires user auth)
   })
   .strict()
   .optional();

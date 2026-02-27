@@ -15,6 +15,7 @@ export const DEFAULT_TOOLS_CONFIG: Required<FeishuToolsConfig> = {
   minutes: false,
   search: false,
   userAuth: false,
+  calendar: false,
 };
 
 /**

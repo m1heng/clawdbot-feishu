@@ -72,6 +72,7 @@ export type FeishuToolsConfig = {
   minutes?: boolean;
   search?: boolean;
   userAuth?: boolean;
+  calendar?: boolean;
 };
 
 export type DynamicAgentCreationConfig = {

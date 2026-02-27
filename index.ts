@@ -11,6 +11,7 @@ import { registerFeishuTaskTools } from "./src/task-tools/index.js";
 import { registerFeishuUserAuthTools } from "./src/user-auth-tool.js";
 import { registerFeishuMinutesTools } from "./src/minutes.js";
 import { registerFeishuSearchTools } from "./src/search.js";
+import { registerFeishuCalendarTools } from "./src/calendar.js";
 
 export { monitorFeishuProvider } from "./src/monitor.js";
 export {
@@ -65,6 +66,7 @@ const plugin = {
     registerFeishuUserAuthTools(api);
     registerFeishuMinutesTools(api);
     registerFeishuSearchTools(api);
+    registerFeishuCalendarTools(api);
   },
 };
 

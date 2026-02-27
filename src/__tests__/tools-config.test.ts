@@ -13,6 +13,7 @@ describe("tools-config", () => {
       minutes: false,
       search: false,
       userAuth: false,
+      calendar: false,
     });
   });
 
@@ -27,6 +28,7 @@ describe("tools-config", () => {
       minutes: false,
       search: false,
       userAuth: false,
+      calendar: false,
     });
   });
 });
