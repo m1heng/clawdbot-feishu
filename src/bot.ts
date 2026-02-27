@@ -99,6 +99,137 @@ type SenderNameResult = {
   permissionError?: PermissionError;
 };
 
+type FeishuPairingApiMode = "legacy" | "scoped";
+let detectedFeishuPairingApiMode: FeishuPairingApiMode | null = null;
+
+async function resolveFeishuPairingApiMode(params: {
+  readAllowFromStore: (...args: any[]) => Promise<Array<string | number>>;
+}): Promise<FeishuPairingApiMode> {
+  if (detectedFeishuPairingApiMode) return detectedFeishuPairingApiMode;
+
+  let channelObserved = false;
+  const probe = new Proxy<Record<PropertyKey, unknown>>(
+    {},
+    {
+      get(_target, prop) {
+        if (prop === "channel") {
+          channelObserved = true;
+          return "__feishu_pairing_probe__";
+        }
+        if (prop === "accountId") return "__feishu_pairing_probe__";
+        if (prop === "env") return undefined;
+        if (prop === Symbol.toPrimitive) return () => "__feishu_pairing_probe__";
+        if (prop === "toString") return () => "__feishu_pairing_probe__";
+        return undefined;
+      },
+      has(_target, prop) {
+        if (prop === "channel") {
+          channelObserved = true;
+          return true;
+        }
+        return false;
+      },
+    },
+  );
+
+  try {
+    // Probe once to detect whether runtime reads object-style params (scoped API)
+    // or positional params (legacy API).
+    await params.readAllowFromStore(probe as any, undefined, "__feishu_pairing_probe__");
+  } catch {
+    // Ignore probe errors; fallback below still keeps behavior safe.
+  }
+
+  detectedFeishuPairingApiMode = channelObserved ? "scoped" : "legacy";
+  return detectedFeishuPairingApiMode;
+}
+
+async function readFeishuPairingAllowFrom(params: {
+  core: ReturnType<typeof getFeishuRuntime>;
+  accountId: string;
+}): Promise<Array<string | number>> {
+  const pairing = params.core.channel.pairing as {
+    readAllowFromStore: (...args: any[]) => Promise<Array<string | number>>;
+  };
+  const pairingMode = await resolveFeishuPairingApiMode({
+    readAllowFromStore: pairing.readAllowFromStore,
+  });
+
+  if (pairingMode === "scoped") {
+    try {
+      return await pairing.readAllowFromStore({
+        channel: "feishu",
+        accountId: params.accountId,
+      });
+    } catch {
+      // Compatibility fallback for older OpenClaw implementations.
+      return await pairing.readAllowFromStore("feishu", undefined, params.accountId);
+    }
+  }
+
+  try {
+    // OpenClaw <= 2026.2.19 signature: readAllowFromStore(channel, env?, accountId?)
+    return await pairing.readAllowFromStore("feishu", undefined, params.accountId);
+  } catch {
+    // Compatibility fallback for newer OpenClaw implementations.
+    return await pairing.readAllowFromStore({
+      channel: "feishu",
+      accountId: params.accountId,
+    });
+  }
+}
+
+async function upsertFeishuPairingRequest(params: {
+  core: ReturnType<typeof getFeishuRuntime>;
+  accountId: string;
+  senderId: string;
+  senderName?: string;
+}): Promise<{ code: string; created: boolean }> {
+  const pairing = params.core.channel.pairing as {
+    upsertPairingRequest: (...args: any[]) => Promise<{ code: string; created: boolean }>;
+  };
+  const meta = params.senderName ? { name: params.senderName } : undefined;
+  const pairingMode = await resolveFeishuPairingApiMode({
+    readAllowFromStore: params.core.channel.pairing.readAllowFromStore as (...args: any[]) => Promise<
+      Array<string | number>
+    >,
+  });
+
+  if (pairingMode === "scoped") {
+    try {
+      return await pairing.upsertPairingRequest({
+        channel: "feishu",
+        id: params.senderId,
+        accountId: params.accountId,
+        meta,
+      });
+    } catch {
+      // Compatibility fallback for older OpenClaw implementations.
+      return await pairing.upsertPairingRequest({
+        channel: "feishu",
+        id: params.senderId,
+        meta,
+      });
+    }
+  }
+
+  try {
+    return await pairing.upsertPairingRequest({
+      channel: "feishu",
+      id: params.senderId,
+      meta,
+    });
+  } catch {
+    // Compatibility fallback for newer OpenClaw implementations.
+    return await pairing.upsertPairingRequest({
+      channel: "feishu",
+      id: params.senderId,
+      accountId: params.accountId,
+      meta,
+    });
+  }
+}
+
 async function resolveFeishuSenderName(params: {
   account: ResolvedFeishuAccount;
   senderOpenId: string;
@@ -679,7 +810,10 @@ export async function handleFeishuMessage(params: {
     const hasControlCommand = core.channel.text.hasControlCommand(ctx.content, cfg);
     const storeAllowFrom =
       !isGroup && (dmPolicy !== "open" || shouldComputeCommandAuthorized)
-        ? await core.channel.pairing.readAllowFromStore("feishu").catch(() => [])
+        ? await readFeishuPairingAllowFrom({
+            core,
+            accountId: account.accountId,
+          }).catch(() => [])
         : [];
     const effectiveDmAllowFrom = [...configAllowFrom, ...storeAllowFrom];
     const dmAllowed = resolveFeishuAllowlistMatch({
@@ -690,10 +824,11 @@ export async function handleFeishuMessage(params: {
 
     if (!isGroup && dmPolicy !== "open" && !dmAllowed) {
       if (dmPolicy === "pairing") {
-        const { code, created } = await core.channel.pairing.upsertPairingRequest({
-          channel: "feishu",
-          id: ctx.senderOpenId,
-          meta: { name: ctx.senderName },
+        const { code, created } = await upsertFeishuPairingRequest({
+          core,
+          accountId: account.accountId,
+          senderId: ctx.senderOpenId,
+          senderName: ctx.senderName,
         });
         if (created) {
           log(`feishu[${account.accountId}]: pairing request sender=${ctx.senderOpenId}`);
