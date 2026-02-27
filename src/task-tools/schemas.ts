@@ -300,12 +300,10 @@ export const CreateTaskSchema = Type.Object({
   ),
 });
 
-export const CreateSubtaskSchema = Type.Intersect([
-  Type.Object({
-    task_guid: Type.String({ description: "Parent task GUID" }),
-  }),
-  CreateTaskSchema,
-]);
+export const CreateSubtaskSchema = Type.Object({
+  task_guid: Type.String({ description: "Parent task GUID" }),
+  ...CreateTaskSchema.properties,
+});
 
 export const DeleteTaskSchema = Type.Object({
   task_guid: Type.String({ description: "Task GUID to delete" }),
