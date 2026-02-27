@@ -44,6 +44,7 @@ export {
   type MentionTarget,
 } from "./src/mention.js";
 export { feishuPlugin } from "./src/channel.js";
+export { syncFeishuChatNames, type SyncNamesOptions, type SyncNamesResult } from "./src/sync-names.js";
 
 const plugin = {
   id: "feishu",
