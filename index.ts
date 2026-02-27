@@ -8,6 +8,10 @@ import { registerFeishuDriveTools } from "./src/drive-tools/index.js";
 import { registerFeishuPermTools } from "./src/perm-tools/index.js";
 import { registerFeishuBitableTools } from "./src/bitable-tools/index.js";
 import { registerFeishuTaskTools } from "./src/task-tools/index.js";
+import { registerFeishuUserAuthTools } from "./src/user-auth-tool.js";
+import { registerFeishuMinutesTools } from "./src/minutes.js";
+import { registerFeishuSearchTools } from "./src/search.js";
+import { registerFeishuCalendarTools } from "./src/calendar.js";
 
 export { monitorFeishuProvider } from "./src/monitor.js";
 export {
@@ -59,6 +63,10 @@ const plugin = {
     registerFeishuPermTools(api);
     registerFeishuBitableTools(api);
     registerFeishuTaskTools(api);
+    registerFeishuUserAuthTools(api);
+    registerFeishuMinutesTools(api);
+    registerFeishuSearchTools(api);
+    registerFeishuCalendarTools(api);
   },
 };
 

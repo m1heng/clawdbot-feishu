@@ -10,6 +10,10 @@ describe("tools-config", () => {
       perm: false,
       scopes: true,
       task: true,
+      minutes: false,
+      search: false,
+      userAuth: false,
+      calendar: false,
     });
   });
 
@@ -21,6 +25,10 @@ describe("tools-config", () => {
       perm: true,
       scopes: true,
       task: false,
+      minutes: false,
+      search: false,
+      userAuth: false,
+      calendar: false,
     });
   });
 });
