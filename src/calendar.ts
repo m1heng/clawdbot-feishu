@@ -15,12 +15,28 @@ function json(data: unknown) {
 
 function toSecondsString(input: string): string {
   const value = input.trim();
-  if (/^\d+$/.test(value)) return value;
+  if (/^\d+$/.test(value)) {
+    // Accept both seconds and milliseconds.
+    if (value.length >= 13) return String(Math.floor(Number(value) / 1000));
+    return value;
+  }
+
+  // Parse date-only string in local timezone to avoid UTC-date drift.
+  const dateOnlyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const localDate = new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0, 0);
+    return String(Math.floor(localDate.getTime() / 1000));
+  }
 
   const parsed = Date.parse(value);
   if (!Number.isNaN(parsed)) return String(Math.floor(parsed / 1000));
 
   throw new Error(`Invalid time format: ${input}`);
+}
+
+function isDateOnlyString(input: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(input.trim());
 }
 
 function normalizeEventTime(input: string | { date?: string; timestamp?: string; timezone?: string }) {
@@ -36,6 +52,55 @@ function normalizeEventTime(input: string | { date?: string; timestamp?: string;
   }
 
   return { timestamp: toSecondsString(input) };
+}
+
+function parseLocalDateTimeToSeconds(input: string): string {
+  const raw = input.trim();
+  const localMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (localMatch) {
+    const [, year, month, day, hour, minute, second] = localMatch;
+    const d = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second ?? "0"),
+      0,
+    );
+    return String(Math.floor(d.getTime() / 1000));
+  }
+
+  return toSecondsString(raw);
+}
+
+function normalizeEventTimeWithPreferredString(params: {
+  preferred?: string;
+  legacy?: string | { date?: string; timestamp?: string; timezone?: string };
+  timezone?: string;
+  fieldName: string;
+}) {
+  const { preferred, legacy, timezone, fieldName } = params;
+  if (preferred) {
+    return {
+      timestamp: parseLocalDateTimeToSeconds(preferred),
+      ...(timezone ? { timezone } : {}),
+    };
+  }
+  if (legacy !== undefined) {
+    const normalized = normalizeEventTime(legacy);
+    if (
+      timezone &&
+      typeof normalized === "object" &&
+      normalized !== null &&
+      "timestamp" in normalized &&
+      (normalized as { timestamp?: string }).timestamp
+    ) {
+      return { ...(normalized as { timestamp: string }), timezone };
+    }
+    return normalized;
+  }
+  throw new Error(`${fieldName} is required`);
 }
 
 function defaultThisWeekRange() {
@@ -54,6 +119,50 @@ function defaultThisWeekRange() {
     start: String(Math.floor(weekStart.getTime() / 1000)),
     end: String(Math.floor(weekEnd.getTime() / 1000)),
   };
+}
+
+function parseDateOnlyToSeconds(date: string): number {
+  const m = date.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) throw new Error(`Invalid date format: ${date}. Expected YYYY-MM-DD`);
+  const [, year, month, day] = m;
+  const d = new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0, 0);
+  return Math.floor(d.getTime() / 1000);
+}
+
+function getDateRangeByKeyword(keyword: "today" | "tomorrow" | "this_week" | "next_week"): {
+  start: number;
+  end: number;
+} {
+  const now = new Date();
+  const day = now.getDay();
+  const diffToMonday = (day + 6) % 7;
+
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+
+  if (keyword === "today") {
+    const end = new Date(todayStart);
+    end.setDate(todayStart.getDate() + 1);
+    return { start: Math.floor(todayStart.getTime() / 1000), end: Math.floor(end.getTime() / 1000) };
+  }
+
+  if (keyword === "tomorrow") {
+    const start = new Date(todayStart);
+    start.setDate(todayStart.getDate() + 1);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1);
+    return { start: Math.floor(start.getTime() / 1000), end: Math.floor(end.getTime() / 1000) };
+  }
+
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - diffToMonday);
+  weekStart.setHours(0, 0, 0, 0);
+  if (keyword === "next_week") {
+    weekStart.setDate(weekStart.getDate() + 7);
+  }
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 7);
+  return { start: Math.floor(weekStart.getTime() / 1000), end: Math.floor(weekEnd.getTime() / 1000) };
 }
 
 async function requestWithUserToken(
@@ -77,18 +186,36 @@ async function resolvePrimaryCalendarId(
   client: Lark.Client,
   userAccessToken: string,
   userIdType?: "open_id" | "union_id" | "user_id",
+  log?: (message: string) => void,
 ): Promise<string> {
-  const params = new URLSearchParams();
-  if (userIdType) params.set("user_id_type", userIdType);
-  const suffix = params.toString();
-  const data = await requestWithUserToken(client, userAccessToken, {
-    url: `open-apis/calendar/v4/calendars/primary${suffix ? `?${suffix}` : ""}`,
+  try {
+    const params = new URLSearchParams();
+    if (userIdType) params.set("user_id_type", userIdType);
+    const suffix = params.toString();
+    const data = await requestWithUserToken(client, userAccessToken, {
+      url: `open-apis/calendar/v4/calendars/primary${suffix ? `?${suffix}` : ""}`,
+      method: "GET",
+    });
+
+    const calendarId = (data as { calendar?: { calendar_id?: string } })?.calendar?.calendar_id;
+    if (calendarId) return calendarId;
+  } catch (err) {
+    log?.(`feishu_calendar: primary calendar lookup failed, fallback to list. err=${String(err)}`);
+  }
+
+  const listData = await requestWithUserToken(client, userAccessToken, {
+    url: "open-apis/calendar/v4/calendars?page_size=50",
     method: "GET",
   });
 
-  const calendarId = (data as { calendar?: { calendar_id?: string } })?.calendar?.calendar_id;
+  const calendars = (listData as { calendar_list?: Array<{ calendar_id?: string; role?: string }> })
+    ?.calendar_list ?? [];
+  const preferred = calendars.find((item) => item.calendar_id && item.role && item.role !== "reader");
+  const fallback = calendars.find((item) => item.calendar_id);
+  const calendarId = preferred?.calendar_id ?? fallback?.calendar_id;
+
   if (!calendarId) {
-    throw new Error("Failed to resolve primary calendar ID");
+    throw new Error("Failed to resolve calendar_id (primary endpoint unavailable and no visible calendars found)");
   }
   return calendarId;
 }
@@ -156,19 +283,28 @@ export function registerFeishuCalendarTools(api: OpenClawPluginApi) {
             }
 
             case "calendar_primary": {
-              const query = new URLSearchParams();
-              if (p.user_id_type) query.set("user_id_type", p.user_id_type);
-
-              const data = await requestWithUserToken(client, userAccessToken, {
-                url: `open-apis/calendar/v4/calendars/primary${query.size > 0 ? `?${query.toString()}` : ""}`,
-                method: "GET",
+              const calendarId = await resolvePrimaryCalendarId(
+                client,
+                userAccessToken,
+                p.user_id_type,
+                (msg) => api.logger.warn?.(msg),
+              );
+              return json({
+                calendar: {
+                  calendar_id: calendarId,
+                },
               });
-              return json(data);
             }
 
             case "event_list": {
               const calendarId =
-                p.calendar_id ?? (await resolvePrimaryCalendarId(client, userAccessToken, p.user_id_type));
+                p.calendar_id ??
+                (await resolvePrimaryCalendarId(
+                  client,
+                  userAccessToken,
+                  p.user_id_type,
+                  (msg) => api.logger.warn?.(msg),
+                ));
               const query = new URLSearchParams();
               query.set("page_size", String(p.page_size ?? 50));
               if (p.page_token) query.set("page_token", p.page_token);
@@ -176,9 +312,48 @@ export function registerFeishuCalendarTools(api: OpenClawPluginApi) {
               if (p.anchor_time) query.set("anchor_time", toSecondsString(p.anchor_time));
               if (p.user_id_type) query.set("user_id_type", p.user_id_type);
 
-              if (p.start_time || p.end_time) {
-                if (p.start_time) query.set("start_time", toSecondsString(p.start_time));
-                if (p.end_time) query.set("end_time", toSecondsString(p.end_time));
+              if (p.date) {
+                const startSec = parseDateOnlyToSeconds(p.date);
+                query.set("start_time", String(startSec));
+                query.set("end_time", String(startSec + 24 * 60 * 60));
+              } else if (p.start_date || p.end_date) {
+                if (p.start_date && p.end_date) {
+                  query.set("start_time", String(parseDateOnlyToSeconds(p.start_date)));
+                  query.set("end_time", String(parseDateOnlyToSeconds(p.end_date)));
+                } else if (p.start_date) {
+                  const startSec = parseDateOnlyToSeconds(p.start_date);
+                  query.set("start_time", String(startSec));
+                  query.set("end_time", String(startSec + 24 * 60 * 60));
+                } else if (p.end_date) {
+                  const endSec = parseDateOnlyToSeconds(p.end_date);
+                  query.set("end_time", String(endSec));
+                  query.set("start_time", String(endSec - 24 * 60 * 60));
+                }
+              } else if (p.date_range) {
+                const range = getDateRangeByKeyword(p.date_range);
+                query.set("start_time", String(range.start));
+                query.set("end_time", String(range.end));
+              } else if (p.start_time || p.end_time) {
+                const hasStart = Boolean(p.start_time);
+                const hasEnd = Boolean(p.end_time);
+
+                if (hasStart && hasEnd) {
+                  query.set("start_time", toSecondsString(p.start_time!));
+                  query.set("end_time", toSecondsString(p.end_time!));
+                } else if (hasStart) {
+                  const startSec = Number(toSecondsString(p.start_time!));
+                  query.set("start_time", String(startSec));
+                  // For date-only input (e.g. "2026-02-27"), infer one-day range.
+                  if (isDateOnlyString(p.start_time!)) {
+                    query.set("end_time", String(startSec + 24 * 60 * 60));
+                  }
+                } else if (hasEnd) {
+                  const endSec = Number(toSecondsString(p.end_time!));
+                  query.set("end_time", String(endSec));
+                  if (isDateOnlyString(p.end_time!)) {
+                    query.set("start_time", String(endSec - 24 * 60 * 60));
+                  }
+                }
               } else {
                 const range = defaultThisWeekRange();
                 query.set("start_time", range.start);
@@ -194,7 +369,13 @@ export function registerFeishuCalendarTools(api: OpenClawPluginApi) {
 
             case "event_get": {
               const calendarId =
-                p.calendar_id ?? (await resolvePrimaryCalendarId(client, userAccessToken, p.user_id_type));
+                p.calendar_id ??
+                (await resolvePrimaryCalendarId(
+                  client,
+                  userAccessToken,
+                  p.user_id_type,
+                  (msg) => api.logger.warn?.(msg),
+                ));
               const query = new URLSearchParams();
               query.set("need_meeting_settings", String(p.need_meeting_settings ?? false));
               query.set("need_attendee", String(p.need_attendee ?? true));
@@ -210,14 +391,30 @@ export function registerFeishuCalendarTools(api: OpenClawPluginApi) {
 
             case "event_create": {
               const calendarId =
-                p.calendar_id ?? (await resolvePrimaryCalendarId(client, userAccessToken, p.user_id_type));
+                p.calendar_id ??
+                (await resolvePrimaryCalendarId(
+                  client,
+                  userAccessToken,
+                  p.user_id_type,
+                  (msg) => api.logger.warn?.(msg),
+                ));
               const query = new URLSearchParams();
               if (p.user_id_type) query.set("user_id_type", p.user_id_type);
 
               const body: Record<string, unknown> = {
                 summary: p.summary,
-                start_time: normalizeEventTime(p.start_time),
-                end_time: normalizeEventTime(p.end_time),
+                start_time: normalizeEventTimeWithPreferredString({
+                  preferred: p.start_at,
+                  legacy: p.start_time,
+                  timezone: p.timezone,
+                  fieldName: "start_at/start_time",
+                }),
+                end_time: normalizeEventTimeWithPreferredString({
+                  preferred: p.end_at,
+                  legacy: p.end_time,
+                  timezone: p.timezone,
+                  fieldName: "end_at/end_time",
+                }),
               };
 
               if (p.description !== undefined) body.description = p.description;
@@ -244,7 +441,13 @@ export function registerFeishuCalendarTools(api: OpenClawPluginApi) {
 
             case "event_update": {
               const calendarId =
-                p.calendar_id ?? (await resolvePrimaryCalendarId(client, userAccessToken, p.user_id_type));
+                p.calendar_id ??
+                (await resolvePrimaryCalendarId(
+                  client,
+                  userAccessToken,
+                  p.user_id_type,
+                  (msg) => api.logger.warn?.(msg),
+                ));
               const query = new URLSearchParams();
               if (p.user_id_type) query.set("user_id_type", p.user_id_type);
 
@@ -252,6 +455,10 @@ export function registerFeishuCalendarTools(api: OpenClawPluginApi) {
               if (Object.values(dataPatch).every((value) => value === undefined)) {
                 return json({ error: "data must include at least one field to update" });
               }
+
+              const patchStartAt = typeof dataPatch.start_at === "string" ? dataPatch.start_at : undefined;
+              const patchEndAt = typeof dataPatch.end_at === "string" ? dataPatch.end_at : undefined;
+              const patchTimezone = typeof dataPatch.timezone === "string" ? dataPatch.timezone : undefined;
 
               const body = {
                 ...dataPatch,
@@ -265,7 +472,25 @@ export function registerFeishuCalendarTools(api: OpenClawPluginApi) {
                     dataPatch.end_time as string | { date?: string; timestamp?: string; timezone?: string },
                   ),
                 }),
+                ...(patchStartAt && {
+                  start_time: normalizeEventTimeWithPreferredString({
+                    preferred: patchStartAt,
+                    timezone: patchTimezone,
+                    fieldName: "data.start_at",
+                  }),
+                }),
+                ...(patchEndAt && {
+                  end_time: normalizeEventTimeWithPreferredString({
+                    preferred: patchEndAt,
+                    timezone: patchTimezone,
+                    fieldName: "data.end_at",
+                  }),
+                }),
               };
+
+              delete (body as Record<string, unknown>).start_at;
+              delete (body as Record<string, unknown>).end_at;
+              delete (body as Record<string, unknown>).timezone;
 
               const data = await requestWithUserToken(client, userAccessToken, {
                 url: `open-apis/calendar/v4/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(p.event_id)}${query.size > 0 ? `?${query.toString()}` : ""}`,
@@ -277,7 +502,13 @@ export function registerFeishuCalendarTools(api: OpenClawPluginApi) {
 
             case "event_delete": {
               const calendarId =
-                p.calendar_id ?? (await resolvePrimaryCalendarId(client, userAccessToken, p.user_id_type));
+                p.calendar_id ??
+                (await resolvePrimaryCalendarId(
+                  client,
+                  userAccessToken,
+                  p.user_id_type,
+                  (msg) => api.logger.warn?.(msg),
+                ));
               const query = new URLSearchParams();
               query.set("need_notification", String(p.need_notification ?? true));
 

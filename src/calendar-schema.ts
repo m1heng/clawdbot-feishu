@@ -37,6 +37,24 @@ const EventPatchDataSchema = Type.Object({
   need_notification: Type.Optional(Type.Boolean({ description: "Whether to send notifications to attendees" })),
   start_time: Type.Optional(EventTimeObjectSchema),
   end_time: Type.Optional(EventTimeObjectSchema),
+  start_at: Type.Optional(
+    Type.String({
+      description:
+        "Preferred: local datetime string for new start time, e.g. '2026-03-01 09:30' or RFC3339.",
+    }),
+  ),
+  end_at: Type.Optional(
+    Type.String({
+      description:
+        "Preferred: local datetime string for new end time, e.g. '2026-03-01 10:30' or RFC3339.",
+    }),
+  ),
+  timezone: Type.Optional(
+    Type.String({
+      description:
+        "Timezone for start_at/end_at conversion, e.g. 'Asia/Shanghai'. If omitted, server local timezone is used.",
+    }),
+  ),
   visibility: Type.Optional(
     Type.Union([Type.Literal("default"), Type.Literal("public"), Type.Literal("private")], {
       description: "Event visibility",
@@ -77,11 +95,53 @@ export const FeishuCalendarSchema = Type.Union([
     open_id: Type.String({ description: "The user's open_id used to fetch OAuth user token" }),
     calendar_id: Type.Optional(Type.String({ description: "Calendar ID; if omitted, uses primary calendar" })),
     page_size: Type.Optional(Type.Number({ minimum: 50, maximum: 200, description: "Page size (50-200)" })),
-    anchor_time: Type.Optional(Type.String({ description: "RFC3339 or Unix timestamp in seconds" })),
+    date: Type.Optional(
+      Type.String({
+        description:
+          "Preferred: target date in YYYY-MM-DD. If set, queries that day only (00:00-24:00 local time).",
+      }),
+    ),
+    date_range: Type.Optional(
+      Type.Union(
+        [
+          Type.Literal("today"),
+          Type.Literal("tomorrow"),
+          Type.Literal("this_week"),
+          Type.Literal("next_week"),
+        ],
+        {
+          description:
+            "Preferred: relative date range. today/tomorrow/this_week/next_week. Ignored if date is set.",
+        },
+      ),
+    ),
+    start_date: Type.Optional(
+      Type.String({
+        description:
+          "Preferred: start date in YYYY-MM-DD. Used with end_date; if end_date omitted, defaults to +1 day.",
+      }),
+    ),
+    end_date: Type.Optional(
+      Type.String({
+        description:
+          "Preferred: end date in YYYY-MM-DD. Used with start_date; if start_date omitted, defaults to -1 day.",
+      }),
+    ),
+    anchor_time: Type.Optional(Type.String({ description: "RFC3339, YYYY-MM-DD, or Unix timestamp (seconds/milliseconds)" })),
     page_token: Type.Optional(Type.String({ description: "Pagination token from previous response" })),
     sync_token: Type.Optional(Type.String({ description: "Incremental sync token from previous response" })),
-    start_time: Type.Optional(Type.String({ description: "RFC3339 or Unix timestamp in seconds" })),
-    end_time: Type.Optional(Type.String({ description: "RFC3339 or Unix timestamp in seconds" })),
+    start_time: Type.Optional(
+      Type.String({
+        description:
+          "Legacy: RFC3339, YYYY-MM-DD, or Unix timestamp (seconds/milliseconds). Prefer date/date_range/start_date.",
+      }),
+    ),
+    end_time: Type.Optional(
+      Type.String({
+        description:
+          "Legacy: RFC3339, YYYY-MM-DD, or Unix timestamp (seconds/milliseconds). Prefer date/date_range/end_date.",
+      }),
+    ),
     user_id_type: Type.Optional(UserIdTypeSchema),
   }),
   Type.Object({
@@ -100,8 +160,34 @@ export const FeishuCalendarSchema = Type.Union([
     calendar_id: Type.Optional(Type.String({ description: "Calendar ID; if omitted, uses primary calendar" })),
     summary: Type.String({ minLength: 1, description: "Event title" }),
     description: Type.Optional(Type.String({ description: "Event description" })),
-    start_time: EventTimeSchema,
-    end_time: EventTimeSchema,
+    start_at: Type.Optional(
+      Type.String({
+        description:
+          "Preferred: local datetime string, e.g. '2026-03-01 09:30' or RFC3339.",
+      }),
+    ),
+    end_at: Type.Optional(
+      Type.String({
+        description:
+          "Preferred: local datetime string, e.g. '2026-03-01 10:30' or RFC3339.",
+      }),
+    ),
+    timezone: Type.Optional(
+      Type.String({
+        description:
+          "Timezone for start_at/end_at conversion, e.g. 'Asia/Shanghai'. If omitted, server local timezone is used.",
+      }),
+    ),
+    start_time: Type.Optional(
+      Type.Union([Type.String(), EventTimeObjectSchema], {
+        description: "Legacy: event start time. Prefer start_at.",
+      }),
+    ),
+    end_time: Type.Optional(
+      Type.Union([Type.String(), EventTimeObjectSchema], {
+        description: "Legacy: event end time. Prefer end_at.",
+      }),
+    ),
     need_notification: Type.Optional(Type.Boolean({ description: "Whether to notify attendees about this creation" })),
     visibility: Type.Optional(
       Type.Union([Type.Literal("default"), Type.Literal("public"), Type.Literal("private")], {
