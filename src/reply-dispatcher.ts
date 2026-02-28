@@ -15,6 +15,10 @@ import { sendMarkdownCardFeishu, sendMessageFeishu } from "./send.js";
 import { FeishuStreamingSession } from "./streaming-card.js";
 import { resolveReceiveIdType } from "./targets.js";
 import { addTypingIndicator, removeTypingIndicator, type TypingIndicatorState } from "./typing.js";
+// Shared history for cross-bot context
+import { recordBotReply } from "./shared-history.js";
+// Bot-to-Bot relay for triggering mentioned bots
+import { triggerBotRelay } from "./bot-relay.js";
 
 /** Detect if text contains markdown elements that benefit from card rendering */
 function shouldUseCard(text: string): boolean {
@@ -193,6 +197,26 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
             });
             first = false;
           }
+        }
+
+        // Record bot reply to shared history (for cross-bot context)
+        // Only record for group chats (chatId starts with "oc_")
+        if (chatId.startsWith("oc_")) {
+          recordBotReply({
+            chatId,
+            messageId: `bot_${Date.now()}_${accountId}`,
+            botAccountId: accountId,
+            botName: account.name ?? accountId,
+            body: text,
+          });
+
+          // Trigger Bot-to-Bot relay if this message mentions other bots
+          void triggerBotRelay({
+            sourceAccountId: accountId,
+            sourceBotName: account.name ?? accountId,
+            chatId,
+            messageText: text,
+          });
         }
       },
       onError: async (error, info) => {

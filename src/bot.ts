@@ -30,6 +30,10 @@ import {
 import { maybeCreateDynamicAgent } from "./dynamic-agent.js";
 import { runWithFeishuToolContext } from "./tools-common/tool-context.js";
 import type { DynamicAgentCreationConfig } from "./types.js";
+// Shared history for cross-bot context
+import { recordUserMessage, buildSharedHistoryContext } from "./shared-history.js";
+// Bot-to-Bot relay for teammate discovery
+import { getTeammatesContext } from "./bot-relay.js";
 
 // --- Permission error extraction ---
 // Extract permission grant URL from Feishu API error response.
@@ -757,6 +761,10 @@ export async function handleFeishuMessage(params: {
   let ctx = parseFeishuMessageEvent(event, botOpenId);
   const isGroup = ctx.chatType === "group";
 
+  // Check if this is a synthetic event from bot-to-bot relay
+  const isSyntheticEvent = (event as any)._synthetic === true;
+  const syntheticSourceBot = (event as any)._sourceBotName as string | undefined;
+
   // Resolve sender display name (best-effort) so the agent can attribute messages correctly.
   const senderResult = await resolveFeishuSenderName({
     account,
@@ -1171,6 +1179,17 @@ export async function handleFeishuMessage(params: {
     let combinedBody = body;
     const historyKey = isGroup ? ctx.chatId : undefined;
 
+    // Record user message to shared history (cross-bot)
+    if (isGroup && ctx.chatId) {
+      recordUserMessage({
+        chatId: ctx.chatId,
+        messageId: ctx.messageId,
+        sender: ctx.senderOpenId,
+        senderName: ctx.senderName,
+        body: ctx.content,
+      });
+    }
+
     if (isGroup && historyKey && chatHistories) {
       combinedBody = buildPendingHistoryContextFromMap({
         historyMap: chatHistories,
@@ -1187,6 +1206,22 @@ export async function handleFeishuMessage(params: {
             envelope: envelopeOptions,
           }),
       });
+    }
+
+    // Inject shared history (includes other bots' replies)
+    if (isGroup && ctx.chatId) {
+      const sharedHistory = buildSharedHistoryContext(ctx.chatId, historyLimit, ctx.messageId);
+      if (sharedHistory) {
+        combinedBody = sharedHistory + "\n" + combinedBody;
+      }
+    }
+
+    // Inject available teammates info (for bot-to-bot collaboration)
+    if (isGroup) {
+      const teammatesInfo = getTeammatesContext(account.accountId);
+      if (teammatesInfo) {
+        combinedBody = combinedBody + "\n" + teammatesInfo;
+      }
     }
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
@@ -1218,7 +1253,8 @@ export async function handleFeishuMessage(params: {
       agentId: route.agentId,
       runtime: runtime as RuntimeEnv,
       chatId: ctx.chatId,
-      replyToMessageId: ctx.messageId,
+      // Don't reply to synthetic messages (from bot-to-bot relay) - they don't have valid message IDs
+      replyToMessageId: isSyntheticEvent ? undefined : ctx.messageId,
       mentionTargets: ctx.mentionTargets,
       accountId: account.accountId,
     });
