@@ -11,6 +11,8 @@ import { createFeishuWSClient, createEventDispatcher } from "./client.js";
 import { resolveFeishuAccount, listEnabledFeishuAccounts } from "./accounts.js";
 import { handleFeishuMessage, type FeishuMessageEvent, type FeishuBotAddedEvent } from "./bot.js";
 import { probeFeishu } from "./probe.js";
+// Bot-to-Bot relay for cross-bot triggering
+import { registerBotForRelay, unregisterBotFromRelay } from "./bot-relay.js";
 
 export type MonitorFeishuOpts = {
   config?: ClawdbotConfig;
@@ -125,6 +127,17 @@ async function monitorSingleAccount(params: MonitorAccountParams): Promise<void>
   const eventDispatcher = createEventDispatcher(account);
   const chatHistories = new Map<string, HistoryEntry[]>();
 
+  // Register bot for cross-bot relay
+  if (botOpenId) {
+    registerBotForRelay({
+      accountId,
+      botOpenId,
+      cfg,
+      runtime,
+      chatHistories,
+    });
+  }
+
   registerEventHandlers(eventDispatcher, {
     cfg,
     accountId,
@@ -159,6 +172,8 @@ async function monitorWebSocket({ params, accountId, eventDispatcher }: Connecti
   return new Promise((resolve, reject) => {
     const cleanup = () => {
       wsClients.delete(accountId);
+      const openId = botOpenIds.get(accountId);
+      if (openId) unregisterBotFromRelay(openId);
       botOpenIds.delete(accountId);
     };
 
@@ -225,6 +240,8 @@ async function monitorWebhook({ params, accountId, eventDispatcher }: Connection
     const cleanup = () => {
       server.close();
       httpServers.delete(accountId);
+      const openId = botOpenIds.get(accountId);
+      if (openId) unregisterBotFromRelay(openId);
       botOpenIds.delete(accountId);
     };
 
