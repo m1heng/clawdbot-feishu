@@ -100,7 +100,7 @@ describe("policy", () => {
       resolveFeishuReplyPolicy({
         isDirectMessage: true,
       }),
-    ).toEqual({ requireMention: false });
+    ).toEqual({ requireMention: false, allowMentionlessInMultiBotGroup: false });
 
     expect(
       resolveFeishuReplyPolicy({
@@ -108,7 +108,7 @@ describe("policy", () => {
         globalConfig: { requireMention: true } as any,
         groupConfig: { requireMention: false } as any,
       }),
-    ).toEqual({ requireMention: false });
+    ).toEqual({ requireMention: false, allowMentionlessInMultiBotGroup: false });
 
     expect(
       resolveFeishuReplyPolicy({
@@ -116,7 +116,25 @@ describe("policy", () => {
         globalConfig: undefined,
         groupConfig: undefined,
       }),
-    ).toEqual({ requireMention: true });
+    ).toEqual({ requireMention: true, allowMentionlessInMultiBotGroup: false });
+  });
+
+  it("resolves mentionless multi-bot policy with group > global > default precedence", () => {
+    expect(
+      resolveFeishuReplyPolicy({
+        isDirectMessage: false,
+        globalConfig: { allowMentionlessInMultiBotGroup: false } as any,
+        groupConfig: { allowMentionlessInMultiBotGroup: true } as any,
+      }),
+    ).toEqual({ requireMention: true, allowMentionlessInMultiBotGroup: true });
+
+    expect(
+      resolveFeishuReplyPolicy({
+        isDirectMessage: false,
+        globalConfig: { requireMention: false, allowMentionlessInMultiBotGroup: true } as any,
+        groupConfig: undefined,
+      }),
+    ).toEqual({ requireMention: false, allowMentionlessInMultiBotGroup: true });
   });
 
   it("resolves command mention bypass with group > global > default precedence", () => {

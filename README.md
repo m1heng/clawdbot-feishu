@@ -91,7 +91,7 @@ openclaw plugins list | rg -i feishu
 | Permission | Scope | Description |
 |------------|-------|-------------|
 | `contact:user.base:readonly` | User info | Get basic user info (required to resolve sender display names for speaker attribution) |
-| `im:message.group_msg` | Group | Read all group messages (sensitive) |
+| `im:message.group_msg` | Group | Read all group messages (sensitive). Required when you want `requireMention: false` to work for non-@ group messages |
 | `im:message:readonly` | Read | Get message history |
 | `im:message:update` | Edit | Update/edit sent messages |
 | `im:message:recall` | Recall | Recall sent messages |
@@ -243,6 +243,10 @@ channels:
     groupPolicy: "allowlist"
     # Require @mention in groups
     requireMention: true
+    # Safety default for mention-free mode (`requireMention: false`):
+    # only allow non-@ messages in groups with <= 1 bot.
+    # Set true to also allow mention-free messages in multi-bot groups.
+    allowMentionlessInMultiBotGroup: false
     # Group command mention bypass: "never" | "single_bot" | "always"
     # Default "single_bot": allow authorized command-only messages without @
     # only when the group has a single bot.
@@ -342,6 +346,19 @@ Notes:
 - Bypass only applies to authorized control commands in group chats.
 - If any user is explicitly `@`-mentioned in the same message, bypass is disabled.
 - In DMs, this setting does not apply.
+
+#### Group Mention-Free Behavior (`requireMention: false`)
+
+When `requireMention: false`, non-@ group messages are handled with a safety default:
+
+| `allowMentionlessInMultiBotGroup` | Behavior for non-@ group messages |
+|-----------------------------------|-----------------------------------|
+| `false` (default) | Only accepted when the group has at most one bot. In multi-bot groups, explicit `@bot` is still required. |
+| `true` | Accepted even in multi-bot groups (use only if you accept duplicate-trigger risk). |
+
+Important:
+- `im:message.group_msg` is required for receiving non-@ group messages and this is a **sensitive permission** in Feishu.
+- If this scope is not approved, Feishu usually only delivers `@bot` group messages (`im:message.group_at_msg:readonly`).
 
 #### Connection Mode
 
@@ -472,6 +489,13 @@ Check the following:
 4. Are the permissions approved?
 5. For webhook mode: is your server running and the URL publicly accessible?
 
+#### `requireMention: false` but group still needs @
+
+Check the following:
+1. Is `im:message.group_msg` approved? (sensitive permission, required for non-@ group messages)
+2. If the group has multiple bots, do you explicitly set `allowMentionlessInMultiBotGroup: true`?
+3. Is `requireMention: false` configured on the effective account/group?
+
 #### 403 error when sending messages
 
 Ensure `im:message:send_as_bot` permission is approved.
@@ -567,7 +591,7 @@ openclaw plugins list | rg -i feishu
 | 权限 | 范围 | 说明 |
 |------|------|------|
 | `contact:user.base:readonly` | 用户信息 | 获取用户基本信息（用于解析发送者姓名，避免群聊/私聊把不同人当成同一说话者） |
-| `im:message.group_msg` | 群聊 | 读取所有群消息（敏感） |
+| `im:message.group_msg` | 群聊 | 读取所有群消息（敏感权限）。当你希望 `requireMention: false` 对“未 @ 的群消息”生效时必需 |
 | `im:message:readonly` | 读取 | 获取历史消息 |
 | `im:message:update` | 编辑 | 更新/编辑已发送消息 |
 | `im:message:recall` | 撤回 | 撤回已发送消息 |
@@ -719,6 +743,10 @@ channels:
     groupPolicy: "allowlist"
     # 群聊是否需要 @机器人
     requireMention: true
+    # 免 @ 安全默认策略（requireMention=false 时）：
+    # 仅在群内机器人数量 <= 1 时处理未 @ 的群消息。
+    # 设为 true 可在多 bot 群也放开免 @（需自行承担重复触发风险）。
+    allowMentionlessInMultiBotGroup: false
     # 群聊命令绕过 @ 策略: "never" | "single_bot" | "always"
     # 默认 "single_bot"：仅当群内机器人数量 <= 1 时，允许已授权命令免 @
     groupCommandMentionBypass: "single_bot"
@@ -817,6 +845,19 @@ channels:
 - 仅对群聊中的“已授权控制命令”生效。
 - 同一条消息里如果显式 `@` 了任意用户，则不会触发命令免 `@`。
 - 私聊场景不受该配置影响。
+
+#### 群聊免 @ 行为（`requireMention: false`）
+
+当 `requireMention: false` 时，插件对“未 @ 的群消息”采用安全默认策略：
+
+| `allowMentionlessInMultiBotGroup` | 未 @ 群消息行为 |
+|-----------------------------------|----------------|
+| `false`（默认） | 仅当群里机器人数量不超过 1 个时处理；多 bot 群仍要求显式 `@bot`。 |
+| `true` | 即使在多 bot 群也处理未 @ 消息（仅建议在可接受重复触发风险时启用）。 |
+
+重要说明：
+- 要接收未 @ 的群消息，必须申请并通过 `im:message.group_msg`，且该权限是飞书**敏感权限**。
+- 若未通过该权限，飞书通常只会推送 `@bot` 群消息（`im:message.group_at_msg:readonly`）。
 
 #### 连接模式
 
@@ -946,6 +987,13 @@ session:
 3. 是否添加了 `im.message.receive_v1` 事件？
 4. 相关权限是否已申请并审核通过？
 5. 如果使用 webhook 模式：服务是否正在运行？URL 是否公网可访问？
+
+#### 已配置 `requireMention: false`，群里仍然必须 @
+
+请重点检查：
+1. 是否已申请并审核通过 `im:message.group_msg`（敏感权限，接收未 @ 群消息必需）
+2. 群里若有多个 bot，是否显式设置了 `allowMentionlessInMultiBotGroup: true`
+3. `requireMention: false` 是否配置在当前生效的账号/群配置上
 
 #### 返回消息时 403 错误
 

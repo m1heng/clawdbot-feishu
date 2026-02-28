@@ -82,15 +82,19 @@ export function resolveFeishuReplyPolicy(params: {
   isDirectMessage: boolean;
   globalConfig?: FeishuConfig;
   groupConfig?: FeishuGroupConfig;
-}): { requireMention: boolean } {
+}): { requireMention: boolean; allowMentionlessInMultiBotGroup: boolean } {
   if (params.isDirectMessage) {
-    return { requireMention: false };
+    return { requireMention: false, allowMentionlessInMultiBotGroup: false };
   }
 
   const requireMention =
     params.groupConfig?.requireMention ?? params.globalConfig?.requireMention ?? true;
+  const allowMentionlessInMultiBotGroup =
+    params.groupConfig?.allowMentionlessInMultiBotGroup ??
+    params.globalConfig?.allowMentionlessInMultiBotGroup ??
+    false;
 
-  return { requireMention };
+  return { requireMention, allowMentionlessInMultiBotGroup };
 }
 
 export function resolveFeishuGroupCommandMentionBypass(params: {

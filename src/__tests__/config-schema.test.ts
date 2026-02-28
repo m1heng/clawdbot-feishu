@@ -10,6 +10,7 @@ describe("config-schema contract", () => {
     expect(parsed.groupPolicy).toBe("allowlist");
     expect(parsed.requireMention).toBe(true);
     expect(parsed.groupCommandMentionBypass).toBe("single_bot");
+    expect(parsed.allowMentionlessInMultiBotGroup).toBe(false);
     expect(parsed.webhookPath).toBe("/feishu/events");
   });
 

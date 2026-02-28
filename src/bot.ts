@@ -689,6 +689,33 @@ function buildFeishuMediaPayload(
   };
 }
 
+function skipGroupMessageForMentionGate(params: {
+  accountId: string;
+  chatId: string;
+  senderOpenId: string;
+  senderName?: string;
+  content: string;
+  messageId: string;
+  historyLimit: number;
+  chatHistories?: Map<string, HistoryEntry[]>;
+  log: (...args: any[]) => void;
+}): void {
+  params.log(`feishu[${params.accountId}]: message in group ${params.chatId} skipped (mention required)`);
+  if (params.chatHistories) {
+    recordPendingHistoryEntryIfEnabled({
+      historyMap: params.chatHistories,
+      historyKey: params.chatId,
+      limit: params.historyLimit,
+      entry: {
+        sender: params.senderOpenId,
+        body: `${params.senderName ?? params.senderOpenId}: ${params.content}`,
+        timestamp: Date.now(),
+        messageId: params.messageId,
+      },
+    });
+  }
+}
+
 export function parseFeishuMessageEvent(
   event: FeishuMessageEvent,
   botOpenId?: string,
@@ -914,7 +941,7 @@ export async function handleFeishuMessage(params: {
         }
       }
 
-      const { requireMention } = resolveFeishuReplyPolicy({
+      const { requireMention, allowMentionlessInMultiBotGroup } = resolveFeishuReplyPolicy({
         isDirectMessage: false,
         globalConfig: feishuCfg,
         groupConfig,
@@ -954,22 +981,49 @@ export async function handleFeishuMessage(params: {
         effectiveWasMentioned = mentionGate.effectiveWasMentioned;
 
         if (mentionGate.shouldSkip) {
-          log(
-            `feishu[${account.accountId}]: message in group ${ctx.chatId} skipped (mention required)`,
-          );
-          if (chatHistories) {
-            recordPendingHistoryEntryIfEnabled({
-              historyMap: chatHistories,
-              historyKey: ctx.chatId,
-              limit: historyLimit,
-              entry: {
-                sender: ctx.senderOpenId,
-                body: `${ctx.senderName ?? ctx.senderOpenId}: ${ctx.content}`,
-                timestamp: Date.now(),
-                messageId: ctx.messageId,
-              },
-            });
+          skipGroupMessageForMentionGate({
+            accountId: account.accountId,
+            chatId: ctx.chatId,
+            senderOpenId: ctx.senderOpenId,
+            senderName: ctx.senderName,
+            content: ctx.content,
+            messageId: ctx.messageId,
+            historyLimit,
+            chatHistories,
+            log,
+          });
+          return;
+        }
+      } else if (!ctx.mentionedBot && !allowMentionlessInMultiBotGroup) {
+        // Safety default for mention-free mode: only allow non-@ traffic when the group has <= 1 bot.
+        // In multi-bot groups, explicit @ is required unless allowMentionlessInMultiBotGroup=true.
+        const botCount = await resolveFeishuGroupBotCount({
+          account,
+          chatId: ctx.chatId,
+          log,
+        });
+        const singleBotGroup = botCount !== undefined && botCount <= 1;
+        if (!singleBotGroup) {
+          if (botCount === undefined) {
+            log(
+              `feishu[${account.accountId}]: unable to resolve bot_count for ${ctx.chatId}, mention-free mode disabled for safety`,
+            );
+          } else {
+            log(
+              `feishu[${account.accountId}]: group ${ctx.chatId} has ${botCount} bots, explicit @ required unless allowMentionlessInMultiBotGroup=true`,
+            );
           }
+          skipGroupMessageForMentionGate({
+            accountId: account.accountId,
+            chatId: ctx.chatId,
+            senderOpenId: ctx.senderOpenId,
+            senderName: ctx.senderName,
+            content: ctx.content,
+            messageId: ctx.messageId,
+            historyLimit,
+            chatHistories,
+            log,
+          });
           return;
         }
       }
