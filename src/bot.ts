@@ -423,7 +423,7 @@ function normalizeMentions(text: string, mentions?: FeishuMessageEvent["message"
   let result = text;
 
   for (const mention of mentions) {
-    const mentionId = mention.id.open_id || mention.id.user_id;
+    const mentionId = mention.id.open_id;
     const replacement = mentionId
       ? `<at user_id="${mentionId}">${escapeName(mention.name)}</at>`
       : `@${mention.name}`;
