@@ -57,9 +57,8 @@ describe("parseFeishuMessageEvent", () => {
     expect(ctx.hasAnyMention).toBe(true);
     expect(ctx.rootId).toBe("om_root");
     expect(ctx.parentId).toBe("om_parent");
-    expect(ctx.content).toBe("hello there");
+    expect(ctx.content).toBe('<at user_id="ou_bot">Bot</at> <at user_id="ou_alice">Alice</at> hello there');
     expect(ctx.mentionTargets).toEqual([{ openId: "ou_alice", name: "Alice", key: "@_user_alice" }]);
-    expect(ctx.mentionMessageBody).toBe("hello there");
   });
 
   it("supports DM mention-forward without bot mention", () => {
@@ -71,8 +70,34 @@ describe("parseFeishuMessageEvent", () => {
 
     const ctx = parseFeishuMessageEvent(event, botOpenId);
     expect(ctx.mentionedBot).toBe(false);
+    expect(ctx.content).toBe('<at user_id="ou_alice">Alice</at> ping');
     expect(ctx.mentionTargets).toEqual([{ openId: "ou_alice", name: "Alice", key: "@_user_alice" }]);
-    expect(ctx.mentionMessageBody).toBe("ping");
+  });
+
+  it("preserves bot mention semantics when bot mention appears later", () => {
+    const event = buildTextEvent({
+      chatType: "group",
+      text: "@_user_alice 加一下 @_user_bot",
+      mentions: [
+        { key: "@_user_alice", name: "Alice", id: { open_id: "ou_alice" } },
+        { key: "@_user_bot", name: "Bot", id: { open_id: botOpenId } },
+      ],
+    });
+
+    const ctx = parseFeishuMessageEvent(event, botOpenId);
+    expect(ctx.mentionedBot).toBe(true);
+    expect(ctx.content).toBe('<at user_id="ou_alice">Alice</at> 加一下 <at user_id="ou_bot">Bot</at>');
+  });
+
+  it("treats $ in display name as literal (no replacement-pattern interpolation)", () => {
+    const event = buildTextEvent({
+      chatType: "p2p",
+      text: "@_user_1 hi",
+      mentions: [{ key: "@_user_1", name: "$& the user", id: { open_id: "ou_x" } }],
+    });
+    const ctx = parseFeishuMessageEvent(event, botOpenId);
+    // $ is preserved literally (no $& pattern substitution); & is not escaped in tag body
+    expect(ctx.content).toBe('<at user_id="ou_x">$& the user</at> hi');
   });
 
   it("detects bot mention from post payload", () => {
