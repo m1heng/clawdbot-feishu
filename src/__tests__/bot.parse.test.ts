@@ -89,6 +89,17 @@ describe("parseFeishuMessageEvent", () => {
     expect(ctx.content).toBe('<at user_id="ou_alice">Alice</at> 加一下 <at user_id="ou_bot">Bot</at>');
   });
 
+  it("treats $ in display name as literal (no replacement-pattern interpolation)", () => {
+    const event = buildTextEvent({
+      chatType: "p2p",
+      text: "@_user_1 hi",
+      mentions: [{ key: "@_user_1", name: "$& the user", id: { open_id: "ou_x" } }],
+    });
+    const ctx = parseFeishuMessageEvent(event, botOpenId);
+    // $ is preserved literally (no $& pattern substitution); & is not escaped in tag body
+    expect(ctx.content).toBe('<at user_id="ou_x">$& the user</at> hi');
+  });
+
   it("detects bot mention from post payload", () => {
     const event: FeishuMessageEvent = {
       sender: {
