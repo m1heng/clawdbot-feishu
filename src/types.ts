@@ -72,6 +72,7 @@ export type FeishuToolsConfig = {
   drive?: boolean;
   perm?: boolean;
   scopes?: boolean;
+  calendar?: boolean;
   task?: boolean;
 };
 
