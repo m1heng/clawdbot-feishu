@@ -368,19 +368,19 @@ export async function runChatAction(client: ChatClient, params: FeishuChatParams
       }
     }
     case "append_announcement": {
-      try {
-        const current = await getAnnouncement(client, params.chat_id);
-        if (current.announcement_type === "doc") {
-          const existingContent = (current as any).content || "";
-          const newContent = existingContent + "\n" + params.content;
-          return writeDocAnnouncement(client, params.chat_id, newContent);
-        } else {
-          const parentBlockId = params.chat_id;
-          return createTextBlock(client, params.chat_id, parentBlockId, params.content);
+      const current = await getAnnouncement(client, params.chat_id);
+      if (current.announcement_type === "doc") {
+        const existingContent = (current as any).content || "";
+        const newContent = existingContent + "\n" + params.content;
+        return writeDocAnnouncement(client, params.chat_id, newContent);
+      } else {
+        // For docx format, the parent block must be the Page root block (block_type: 1)
+        const blocks: any[] = (current as any).blocks ?? [];
+        const pageBlock = blocks.find((b: any) => b.block_type === 1);
+        if (!pageBlock?.block_id) {
+          return { error: "Could not find the Page root block for docx announcement. Use list_announcement_blocks to inspect the structure." };
         }
-      } catch (err: any) {
-        const parentBlockId = params.chat_id;
-        return createTextBlock(client, params.chat_id, parentBlockId, params.content);
+        return createTextBlock(client, params.chat_id, pageBlock.block_id, params.content);
       }
     }
     case "update_announcement_block": {
@@ -394,11 +394,6 @@ export async function runChatAction(client: ChatClient, params: FeishuChatParams
         },
       ];
       return batchUpdateAnnouncementBlocks(client, params.chat_id, requests);
-    }
-    case "delete_announcement_block": {
-      return {
-        error: "delete_announcement_block requires parent block ID and child indices. Use list_announcement_blocks to view the structure first.",
-      };
     }
     // ============== New Chat Management Actions ==============
     case "create_chat": {

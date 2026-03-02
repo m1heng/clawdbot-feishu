@@ -34,11 +34,6 @@ export const FeishuChatSchema = Type.Union([
     block_id: Type.String({ description: "Block ID (from list_announcement_blocks)" }),
     content: Type.String({ description: "New text content" }),
   }),
-  Type.Object({
-    action: Type.Literal("delete_announcement_block"),
-    chat_id: Type.String({ description: "Chat ID to delete announcement block from" }),
-    block_id: Type.String({ description: "Block ID (from list_announcement_blocks)" }),
-  }),
   // ============== New Chat Management Actions ==============
   Type.Object({
     action: Type.Literal("create_chat"),

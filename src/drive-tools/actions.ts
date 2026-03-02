@@ -69,40 +69,9 @@ async function listFolder(client: DriveClient, folderToken?: string) {
   };
 }
 
-async function getFileInfo(client: DriveClient, fileToken: string, folderToken?: string, type?: string) {
-  let effectiveType = type;
-  
-  if (!effectiveType) {
-    let pageToken: string | undefined;
-    
-    do {
-      const res = await runDriveApiCall("drive.file.list", () =>
-        client.drive.file.list({
-          params: folderToken ? { folder_token: folderToken, page_token: pageToken } : { page_token: pageToken },
-        }),
-      );
-
-      const file = res.data?.files?.find((f: any) => f.token === fileToken);
-      if (file) {
-        return {
-          token: file.token,
-          name: file.name,
-          type: file.type,
-          url: file.url,
-          created_time: file.created_time,
-          modified_time: file.modified_time,
-          owner_id: file.owner_id,
-        };
-      }
-      
-      pageToken = res.data?.next_page_token;
-    } while (pageToken);
-
-    throw new Error(`File not found: ${fileToken}`);
-  }
-
+async function getFileInfo(client: DriveClient, fileToken: string, folderToken?: string) {
   let pageToken: string | undefined;
-  
+
   do {
     const res = await runDriveApiCall("drive.file.list", () =>
       client.drive.file.list({
@@ -122,7 +91,7 @@ async function getFileInfo(client: DriveClient, fileToken: string, folderToken?:
         owner_id: file.owner_id,
       };
     }
-    
+
     pageToken = res.data?.next_page_token;
   } while (pageToken);
 
@@ -181,14 +150,11 @@ async function moveFile(
 
 async function deleteFile(client: DriveClient, fileToken: string, type?: string) {
   let effectiveType = type;
-  
+
   if (!effectiveType) {
-    console.log(`[feishu_drive.delete] Auto-detecting type for file_token: ${fileToken}`);
     effectiveType = await getFileType(client, fileToken);
-    console.log(`[feishu_drive.delete] Detected type: ${effectiveType}`);
   }
-  
-  console.log(`[feishu_drive.delete] Deleting file ${fileToken} with type: ${effectiveType}`);
+
   const res = await runDriveApiCall("drive.file.delete", () =>
     client.drive.file.delete({
       path: { file_token: fileToken },
@@ -230,13 +196,13 @@ export async function runDriveAction(
     case "list":
       return listFolder(client, params.folder_token);
     case "info":
-      return getFileInfo(client, params.file_token, undefined, (params as any).type);
+      return getFileInfo(client, params.file_token);
     case "create_folder":
       return createFolder(client, params.name, params.folder_token);
     case "move":
       return moveFile(client, params.file_token, params.type, params.folder_token);
     case "delete":
-      return deleteFile(client, params.file_token, (params as any).type);
+      return deleteFile(client, params.file_token, params.type);
     case "import_document":
       return importDocument(
         client,
