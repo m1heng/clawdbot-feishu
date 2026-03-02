@@ -26,64 +26,64 @@ const BLOCK_TYPE_NAMES: Record<number, string> = {
 const STRUCTURED_BLOCK_TYPES = new Set([14, 18, 21, 23, 27, 30, 31, 32]);
 
 async function getAnnouncement(client: ChatClient, chatId: string) {
-  try {
-    const res = await runChatApiCall("im.chatAnnouncement.get", () =>
+  // Use docx.chatAnnouncement.get first — it works for both doc and docx announcements
+  // and returns announcement_type in its response, avoiding the noisy 232097 error
+  // that would occur when calling the legacy im API on a docx announcement.
+  const infoRes = await runChatApiCall("docx.chatAnnouncement.get", () =>
+    (client as any).docx.chatAnnouncement.get({
+      path: { chat_id: chatId },
+    }),
+  );
+
+  const announcementType = (infoRes as any).data?.announcement_type;
+
+  if (announcementType === "doc") {
+    // Legacy doc format: fetch actual content via the im API
+    const docRes = await runChatApiCall("im.chatAnnouncement.get", () =>
       (client as any).im.chatAnnouncement.get({
         path: { chat_id: chatId },
       }),
     );
     return {
       announcement_type: "doc" as const,
-      ...(res as any).data,
+      ...(docRes as any).data,
     };
-  } catch (err: any) {
-    if (
-      err?.response?.data?.code === 232097 ||
-      err?.message?.includes("docx") ||
-      err?.message?.includes("232097")
-    ) {
-      const infoRes = await runChatApiCall("docx.chatAnnouncement.get", () =>
-        (client as any).docx.chatAnnouncement.get({
-          path: { chat_id: chatId },
-        }),
-      );
-
-      const blocksRes = await runChatApiCall("docx.chatAnnouncementBlock.list", () =>
-        (client as any).docx.chatAnnouncementBlock.list({
-          path: { chat_id: chatId },
-        }),
-      );
-
-      const blocks = (blocksRes as any).data?.items ?? [];
-      const blockCounts: Record<string, number> = {};
-      const structuredTypes: string[] = [];
-
-      for (const b of blocks) {
-        const type = b.block_type ?? 0;
-        const name = BLOCK_TYPE_NAMES[type] || `type_${type}`;
-        blockCounts[name] = (blockCounts[name] || 0) + 1;
-
-        if (STRUCTURED_BLOCK_TYPES.has(type) && !structuredTypes.includes(name)) {
-          structuredTypes.push(name);
-        }
-      }
-
-      let hint: string | undefined;
-      if (structuredTypes.length > 0) {
-        hint = `This announcement contains ${structuredTypes.join(", ")} which are NOT included in the basic info. Use action: "list_announcement_blocks" to get full content.`;
-      }
-
-      return {
-        announcement_type: "docx" as const,
-        info: (infoRes as any).data,
-        blocks: blocks,
-        block_count: blocks.length,
-        block_types: blockCounts,
-        ...(hint && { hint }),
-      };
-    }
-    throw err;
   }
+
+  // docx format (or unrecognised new format): fetch blocks
+  const blocksRes = await runChatApiCall("docx.chatAnnouncementBlock.list", () =>
+    (client as any).docx.chatAnnouncementBlock.list({
+      path: { chat_id: chatId },
+    }),
+  );
+
+  const blocks = (blocksRes as any).data?.items ?? [];
+  const blockCounts: Record<string, number> = {};
+  const structuredTypes: string[] = [];
+
+  for (const b of blocks) {
+    const type = b.block_type ?? 0;
+    const name = BLOCK_TYPE_NAMES[type] || `type_${type}`;
+    blockCounts[name] = (blockCounts[name] || 0) + 1;
+
+    if (STRUCTURED_BLOCK_TYPES.has(type) && !structuredTypes.includes(name)) {
+      structuredTypes.push(name);
+    }
+  }
+
+  let hint: string | undefined;
+  if (structuredTypes.length > 0) {
+    hint = `This announcement contains ${structuredTypes.join(", ")} which are NOT included in the basic info. Use action: "list_announcement_blocks" to get full content.`;
+  }
+
+  return {
+    announcement_type: "docx" as const,
+    info: (infoRes as any).data,
+    blocks,
+    block_count: blocks.length,
+    block_types: blockCounts,
+    ...(hint && { hint }),
+  };
 }
 
 async function listAnnouncementBlocks(client: ChatClient, chatId: string) {
@@ -193,8 +193,10 @@ async function batchUpdateAnnouncementBlocks(
   const res = await runChatApiCall("docx.chatAnnouncementBlock.batchUpdate", () =>
     (client as any).docx.chatAnnouncementBlock.batchUpdate({
       path: { chat_id: chatId },
-      data: {
+      params: {
         revision_id: (info as any).data?.revision_id,
+      },
+      data: {
         requests,
       },
     }),
@@ -218,7 +220,10 @@ async function createChat(client: ChatClient, name: string, userIds?: string[], 
   }
 
   const res = await runChatApiCall("im.chat.create", () =>
-    (client as any).im.chat.create({ data }),
+    (client as any).im.chat.create({
+      data,
+      params: { user_id_type: "open_id" },
+    }),
   );
 
   return {
@@ -229,9 +234,10 @@ async function createChat(client: ChatClient, name: string, userIds?: string[], 
 }
 
 async function addMembers(client: ChatClient, chatId: string, userIds: string[]) {
-  const res = await runChatApiCall("im.chat.member.add", () =>
-    (client as any).im.chat.member.add({
+  const res = await runChatApiCall("im.chatMembers.create", () =>
+    (client as any).im.chatMembers.create({
       path: { chat_id: chatId },
+      params: { member_id_type: "open_id" },
       data: { id_list: userIds },
     }),
   );
@@ -257,7 +263,7 @@ async function checkBotInChat(client: ChatClient, chatId: string) {
       chat_info: (res as any).data,
     };
   } catch (err: any) {
-    if (err?.response?.data?.code === 90003) {
+    if (err?.message?.includes("90003")) {
       return {
         success: true,
         chat_id: chatId,
@@ -308,7 +314,7 @@ async function createSessionChat(
   }
 
   // Step 2: Send greeting message
-  const defaultGreeting = "Hello! I've created this group chat for us to collaborate.";
+  const defaultGreeting = "大家好，群聊已创建，欢迎交流协作！";
   const greetingMessage = greeting || defaultGreeting;
   
   let messageResult;
@@ -333,8 +339,8 @@ async function createSessionChat(
 }
 
 async function deleteChat(client: ChatClient, chatId: string) {
-  const res = await runChatApiCall("im.chat.disband", () =>
-    (client as any).im.chat.disband({
+  const res = await runChatApiCall("im.chat.delete", () =>
+    (client as any).im.chat.delete({
       path: { chat_id: chatId },
     }),
   );
@@ -362,9 +368,14 @@ export async function runChatAction(client: ChatClient, params: FeishuChatParams
       if (current.announcement_type === "doc") {
         return writeDocAnnouncement(client, params.chat_id, params.content);
       } else {
-        return {
-          error: "write_announcement for docx format requires block-level operations.",
-        };
+        // For docx announcements, append a text block under the Page root block.
+        // Full replacement is not supported via API; use update_announcement_block to edit existing blocks.
+        const blocks: any[] = (current as any).blocks ?? [];
+        const pageBlock = blocks.find((b: any) => b.block_type === 1);
+        if (!pageBlock?.block_id) {
+          return { error: "Could not find the Page root block for docx announcement. Use list_announcement_blocks to inspect the structure." };
+        }
+        return createTextBlock(client, params.chat_id, pageBlock.block_id, params.content);
       }
     }
     case "append_announcement": {
@@ -387,7 +398,6 @@ export async function runChatAction(client: ChatClient, params: FeishuChatParams
       const requests = [
         {
           block_id: params.block_id,
-          operation: "update",
           update_text_elements: {
             elements: [{ text_run: { content: params.content } }],
           },
