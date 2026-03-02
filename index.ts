@@ -2,12 +2,13 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { feishuPlugin } from "./src/channel.js";
 import { setFeishuRuntime } from "./src/runtime.js";
+import { registerFeishuBitableTools } from "./src/bitable-tools/index.js";
 import { registerFeishuDocTools } from "./src/doc-tools/index.js";
-import { registerFeishuWikiTools } from "./src/wiki-tools/index.js";
 import { registerFeishuDriveTools } from "./src/drive-tools/index.js";
 import { registerFeishuPermTools } from "./src/perm-tools/index.js";
-import { registerFeishuBitableTools } from "./src/bitable-tools/index.js";
 import { registerFeishuTaskTools } from "./src/task-tools/index.js";
+import { registerFeishuUrgentTools } from "./src/urgent-tools/index.js";
+import { registerFeishuWikiTools } from "./src/wiki-tools/index.js";
 
 export { monitorFeishuProvider } from "./src/monitor.js";
 export {
@@ -31,6 +32,7 @@ export {
   listReactionsFeishu,
   FeishuEmoji,
 } from "./src/reactions.js";
+export { urgentMessageFeishu, type FeishuUrgentType } from "./src/urgent-tools/index.js";
 export {
   extractMentionTargets,
   extractMessageBody,
@@ -59,6 +61,7 @@ const plugin = {
     registerFeishuPermTools(api);
     registerFeishuBitableTools(api);
     registerFeishuTaskTools(api);
+    registerFeishuUrgentTools(api);
   },
 };
 
