@@ -10,6 +10,7 @@ describe("tools-config", () => {
       perm: false,
       scopes: true,
       task: true,
+      chat: true,
       urgent: true,
     });
   });
@@ -22,6 +23,7 @@ describe("tools-config", () => {
       perm: true,
       scopes: true,
       task: false,
+      chat: true,
       urgent: true,
     });
   });
