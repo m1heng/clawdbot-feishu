@@ -1,18 +1,8 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { hasFeishuToolEnabledForAnyAccount, withFeishuToolClient } from "../tools-common/tool-exec.js";
+import { errorResult, json } from "../tools-common/feishu-api.js";
 import { urgentMessageFeishu } from "./actions.js";
 import { FeishuUrgentSchema, type FeishuUrgentParams } from "./schemas.js";
-
-function json(data: unknown) {
-  return {
-    content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
-    details: data,
-  };
-}
-
-function errorResult(err: unknown) {
-  return json({ error: err instanceof Error ? err.message : String(err) });
-}
 
 export function registerFeishuUrgentTools(api: OpenClawPluginApi) {
   if (!api.config) {

@@ -1,4 +1,5 @@
 import type * as Lark from "@larksuiteoapi/node-sdk";
+import { runFeishuApiCall, type FeishuApiResponse } from "../tools-common/feishu-api.js";
 
 /**
  * Urgency type for Feishu urgent messages.
@@ -14,11 +15,9 @@ type UrgentPayload = {
   path: { message_id: string };
 };
 
-type UrgentResponse = {
-  code?: number;
-  msg?: string;
+interface UrgentResponse extends FeishuApiResponse {
   data?: { invalid_user_id_list?: string[] };
-};
+}
 
 type LarkMessageWithUrgent = Lark.Client["im"]["message"] & {
   urgentApp?: (payload: UrgentPayload) => Promise<UrgentResponse>;
@@ -27,34 +26,18 @@ type LarkMessageWithUrgent = Lark.Client["im"]["message"] & {
 };
 
 /**
- * Extract a human-readable error message from a Feishu API error.
- * The Feishu SDK throws HTTP 400 errors as AxiosError; their response.data
- * contains the actual Feishu error payload (e.g. invalid open_id).
- */
-function extractFeishuErrorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === "object") {
-    const axiosErr = err as {
-      response?: { data?: { msg?: string; code?: number } };
-      message?: string;
-    };
-    const apiMsg = axiosErr.response?.data?.msg;
-    if (apiMsg) return apiMsg;
-    if (axiosErr.message) return axiosErr.message;
-  }
-  return fallback;
-}
-
-/**
  * Send an urgent (buzz) notification for an existing Feishu message.
  *
  * Calls the Feishu "urgent" API which sends a strong push notification
  * to the specified recipients. The message must already be sent.
  *
- * Requires `im:message:send_urgent_app` scope (or sms/phone variants).
+ * Requires `im:message.urgent` scope (or `im:message.urgent:sms` / `im:message.urgent:phone` variants).
  *
- * Note: Invalid user IDs cause a HTTP 400 error from the Feishu API rather
- * than being silently returned in `invalid_user_id_list`. This function
- * wraps such errors with a descriptive message.
+ * Common errors:
+ * - Code 230024: Quota exceeded ("Reach the upper limit of urgent message").
+ *   Check tenant quota in Feishu admin console > Cost Center.
+ * - Invalid user IDs cause HTTP 400 with descriptive message (not returned in
+ *   `invalid_user_id_list` as documented).
  *
  * @see https://open.feishu.cn/document/server-docs/im-v1/message/urgent_app
  * @see https://open.feishu.cn/document/server-docs/im-v1/message/urgent_sms
@@ -90,20 +73,10 @@ export async function urgentMessageFeishu(params: {
     );
   }
 
-  let response: UrgentResponse;
-  try {
-    response = await method(payload);
-  } catch (err) {
-    // Feishu API returns HTTP 400 for invalid user IDs — wrap the raw AxiosError.
-    const msg = extractFeishuErrorMessage(err, `Feishu urgent (${urgentType}) request failed`);
-    throw new Error(`Feishu urgent message (${urgentType}) failed: ${msg}`);
-  }
-
-  if (response.code !== 0) {
-    throw new Error(
-      `Feishu urgent message (${urgentType}) failed: ${response.msg || `code ${response.code}`}`,
-    );
-  }
+  const response = await runFeishuApiCall<UrgentResponse>(
+    `Feishu urgent message (${urgentType})`,
+    () => method(payload),
+  );
 
   return {
     invalidUserList: response.data?.invalid_user_id_list ?? [],

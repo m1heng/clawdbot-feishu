@@ -125,6 +125,7 @@ openclaw plugins list | rg -i feishu
 | `task:tasklist:write` | `feishu_tasklist_create`, `feishu_tasklist_update`, `feishu_tasklist_delete`, `feishu_tasklist_add_members`, `feishu_tasklist_remove_members`, `feishu_task_add_tasklist`, `feishu_task_remove_tasklist` | Create/update/delete tasklists and manage membership |
 | `task:comment:write` | `feishu_task_comment_create`, `feishu_task_comment_update`, `feishu_task_comment_delete` | Create/update/delete task comments |
 | `task:attachment:write` | `feishu_task_attachment_upload`, `feishu_task_attachment_delete` | Upload/delete task attachments |
+| `im:message.urgent` | `feishu_urgent` | Send urgent (buzz) notifications via app (in-app). Use `sms` and `phone` variants (`im:message.urgent:sms`, `im:message.urgent:phone`) for SMS and voice call. |
 
 > Task scope names may vary slightly in Feishu console UI. If needed, search for Task / Tasklist / Comment / Attachment-related permissions and grant read/write accordingly.
 
@@ -625,6 +626,7 @@ openclaw plugins list | rg -i feishu
 | `task:tasklist:write` | `feishu_tasklist_create`, `feishu_tasklist_update`, `feishu_tasklist_delete`, `feishu_tasklist_add_members`, `feishu_tasklist_remove_members`, `feishu_task_add_tasklist`, `feishu_task_remove_tasklist` | 创建/更新/删除任务清单并管理成员/关联任务 |
 | `task:comment:write` | `feishu_task_comment_create`, `feishu_task_comment_update`, `feishu_task_comment_delete` | 创建/更新/删除任务评论 |
 | `task:attachment:write` | `feishu_task_attachment_upload`, `feishu_task_attachment_delete` | 上传/删除任务附件 |
+| `im:message.urgent` | `feishu_urgent` | 发送应用内加急（buzz）通知。使用 `sms` 和 `phone` 变体（`im:message.urgent:sms`、`im:message.urgent:phone`）可发送短信和语音电话加急。 |
 
 > 飞书控制台中任务权限的显示名称可能略有差异，必要时可按关键字 `task` / `tasklist` / `comment` / `attachment` 搜索并授予对应读写权限。
 
