@@ -29,7 +29,6 @@ import {
 } from "./mention.js";
 import { maybeCreateDynamicAgent } from "./dynamic-agent.js";
 import { runWithFeishuToolContext } from "./tools-common/tool-context.js";
-import { resolveExplicitAudioFailure } from "./audio-transcription-failure.js";
 import type { DynamicAgentCreationConfig } from "./types.js";
 
 // --- Permission error extraction ---
@@ -1053,7 +1052,6 @@ export async function handleFeishuMessage(params: {
   }
 
   const isGroup = ctx.chatType === "group";
-  const isAudioMessage = event.message.message_type === "audio";
 
   // Resolve sender display name (best-effort) so the agent can attribute messages correctly.
   const senderResult = await resolveFeishuSenderName({
@@ -1579,33 +1577,6 @@ export async function handleFeishuMessage(params: {
     );
 
     markDispatchIdle();
-
-    // Avoid false alarms: only emit a transcription-failed notice when all of:
-    //   1. the inbound message is audio
-    //   2. no effective output was produced
-    //   3. audio media decision indicates an explicit failure
-    const didSendReply = (counts.final ?? 0) + (counts.tool ?? 0) + (counts.block ?? 0) > 0;
-    if (isAudioMessage && !didSendReply) {
-      const audioFailure = resolveExplicitAudioFailure(ctxPayload);
-      if (audioFailure) {
-        log(
-          `feishu[${account.accountId}]: audio transcription not applied; outcome=${audioFailure.outcome}`,
-        );
-        try {
-          await sendMessageFeishu({
-            cfg,
-            to: feishuTo,
-            text: audioFailure.notice,
-            replyToMessageId: ctx.messageId,
-            accountId: account.accountId,
-          });
-        } catch (noticeErr) {
-          log(
-            `feishu[${account.accountId}]: failed to send audio failure notice: ${String(noticeErr)}`,
-          );
-        }
-      }
-    }
 
     if (isGroup && historyKey && chatHistories) {
       clearHistoryEntriesIfEnabled({
