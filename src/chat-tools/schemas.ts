@@ -12,7 +12,7 @@ export const FeishuChatSchema = Type.Union([
   Type.Object({
     action: Type.Literal("write_announcement"),
     chat_id: Type.String({ description: "Chat ID to write announcement to" }),
-    content: Type.String({ description: "Markdown content to write (replaces entire announcement)" }),
+    content: Type.String({ description: "Content to write. For doc format: replaces the entire announcement. For docx format: appends a new text block under the page root." }),
   }),
   Type.Object({
     action: Type.Literal("append_announcement"),

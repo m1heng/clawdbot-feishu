@@ -314,7 +314,7 @@ async function createSessionChat(
   }
 
   // Step 2: Send greeting message
-  const defaultGreeting = "大家好，群聊已创建，欢迎交流协作！";
+  const defaultGreeting = "Hello! I've created this group chat for us to collaborate.";
   const greetingMessage = greeting || defaultGreeting;
   
   let messageResult;

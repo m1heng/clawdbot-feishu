@@ -36,13 +36,14 @@ Returns all blocks for a docx-format announcement.
 
 Returns a single block from the announcement.
 
-### Write Announcement (doc format only)
+### Write Announcement
 
 ```json
 { "action": "write_announcement", "chat_id": "oc_abc123def", "content": "New announcement content" }
 ```
 
-Replaces the entire announcement content. Only supported for legacy `doc` format announcements.
+For `doc` format: replaces the entire announcement content.
+For `docx` format: appends a new text block under the page root (full replacement is not supported via API; use `update_announcement_block` to edit existing blocks).
 
 ### Append Announcement
 
@@ -59,14 +60,6 @@ Appends content to the announcement.
 ```
 
 Updates a single block's text content in a docx-format announcement.
-
-### Delete Announcement Block
-
-```json
-{ "action": "delete_announcement_block", "chat_id": "oc_abc123def", "block_id": "block_123" }
-```
-
-**Note**: Deletion requires knowing the parent block ID and child indices. Use `list_announcement_blocks` to view the structure first.
 
 ---
 
@@ -137,8 +130,10 @@ Required for announcements:
 - `im:chat.announcement:read` - View group announcement information
 - `im:chat.announcement` - Edit group announcement information (for write operations)
 
-Additional permissions for group management:
-- `im:chat` - Create and manage group chats
-- `im:message:send_as_bot` - Send messages as bot (for create_session_chat greeting)
+Required for group management:
+- `im:chat:readonly` - Get chat info, check bot membership (`check_bot_in_chat`)
+- `im:chat` - Create and delete group chats (`create_chat`, `delete_chat`)
+- `im:chat.members` - Add members to group chats (`add_members`)
+- `im:message:send_as_bot` - Send messages as bot (for `create_session_chat` greeting)
 
 **Note for delete_chat**: Requires the bot to be the group owner or have admin privileges to disband the chat.
