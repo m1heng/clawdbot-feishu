@@ -59,8 +59,8 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^2.1.8",
     "@types/node": "^25.0.10",
+    "@vitest/coverage-v8": "^2.1.8",
     "openclaw": "2026.3.1",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0",
