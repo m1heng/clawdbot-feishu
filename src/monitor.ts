@@ -38,6 +38,26 @@ async function fetchBotOpenId(
 }
 
 /**
+ * Per-chat serial queue that ensures messages from the same chat are processed
+ * in arrival order while allowing different chats to run concurrently.
+ * Uses .then(task, task) so a failure in one message never blocks the next.
+ */
+function createChatQueue() {
+  const queues = new Map<string, Promise<void>>();
+  return (chatId: string, task: () => Promise<void>): Promise<void> => {
+    const prev = queues.get(chatId) ?? Promise.resolve();
+    const next = prev.then(task, task);
+    queues.set(chatId, next);
+    void next.finally(() => {
+      if (queues.get(chatId) === next) {
+        queues.delete(chatId);
+      }
+    });
+    return next;
+  };
+}
+
+/**
  * Register common event handlers on an EventDispatcher.
  * When fireAndForget is true (webhook mode), message handling is not awaited
  * to avoid blocking the HTTP response (Lark requires <3s response).
@@ -55,19 +75,23 @@ function registerEventHandlers(
   const { cfg, accountId, runtime, chatHistories, fireAndForget } = context;
   const log = runtime?.log ?? console.log;
   const error = runtime?.error ?? console.error;
+  const enqueue = createChatQueue();
 
   eventDispatcher.register({
     "im.message.receive_v1": async (data) => {
       try {
         const event = data as unknown as FeishuMessageEvent;
-        const promise = handleFeishuMessage({
-          cfg,
-          event,
-          botOpenId: botOpenIds.get(accountId),
-          runtime,
-          chatHistories,
-          accountId,
-        });
+        const chatId = event.message.chat_id?.trim() || "unknown";
+        const task = () =>
+          handleFeishuMessage({
+            cfg,
+            event,
+            botOpenId: botOpenIds.get(accountId),
+            runtime,
+            chatHistories,
+            accountId,
+          });
+        const promise = enqueue(chatId, task);
         if (fireAndForget) {
           promise.catch((err) => {
             error(`feishu[${accountId}]: error handling message: ${String(err)}`);
