@@ -387,7 +387,7 @@ export type FeishuMessageEvent = {
     root_id?: string;
     parent_id?: string;
     chat_id: string;
-    chat_type: "p2p" | "group";
+    chat_type: "p2p" | "group" | "private";
     create_time?: string;
     message_type: string;
     content: string;
@@ -1137,7 +1137,7 @@ export async function handleFeishuMessage(params: {
           try {
             await sendMessageFeishu({
               cfg,
-              to: `user:${ctx.senderOpenId}`,
+              to: `chat:${ctx.chatId}`,
               text: core.channel.pairing.buildPairingReply({
                 channel: "feishu",
                 idLine: `Your Feishu user id: ${ctx.senderOpenId}`,
