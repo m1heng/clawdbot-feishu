@@ -16,6 +16,24 @@ import { FeishuStreamingSession } from "./streaming-card.js";
 import { resolveReceiveIdType } from "./targets.js";
 import { addTypingIndicator, removeTypingIndicator, type TypingIndicatorState } from "./typing.js";
 
+/** Maximum age (ms) for a message to receive a typing indicator reaction.
+ * Messages older than this are likely replays after context compaction (#30418). */
+const TYPING_INDICATOR_MAX_AGE_MS = 2 * 60_000;
+
+/** Minimum value to treat a timestamp as epoch-milliseconds vs epoch-seconds. */
+const MS_EPOCH_MIN = 1_000_000_000_000;
+
+/**
+ * Normalize a timestamp to epoch-milliseconds.
+ * Some Feishu payloads use epoch-seconds; values below 1e12 are treated as such.
+ */
+function normalizeEpochMs(timestamp: number | undefined): number | undefined {
+  if (!Number.isFinite(timestamp) || timestamp === undefined || timestamp <= 0) {
+    return undefined;
+  }
+  return timestamp < MS_EPOCH_MIN ? timestamp * 1000 : timestamp;
+}
+
 /** Detect if text contains markdown elements that benefit from card rendering */
 function shouldUseCard(text: string): boolean {
   return /```[\s\S]*?```/.test(text) || /\|.+\|[\r\n]+\|[-:| ]+\|/.test(text);
@@ -29,11 +47,14 @@ export type CreateFeishuReplyDispatcherParams = {
   replyToMessageId?: string;
   mentionTargets?: MentionTarget[];
   accountId?: string;
+  /** Epoch ms when the inbound message was created. Used to suppress typing
+   *  indicators on old/replayed messages after context compaction (#30418). */
+  messageCreateTimeMs?: number;
 };
 
 export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherParams) {
   const core = getFeishuRuntime();
-  const { cfg, agentId, chatId, replyToMessageId, mentionTargets, accountId } = params;
+  const { cfg, agentId, chatId, replyToMessageId, mentionTargets, accountId, messageCreateTimeMs } = params;
   const account = resolveFeishuAccount({ cfg, accountId });
   const prefixContext = createReplyPrefixContext({ cfg, agentId });
 
@@ -41,6 +62,21 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
   const typingCallbacks = createTypingCallbacks({
     start: async () => {
       if (!replyToMessageId) {
+        return;
+      }
+      // Skip typing indicator for old messages — likely replays after context
+      // compaction that would flood users with stale notifications (#30418).
+      const normalizedCreateTime = normalizeEpochMs(messageCreateTimeMs);
+      if (
+        normalizedCreateTime !== undefined &&
+        Date.now() - normalizedCreateTime > TYPING_INDICATOR_MAX_AGE_MS
+      ) {
+        return;
+      }
+      // Feishu reactions persist until explicitly removed, so skip keepalive
+      // re-adds when a reaction already exists. Re-adding the same emoji
+      // triggers a new push notification for every call (#28660).
+      if (typingState?.reactionId) {
         return;
       }
       typingState = await addTypingIndicator({ cfg, messageId: replyToMessageId, accountId });
