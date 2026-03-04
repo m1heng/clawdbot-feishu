@@ -1427,7 +1427,7 @@ export async function handleFeishuMessage(params: {
     }
 
     const envelopeFrom = isGroup ? `${ctx.chatId}:${ctx.senderOpenId}` : ctx.senderOpenId;
-    const replyToMessageId = replyToMessageIdOverride ?? ctx.messageId;
+    const replyToMessageId = replyToMessageIdOverride ?? ctx.rootId ?? ctx.messageId;
 
     // If there's a permission error, dispatch a separate notification first
     if (permissionErrorForAgent) {
