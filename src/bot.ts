@@ -388,6 +388,7 @@ export type FeishuMessageEvent = {
     parent_id?: string;
     chat_id: string;
     chat_type: "p2p" | "group";
+    create_time?: string;
     message_type: string;
     content: string;
     mentions?: Array<{
@@ -918,6 +919,11 @@ export async function handleFeishuMessage(params: {
   }
 
   let ctx = parseFeishuMessageEvent(event, botOpenId);
+
+  // Parse message create_time (Feishu uses millisecond epoch string).
+  const messageCreateTimeMs = event.message.create_time
+    ? parseInt(event.message.create_time, 10)
+    : undefined;
 
   const messageType = event.message.message_type;
   const isForwardedInbound = isForwardedMessageType(messageType);
@@ -1472,6 +1478,7 @@ export async function handleFeishuMessage(params: {
           chatId: ctx.chatId,
           replyToMessageId,
           accountId: account.accountId,
+          messageCreateTimeMs,
         });
 
       log(`feishu[${account.accountId}]: dispatching permission error notification to agent`);
@@ -1556,6 +1563,7 @@ export async function handleFeishuMessage(params: {
       replyToMessageId,
       mentionTargets: ctx.mentionTargets,
       accountId: account.accountId,
+      messageCreateTimeMs,
     });
 
     log(`feishu[${account.accountId}]: dispatching to agent (session=${route.sessionKey})`);
