@@ -3,26 +3,33 @@ import os from "node:os";
 import path from "node:path";
 import type { TaskClient } from "./common.js";
 import {
+  TASK_COMMENT_UPDATE_FIELD_VALUES,
   TASKLIST_UPDATE_FIELD_VALUES,
   TASK_UPDATE_FIELD_VALUES,
   type AddTaskToTasklistParams,
   type AddTasklistMembersParams,
+  type CreateTaskCommentParams,
   type CreateTasklistParams,
-  CreateSubtaskParams,
-  CreateTaskParams,
-  DeleteTaskAttachmentParams,
-  GetTaskAttachmentParams,
-  GetTaskParams,
+  type CreateSubtaskParams,
+  type CreateTaskParams,
+  type DeleteTaskAttachmentParams,
+  type DeleteTaskCommentParams,
+  type GetTaskAttachmentParams,
+  type GetTaskCommentParams,
+  type GetTaskParams,
   type GetTasklistParams,
-  ListTaskAttachmentsParams,
+  type ListTaskAttachmentsParams,
+  type ListTaskCommentsParams,
   type ListTasklistsParams,
   type RemoveTaskFromTasklistParams,
   type RemoveTasklistMembersParams,
-  TaskUpdateTask,
+  type TaskCommentPatchComment,
+  type TaskUpdateTask,
   type TasklistPatchTasklist,
-  UploadTaskAttachmentParams,
+  type UploadTaskAttachmentParams,
+  type UpdateTaskCommentParams,
   type UpdateTasklistParams,
-  UpdateTaskParams,
+  type UpdateTaskParams,
 } from "./schemas.js";
 import {
   DEFAULT_TASK_ATTACHMENT_FILENAME,
@@ -36,6 +43,7 @@ import { getFeishuRuntime } from "../runtime.js";
 import { runTaskApiCall } from "./common.js";
 
 const SUPPORTED_PATCH_FIELDS = new Set<string>(TASK_UPDATE_FIELD_VALUES);
+const SUPPORTED_COMMENT_PATCH_FIELDS = new Set<string>(TASK_COMMENT_UPDATE_FIELD_VALUES);
 const SUPPORTED_TASKLIST_PATCH_FIELDS = new Set<string>(TASKLIST_UPDATE_FIELD_VALUES);
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
@@ -50,10 +58,16 @@ function inferUpdateFields(task: TaskUpdateTask): string[] {
   );
 }
 
+function inferCommentUpdateFields(comment: TaskCommentPatchComment): string[] {
+  return Object.keys(comment).filter((field) =>
+    SUPPORTED_COMMENT_PATCH_FIELDS.has(field),
+  );
+}
+
 function ensureSupportedUpdateFields(
   updateFields: string[],
   supported: Set<string>,
-  resource: "task" | "tasklist",
+  resource: "task" | "comment" | "tasklist",
 ) {
   const invalid = updateFields.filter((field) => !supported.has(field));
   if (invalid.length > 0) {
@@ -99,6 +113,20 @@ function formatTasklist(tasklist: Record<string, unknown> | undefined) {
     created_at: tasklist.created_at,
     updated_at: tasklist.updated_at,
     archive_msec: tasklist.archive_msec,
+  };
+}
+
+function formatComment(comment: Record<string, unknown> | undefined) {
+  if (!comment) return undefined;
+  return {
+    id: comment.id,
+    content: comment.content,
+    creator: comment.creator,
+    reply_to_comment_id: comment.reply_to_comment_id,
+    created_at: comment.created_at,
+    updated_at: comment.updated_at,
+    resource_type: comment.resource_type,
+    resource_id: comment.resource_id,
   };
 }
 
@@ -304,6 +332,113 @@ export async function getTask(client: TaskClient, params: GetTaskParams) {
 
   return {
     task: formatTask((res.data?.task ?? undefined) as Record<string, unknown> | undefined),
+  };
+}
+
+export async function createTaskComment(client: TaskClient, params: CreateTaskCommentParams) {
+  const res = await runTaskApiCall("task.v2.comment.create", () =>
+    client.task.v2.comment.create({
+      data: omitUndefined({
+        content: params.content,
+        reply_to_comment_id: params.reply_to_comment_id,
+        resource_type: "task",
+        resource_id: params.task_guid,
+      }),
+      params: omitUndefined({
+        user_id_type: params.user_id_type,
+      }),
+    }),
+  );
+
+  return {
+    comment: formatComment((res.data?.comment ?? undefined) as Record<string, unknown> | undefined),
+  };
+}
+
+export async function listTaskComments(client: TaskClient, params: ListTaskCommentsParams) {
+  const res = await runTaskApiCall("task.v2.comment.list", () =>
+    client.task.v2.comment.list({
+      params: omitUndefined({
+        resource_type: "task",
+        resource_id: params.task_guid,
+        page_size: params.page_size,
+        page_token: params.page_token,
+        direction: params.direction,
+        user_id_type: params.user_id_type,
+      }),
+    }),
+  );
+
+  const items = (res.data?.items ?? []) as Record<string, unknown>[];
+
+  return {
+    items: items.map((item) => formatComment(item)),
+    page_token: res.data?.page_token,
+    has_more: res.data?.has_more,
+  };
+}
+
+export async function getTaskComment(client: TaskClient, params: GetTaskCommentParams) {
+  const res = await runTaskApiCall("task.v2.comment.get", () =>
+    client.task.v2.comment.get({
+      path: { comment_id: params.comment_id },
+      params: omitUndefined({
+        user_id_type: params.user_id_type,
+      }),
+    }),
+  );
+
+  return {
+    comment: formatComment((res.data?.comment ?? undefined) as Record<string, unknown> | undefined),
+  };
+}
+
+export async function updateTaskComment(client: TaskClient, params: UpdateTaskCommentParams) {
+  const comment = omitUndefined(params.comment as Record<string, unknown>) as TaskCommentPatchComment;
+  const updateFields = params.update_fields?.length
+    ? params.update_fields
+    : inferCommentUpdateFields(comment);
+
+  if (params.update_fields?.length) {
+    ensureSupportedUpdateFields(updateFields, SUPPORTED_COMMENT_PATCH_FIELDS, "comment");
+  }
+
+  if (Object.keys(comment).length === 0) {
+    throw new Error("comment update payload is empty");
+  }
+  if (updateFields.length === 0) {
+    throw new Error("no valid update_fields provided or inferred from comment payload");
+  }
+
+  const res = await runTaskApiCall("task.v2.comment.patch", () =>
+    client.task.v2.comment.patch({
+      path: { comment_id: params.comment_id },
+      data: {
+        comment,
+        update_fields: updateFields,
+      },
+      params: omitUndefined({
+        user_id_type: params.user_id_type,
+      }),
+    }),
+  );
+
+  return {
+    comment: formatComment((res.data?.comment ?? undefined) as Record<string, unknown> | undefined),
+    update_fields: updateFields,
+  };
+}
+
+export async function deleteTaskComment(client: TaskClient, params: DeleteTaskCommentParams) {
+  await runTaskApiCall("task.v2.comment.delete", () =>
+    client.task.v2.comment.delete({
+      path: { comment_id: params.comment_id },
+    }),
+  );
+
+  return {
+    success: true,
+    comment_id: params.comment_id,
   };
 }
 

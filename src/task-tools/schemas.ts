@@ -75,6 +75,7 @@ export const TASK_UPDATE_FIELD_VALUES = [
   "mode",
   "is_milestone",
 ] as const;
+export const TASK_COMMENT_UPDATE_FIELD_VALUES = ["content"] as const;
 export const TASKLIST_UPDATE_FIELD_VALUES = ["name", "owner", "archive_tasklist"] as const;
 
 export type CreateTaskParams = {
@@ -249,6 +250,10 @@ const TaskUpdateFieldSchema = Type.Union(
   TASK_UPDATE_FIELD_VALUES.map((field) => Type.Literal(field)),
 );
 
+const TaskCommentUpdateFieldSchema = Type.Union(
+  TASK_COMMENT_UPDATE_FIELD_VALUES.map((field) => Type.Literal(field)),
+);
+
 const TasklistMemberRoleSchema = Type.Union(
   [Type.Literal("owner"), Type.Literal("editor"), Type.Literal("viewer")],
   { description: "Member role (owner/editor/viewer)" },
@@ -399,9 +404,10 @@ export const UpdateTaskCommentSchema = Type.Object({
   comment_id: Type.String({ description: "Comment ID to update" }),
   comment: TaskCommentUpdateContentSchema,
   update_fields: Type.Optional(
-    Type.Array(Type.String(), {
+    Type.Array(TaskCommentUpdateFieldSchema, {
       description: "Fields to update. If omitted, this tool infers from keys in comment (content)",
       minItems: 1,
+      uniqueItems: true,
     }),
   ),
   user_id_type: Type.Optional(

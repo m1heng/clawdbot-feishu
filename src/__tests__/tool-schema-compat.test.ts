@@ -99,6 +99,15 @@ function collectKeywordPaths(schema: unknown, keyword: "allOf"): string[] {
 }
 
 describe("tool schema compatibility guardrails", () => {
+  it("Given task tools, When collecting tool names, Then task comment tools are registered", () => {
+    const names = new Set(createToolCaptureApi().map((tool) => tool.name));
+    expect(names.has("feishu_task_comment_create")).toBe(true);
+    expect(names.has("feishu_task_comment_list")).toBe(true);
+    expect(names.has("feishu_task_comment_get")).toBe(true);
+    expect(names.has("feishu_task_comment_update")).toBe(true);
+    expect(names.has("feishu_task_comment_delete")).toBe(true);
+  });
+
   it("Given registered feishu tools, When checking root schema, Then no tool uses top-level allOf", () => {
     const tools = createToolCaptureApi();
     expect(tools.length).toBeGreaterThan(0);
