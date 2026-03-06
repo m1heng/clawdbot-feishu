@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+// @ts-ignore - types not exported from main entry
 import type { PluginHookSubagentSpawningEvent, PluginHookSubagentEndedEvent } from "openclaw/plugin-sdk/plugins/hooks";
 import type { ClawdbotConfig } from "openclaw/plugin-sdk";
 
