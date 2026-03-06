@@ -1,4 +1,4 @@
-import type { ClawdbotConfig } from "openclaw/plugin-sdk";
+import type {ClawdbotConfig, OpenClawPluginApi} from "openclaw/plugin-sdk";
 // @ts-ignore - types not exported from main entry
 import type { PluginHookSubagentSpawningEvent, PluginHookSubagentSpawningResult, PluginHookSubagentEndedEvent } from "openclaw/plugin-sdk/plugins/hooks";
 import { sendMessageFeishu } from "./send.js";
@@ -165,4 +165,21 @@ async function cleanupSubagent(sessionKey: string): Promise<void> {
     await context.cleanup();
   }
   subagentContexts.delete(sessionKey);
+}
+
+export function registerFeishuSubagentTools(api: OpenClawPluginApi) {
+  if (!api.config) {
+    api.logger.debug?.("feishu_subagent: No config available, skipping subagent config");
+    return;
+  }
+
+  // Register subagent spawning hook to support mode="session" + thread=true
+  api.on("subagent_spawning", async (event: PluginHookSubagentSpawningEvent) => {
+    return handleSubagentSpawning(event, api.config);
+  });
+
+  // Register subagent ended hook for automatic cleanup (prevents memory leaks)
+  api.on("subagent_ended", async (event: PluginHookSubagentEndedEvent) => {
+    await handleSubagentEnded(event);
+  });
 }
