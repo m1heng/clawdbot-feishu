@@ -26,6 +26,19 @@ const botOpenIds = new Map<string, string>();
 const FEISHU_WEBHOOK_MAX_BODY_BYTES = 1024 * 1024;
 const FEISHU_WEBHOOK_BODY_TIMEOUT_MS = 30_000;
 
+function describeProxyMode(proxy?: string): string {
+  const value = proxy?.trim();
+  if (!value) {
+    return "direct";
+  }
+  try {
+    const url = new URL(value);
+    return `proxy(${url.protocol}//${url.host})`;
+  } catch {
+    return "proxy(invalid->direct)";
+  }
+}
+
 async function fetchBotOpenId(
   account: ResolvedFeishuAccount,
 ): Promise<string | undefined> {
@@ -139,6 +152,8 @@ async function monitorSingleAccount(params: MonitorAccountParams): Promise<void>
   const { cfg, account, runtime, abortSignal } = params;
   const { accountId } = account;
   const log = runtime?.log ?? console.log;
+
+  log(`feishu[${accountId}]: network mode ${describeProxyMode(account.config.proxy)}`);
 
   // Fetch bot open_id
   const botOpenId = await fetchBotOpenId(account);

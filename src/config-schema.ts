@@ -10,6 +10,7 @@ const FeishuDomainSchema = z.union([
   z.string().url().startsWith("https://"),
 ]);
 const FeishuConnectionModeSchema = z.enum(["websocket", "webhook"]);
+const ProxyUrlSchema = z.string().url().optional();
 
 const ToolPolicySchema = z
   .object({
@@ -132,6 +133,7 @@ export const FeishuAccountConfigSchema = z
     encryptKey: z.string().optional(),
     verificationToken: z.string().optional(),
     domain: FeishuDomainSchema.optional(),
+    proxy: ProxyUrlSchema,
     connectionMode: FeishuConnectionModeSchema.optional(),
     webhookPath: z.string().optional(),
     webhookPort: z.number().int().positive().optional(),
@@ -170,6 +172,7 @@ export const FeishuConfigSchema = z
     encryptKey: z.string().optional(),
     verificationToken: z.string().optional(),
     domain: FeishuDomainSchema.optional().default("feishu"),
+    proxy: ProxyUrlSchema,
     connectionMode: FeishuConnectionModeSchema.optional().default("websocket"),
     webhookPath: z.string().optional().default("/feishu/events"),
     webhookPort: z.number().int().positive().optional(),

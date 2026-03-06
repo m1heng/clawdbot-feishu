@@ -80,6 +80,7 @@ export function resolveFeishuCredentials(cfg?: FeishuConfig): {
   encryptKey?: string;
   verificationToken?: string;
   domain: FeishuDomain;
+  proxy?: string;
 } | null {
   const appId = cfg?.appId?.trim();
   const appSecret = cfg?.appSecret?.trim();
@@ -90,6 +91,7 @@ export function resolveFeishuCredentials(cfg?: FeishuConfig): {
     encryptKey: cfg?.encryptKey?.trim() || undefined,
     verificationToken: cfg?.verificationToken?.trim() || undefined,
     domain: cfg?.domain ?? "feishu",
+    proxy: cfg?.proxy?.trim() || undefined,
   };
 }
 

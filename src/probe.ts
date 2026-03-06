@@ -37,6 +37,11 @@ interface ProbeCacheEntry {
   ttlMs: number;
 }
 
+function resolveProbeProxy(creds: FeishuClientCredentials): string | undefined {
+  const carrier = creds as FeishuClientCredentials & { config?: { proxy?: string } };
+  return carrier.proxy ?? carrier.config?.proxy;
+}
+
 const probeCache = new Map<string, ProbeCacheEntry>();
 const PROBE_ERROR_CACHE_TTL_MS = resolveCacheTtlMs(
   ERROR_CACHE_TTL_ENV_KEY,
@@ -44,7 +49,7 @@ const PROBE_ERROR_CACHE_TTL_MS = resolveCacheTtlMs(
 );
 
 function getCacheKey(creds: FeishuClientCredentials): string {
-  return `${creds.appId}:${creds.domain || "feishu"}`;
+  return `${creds.appId}:${creds.domain || "feishu"}:${resolveProbeProxy(creds) || "direct"}`;
 }
 
 function getCachedResult(creds: FeishuClientCredentials): FeishuProbeResult | null {

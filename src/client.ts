@@ -2,14 +2,64 @@ import * as Lark from "@larksuiteoapi/node-sdk";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import type { FeishuDomain, ResolvedFeishuAccount } from "./types.js";
 
-function getWsProxyAgent(): HttpsProxyAgent<string> | undefined {
-  const proxyUrl =
-    process.env.https_proxy ||
-    process.env.HTTPS_PROXY ||
-    process.env.http_proxy ||
-    process.env.HTTP_PROXY;
-  if (!proxyUrl) return undefined;
-  return new HttpsProxyAgent(proxyUrl);
+type ProxyCarrier = {
+  proxy?: string;
+  config?: { proxy?: string };
+};
+
+type ResolvedProxy = {
+  proxyUrl?: string;
+  agent?: HttpsProxyAgent<string>;
+  invalidProxy?: string;
+};
+
+function normalizeProxyUrl(rawProxy?: string): string | undefined {
+  const proxy = rawProxy?.trim();
+  return proxy ? proxy : undefined;
+}
+
+function resolveProxy(rawProxy?: string): ResolvedProxy {
+  const proxyUrl = normalizeProxyUrl(rawProxy);
+  if (!proxyUrl) {
+    return {};
+  }
+
+  try {
+    const parsed = new URL(proxyUrl);
+    return {
+      proxyUrl: parsed.toString(),
+      agent: new HttpsProxyAgent(parsed.toString()),
+    };
+  } catch {
+    return { invalidProxy: proxyUrl };
+  }
+}
+
+function warnInvalidProxy(accountId: string, invalidProxy: string): void {
+  const preview = invalidProxy.length > 64 ? `${invalidProxy.slice(0, 64)}...` : invalidProxy;
+  console.warn(
+    `feishu[${accountId}]: invalid proxy URL in channels.feishu.proxy (${preview}), falling back to direct connection`,
+  );
+}
+
+function resolveConfiguredProxy(creds: FeishuClientCredentials): string | undefined {
+  const carrier = creds as ProxyCarrier;
+  return normalizeProxyUrl(carrier.proxy ?? carrier.config?.proxy);
+}
+
+function createHttpInstance(proxy: ResolvedProxy): { request: (options: unknown) => Promise<unknown> } {
+  return {
+    request: (options: unknown) => {
+      const requestOptions = {
+        ...(options as Record<string, unknown>),
+        proxy: false,
+        ...(proxy.agent ? { httpAgent: proxy.agent, httpsAgent: proxy.agent } : {}),
+      };
+      return (Lark.defaultHttpInstance as { request: (params: unknown) => Promise<unknown> }).request(
+        requestOptions,
+      );
+    },
+  };
 }
 
 // Multi-account client cache
@@ -17,7 +67,7 @@ const clientCache = new Map<
   string,
   {
     client: Lark.Client;
-    config: { appId: string; appSecret: string; domain?: FeishuDomain };
+    config: { appId: string; appSecret: string; domain?: FeishuDomain; proxy?: string };
   }
 >();
 
@@ -36,6 +86,7 @@ export type FeishuClientCredentials = {
   appId?: string;
   appSecret?: string;
   domain?: FeishuDomain;
+  proxy?: string;
 };
 
 /**
@@ -44,6 +95,11 @@ export type FeishuClientCredentials = {
  */
 export function createFeishuClient(creds: FeishuClientCredentials): Lark.Client {
   const { accountId = "default", appId, appSecret, domain } = creds;
+  const configuredProxy = resolveConfiguredProxy(creds);
+  const resolvedProxy = resolveProxy(configuredProxy);
+  if (resolvedProxy.invalidProxy) {
+    warnInvalidProxy(accountId, resolvedProxy.invalidProxy);
+  }
 
   if (!appId || !appSecret) {
     throw new Error(`Feishu credentials not configured for account "${accountId}"`);
@@ -55,7 +111,8 @@ export function createFeishuClient(creds: FeishuClientCredentials): Lark.Client 
     cached &&
     cached.config.appId === appId &&
     cached.config.appSecret === appSecret &&
-    cached.config.domain === domain
+    cached.config.domain === domain &&
+    cached.config.proxy === resolvedProxy.proxyUrl
   ) {
     return cached.client;
   }
@@ -66,12 +123,13 @@ export function createFeishuClient(creds: FeishuClientCredentials): Lark.Client 
     appSecret,
     appType: Lark.AppType.SelfBuild,
     domain: resolveDomain(domain),
+    httpInstance: createHttpInstance(resolvedProxy),
   });
 
   // Cache it
   clientCache.set(accountId, {
     client,
-    config: { appId, appSecret, domain },
+    config: { appId, appSecret, domain, proxy: resolvedProxy.proxyUrl },
   });
 
   return client;
@@ -83,18 +141,22 @@ export function createFeishuClient(creds: FeishuClientCredentials): Lark.Client 
  */
 export function createFeishuWSClient(account: ResolvedFeishuAccount): Lark.WSClient {
   const { accountId, appId, appSecret, domain } = account;
+  const resolvedProxy = resolveProxy(account.config.proxy);
+  if (resolvedProxy.invalidProxy) {
+    warnInvalidProxy(accountId, resolvedProxy.invalidProxy);
+  }
 
   if (!appId || !appSecret) {
     throw new Error(`Feishu credentials not configured for account "${accountId}"`);
   }
 
-  const agent = getWsProxyAgent();
   return new Lark.WSClient({
     appId,
     appSecret,
     domain: resolveDomain(domain),
     loggerLevel: Lark.LoggerLevel.info,
-    ...(agent ? { agent } : {}),
+    httpInstance: createHttpInstance(resolvedProxy),
+    ...(resolvedProxy.agent ? { agent: resolvedProxy.agent } : {}),
   });
 }
 

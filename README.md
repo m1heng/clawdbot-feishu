@@ -239,6 +239,9 @@ channels:
     appSecret: "secret"
     # Domain: "feishu" (China), "lark" (International), or custom URL
     domain: "feishu"  # or "https://open.xxx.cn" for private deployment
+    # Optional explicit proxy for Feishu HTTP/WS traffic.
+    # Default: direct connection (system http_proxy/https_proxy are ignored)
+    proxy: "http://127.0.0.1:7890"
     # Connection mode: "websocket" (recommended) or "webhook"
     connectionMode: "websocket"
     # DM policy: "pairing" | "open" | "allowlist"
@@ -384,6 +387,22 @@ channels:
 ```
 
 In Feishu console: Events & Callbacks → select **Long connection**.
+
+#### Proxy
+
+By default, this plugin uses direct network connections and ignores system proxy environment variables such as
+`http_proxy`, `https_proxy`, `HTTP_PROXY`, and `HTTPS_PROXY`.
+
+To enable proxy for Feishu traffic, configure it explicitly:
+
+```yaml
+channels:
+  feishu:
+    proxy: "http://127.0.0.1:7890"
+    accounts:
+      prod:
+        proxy: "http://127.0.0.1:8899"  # account-level override
+```
 
 **Webhook mode**:
 
@@ -755,6 +774,9 @@ channels:
     appSecret: "secret"
     # 域名: "feishu" (国内)、"lark" (国际) 或自定义 URL
     domain: "feishu"  # 私有化部署可用 "https://open.xxx.cn"
+    # 可选：显式为飞书 HTTP/WS 流量设置代理。
+    # 默认：直连（会忽略系统 http_proxy/https_proxy 环境变量）
+    proxy: "http://127.0.0.1:7890"
     # 连接模式: "websocket" (推荐) 或 "webhook"
     connectionMode: "websocket"
     # 私聊策略: "pairing" | "open" | "allowlist"
@@ -899,6 +921,21 @@ channels:
 ```
 
 飞书控制台：事件与回调 → 选择 **使用长连接接收事件**。
+
+#### 代理配置
+
+插件默认使用直连，并忽略系统代理环境变量（`http_proxy`、`https_proxy`、`HTTP_PROXY`、`HTTPS_PROXY`）。
+
+如需让飞书流量走代理，请显式配置：
+
+```yaml
+channels:
+  feishu:
+    proxy: "http://127.0.0.1:7890"
+    accounts:
+      prod:
+        proxy: "http://127.0.0.1:8899"  # 账号级覆盖
+```
 
 **Webhook 模式**：
 
