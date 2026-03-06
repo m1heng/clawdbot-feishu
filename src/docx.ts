@@ -6,6 +6,27 @@ import type * as Lark from "@larksuiteoapi/node-sdk";
 import { Readable } from "stream";
 import { FeishuDocSchema, type FeishuDocParams } from "./doc-schema.js";
 import { resolveToolsConfig } from "./tools-config.js";
+import { getCurrentSenderOpenId } from "./session-context.js";
+import fs from 'fs';
+
+const DEBUG_LOG_FILE = '/tmp/feishu_debug.log';
+
+function writeDebugLog(message: string, data?: any): void {
+  try {
+    const timestamp = new Date().toISOString();
+    const logEntry = data ? `[${timestamp}] ${message} ${JSON.stringify(data)}\n` : `[${timestamp}] ${message}\n`;
+    fs.appendFileSync(DEBUG_LOG_FILE, logEntry);
+  } catch (err) {
+    // Ignore file write errors
+  }
+}
+
+// Logger for debugging
+let feishuDocLogger: OpenClawPluginApi["logger"] | undefined;
+
+export function setFeishuDocLogger(logger: OpenClawPluginApi["logger"]) {
+  feishuDocLogger = logger;
+}
 
 // ============ Helpers ============
 
@@ -243,16 +264,115 @@ async function readDoc(client: Lark.Client, docToken: string) {
   };
 }
 
-async function createDoc(client: Lark.Client, title: string, folderToken?: string) {
+async function createDoc(client: Lark.Client, title: string, folderToken?: string, shareWith?: {
+  member_type: string;
+  member_id: string;
+  perm: string;
+}, content?: string) {
+  writeDebugLog(`[feishu_doc] createDoc called`, { title, folderToken, shareWith, hasContent: !!content });
   const res = await client.docx.document.create({
     data: { title, folder_token: folderToken },
   });
   if (res.code !== 0) throw new Error(res.msg);
   const doc = res.data?.document;
+  writeDebugLog(`[feishu_doc] Document created`, { document_id: doc?.document_id, title: doc?.title });
+
+  // If no shareWith specified, try to auto-share with current user
+  let effectiveShareWith = shareWith;
+  if (!effectiveShareWith) {
+    const currentSenderOpenId = getCurrentSenderOpenId();
+    writeDebugLog(`[feishu_doc] getCurrentSenderOpenId returned`, currentSenderOpenId);
+    feishuDocLogger?.info?.(`[feishu_doc] getCurrentSenderOpenId returned:`, currentSenderOpenId);
+    if (currentSenderOpenId) {
+      effectiveShareWith = {
+        member_type: "openid",
+        member_id: currentSenderOpenId,
+        perm: "edit",
+      };
+      writeDebugLog(`[feishu_doc] Auto-sharing with current user`, currentSenderOpenId);
+      feishuDocLogger?.info?.(`[feishu_doc] Auto-sharing with current user:`, currentSenderOpenId);
+    } else {
+      writeDebugLog(`[feishu_doc] No current user found, skipping auto-share`);
+      feishuDocLogger?.warn?.(`[feishu_doc] No current user found, skipping auto-share`);
+    }
+  }
+
+  // Auto-share with specified user or current user
+  if (effectiveShareWith && doc?.document_id) {
+    try {
+      writeDebugLog(`[feishu_doc] Sharing document`, { document_id: doc.document_id, member_id: effectiveShareWith.member_id, perm: effectiveShareWith.perm });
+      feishuDocLogger?.info?.(`[feishu_doc] Sharing document ${doc.document_id} with ${effectiveShareWith.member_id} (${effectiveShareWith.perm})`);
+      await client.drive.permissionMember.create({
+        path: { token: doc.document_id },
+        params: { type: "docx", need_notification: false },
+        data: {
+          member_type: effectiveShareWith.member_type as any,
+          member_id: effectiveShareWith.member_id,
+          perm: effectiveShareWith.perm as any,
+        },
+      });
+      writeDebugLog(`[feishu_doc] Successfully shared document`);
+      feishuDocLogger?.info?.(`[feishu_doc] Successfully shared document`);
+    } catch (err) {
+      writeDebugLog(`[feishu_doc] Failed to share document`, { error: String(err) });
+      feishuDocLogger?.error?.(`Failed to share document with ${effectiveShareWith.member_id}:`, err);
+      // Don't throw - document was created successfully, just sharing failed
+    }
+  } else {
+    writeDebugLog(`[feishu_doc] No sharing performed`, { effectiveShareWith: !!effectiveShareWith, document_id: doc?.document_id });
+    feishuDocLogger?.info?.(`[feishu_doc] No sharing performed - effectiveShareWith:`, effectiveShareWith, `doc.document_id:`, doc?.document_id);
+  }
+
+  // If content is provided, write it to the document
+  let writeResult;
+  if (content && doc?.document_id) {
+    writeDebugLog(`[feishu_doc] Writing content to document`, { contentLength: content.length });
+    try {
+      writeResult = await writeDoc(client, doc.document_id, content);
+      writeDebugLog(`[feishu_doc] Content written successfully`, writeResult);
+    } catch (err) {
+      writeDebugLog(`[feishu_doc] Failed to write content`, { error: String(err) });
+      feishuDocLogger?.error?.(`Failed to write content to document:`, err);
+      // Don't throw - document was created successfully, just content write failed
+    }
+  }
+
   return {
     document_id: doc?.document_id,
     title: doc?.title,
     url: `https://feishu.cn/docx/${doc?.document_id}`,
+    ...(effectiveShareWith && { shared_with: { ...effectiveShareWith } }),
+    ...(writeResult && { content_written: writeResult }),
+  };
+}
+
+async function createDocWithContent(
+  client: Lark.Client,
+  title: string,
+  content: string,
+  folderToken?: string,
+  shareWith?: {
+    member_type: string;
+    member_id: string;
+    perm: string;
+  }
+) {
+  // Create the document first
+  const createResult = await createDoc(client, title, folderToken, shareWith);
+  const documentId = createResult.document_id;
+
+  if (!documentId) {
+    throw new Error("Failed to create document: no document_id returned");
+  }
+
+  // Write content to the document
+  const writeResult = await writeDoc(client, documentId, content);
+
+  return {
+    document_id: documentId,
+    title: createResult.title,
+    url: createResult.url,
+    content_written: writeResult,
   };
 }
 
@@ -403,7 +523,10 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
   // Use first account's config for tools configuration
   const firstAccount = accounts[0];
   const toolsCfg = resolveToolsConfig(firstAccount.config.tools);
-  
+
+  // Set logger for debugging
+  setFeishuDocLogger(api.logger);
+
   // Helper to get client for the default account
   const getClient = () => createFeishuClient(firstAccount);
   const registered: string[] = [];
@@ -415,21 +538,38 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
       name: "feishu_doc",
       label: "Feishu Doc",
       description:
-        "Feishu document operations. Actions: read, write, append, create, list_blocks, get_block, update_block, delete_block",
+        "Feishu document operations. Actions:\n" +
+        "- create: Creates a document with optional content (use content parameter to add content)\n" +
+        "- read: Reads document content and metadata\n" +
+        "- write: Replaces entire document content with markdown\n" +
+        "- append: Appends markdown content to end of document\n" +
+        "- list_blocks: Lists all blocks in the document\n" +
+        "- get_block: Gets details of a specific block\n" +
+        "- update_block: Updates text content of a specific block\n" +
+        "- delete_block: Deletes a specific block\n" +
+        "- create_with_content: Alias for 'create' with content parameter (deprecated, use 'create' with content parameter instead)",
       parameters: FeishuDocSchema,
       async execute(_toolCallId, params) {
         const p = params as FeishuDocParams;
+        writeDebugLog(`[feishu_doc] Tool execute called`, { action: p.action, params: p });
         try {
           const client = getClient();
           switch (p.action) {
             case "read":
+              writeDebugLog(`[feishu_doc] Executing read action`, { doc_token: p.doc_token });
               return json(await readDoc(client, p.doc_token));
             case "write":
+              writeDebugLog(`[feishu_doc] Executing write action`, { doc_token: p.doc_token, content_length: p.content?.length });
               return json(await writeDoc(client, p.doc_token, p.content));
             case "append":
+              writeDebugLog(`[feishu_doc] Executing append action`, { doc_token: p.doc_token, content_length: p.content?.length });
               return json(await appendDoc(client, p.doc_token, p.content));
             case "create":
-              return json(await createDoc(client, p.title, p.folder_token));
+              writeDebugLog(`[feishu_doc] Executing create action`, { title: p.title, folder_token: p.folder_token, share_with: (p as any).share_with, hasContent: !!(p as any).content });
+              return json(await createDoc(client, p.title, p.folder_token, (p as any).share_with, (p as any).content));
+            case "create_with_content":
+              writeDebugLog(`[feishu_doc] Executing create_with_content action`, { title: p.title, content_length: (p as any).content?.length, folder_token: p.folder_token, share_with: (p as any).share_with });
+              return json(await createDocWithContent(client, p.title, (p as any).content, p.folder_token, (p as any).share_with));
             case "list_blocks":
               return json(await listBlocks(client, p.doc_token));
             case "get_block":
@@ -439,9 +579,11 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
             case "delete_block":
               return json(await deleteBlock(client, p.doc_token, p.block_id));
             default:
+              writeDebugLog(`[feishu_doc] Unknown action`, { action: (p as any).action });
               return json({ error: `Unknown action: ${(p as any).action}` });
           }
         } catch (err) {
+          writeDebugLog(`[feishu_doc] Error during execution`, { error: String(err), action: p.action });
           return json({ error: err instanceof Error ? err.message : String(err) });
         }
       },

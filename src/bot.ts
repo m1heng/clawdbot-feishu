@@ -9,7 +9,21 @@ import {
 import type { FeishuConfig, FeishuMessageContext, FeishuMediaInfo, ResolvedFeishuAccount } from "./types.js";
 import { getFeishuRuntime } from "./runtime.js";
 import { createFeishuClient } from "./client.js";
+import { setSessionContext } from "./session-context.js";
 import { resolveFeishuAccount } from "./accounts.js";
+import fs from 'fs';
+
+const DEBUG_LOG_FILE = '/tmp/feishu_debug.log';
+
+function writeDebugLog(message: string, data?: any): void {
+  try {
+    const timestamp = new Date().toISOString();
+    const logEntry = data ? `[${timestamp}] ${message} ${JSON.stringify(data)}\n` : `[${timestamp}] ${message}\n`;
+    fs.appendFileSync(DEBUG_LOG_FILE, logEntry);
+  } catch (err) {
+    // Ignore file write errors
+  }
+}
 import {
   resolveFeishuGroupConfig,
   resolveFeishuReplyPolicy,
@@ -807,6 +821,17 @@ export async function handleFeishuMessage(params: {
           }),
       });
     }
+
+    // Store session context for tools to access
+    const sessionData = {
+      senderOpenId: ctx.senderOpenId,
+      senderId: ctx.senderId,
+      chatId: ctx.chatId,
+      chatType: isGroup ? "group" : "direct",
+    };
+    writeDebugLog(`[feishu] Setting session context`, { sessionKey: route.sessionKey, sessionData });
+    console.log(`[feishu] Setting session context for ${route.sessionKey}: senderOpenId=${ctx.senderOpenId}, chatId=${ctx.chatId}`);
+    setSessionContext(route.sessionKey, sessionData);
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       Body: combinedBody,
