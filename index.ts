@@ -1,4 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+// @ts-ignore - types not exported from main entry
+import type { PluginHookSubagentSpawningEvent } from "openclaw/plugin-sdk/plugins/hooks";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { feishuPlugin } from "./src/channel.js";
 import { setFeishuRuntime } from "./src/runtime.js";
@@ -10,6 +12,7 @@ import { registerFeishuTaskTools } from "./src/task-tools/index.js";
 import { registerFeishuChatTools } from "./src/chat-tools/index.js";
 import { registerFeishuUrgentTools } from "./src/urgent-tools/index.js";
 import { registerFeishuWikiTools } from "./src/wiki-tools/index.js";
+import { handleSubagentSpawning } from "./src/subagent.js";
 
 export { monitorFeishuProvider } from "./src/monitor.js";
 export {
@@ -47,6 +50,7 @@ export {
   type MentionTarget,
 } from "./src/mention.js";
 export { feishuPlugin } from "./src/channel.js";
+export { handleSubagentSpawning } from "./src/subagent.js";
 
 const plugin = {
   id: "feishu",
@@ -56,6 +60,12 @@ const plugin = {
   register(api: OpenClawPluginApi) {
     setFeishuRuntime(api.runtime);
     api.registerChannel({ plugin: feishuPlugin });
+    
+    // Register subagent spawning hook to support mode="session" + thread=true
+    api.on("subagent_spawning", async (event: PluginHookSubagentSpawningEvent) => {
+      return handleSubagentSpawning(event, api.config);
+    });
+    
     registerFeishuDocTools(api);
     registerFeishuWikiTools(api);
     registerFeishuDriveTools(api);
