@@ -237,23 +237,6 @@ export async function uploadImageFeishu(params: {
   return { imageKey };
 }
 
-/**
- * Encode a filename for safe use in Feishu multipart/form-data uploads.
- * Non-ASCII characters (Chinese, em-dash, full-width brackets, etc.) cause
- * the upload to silently fail when passed raw through the SDK's form-data
- * serialization. RFC 5987 percent-encoding keeps headers 7-bit clean while
- * Feishu's server decodes and preserves the original display name.
- */
-export function sanitizeFileNameForUpload(fileName: string): string {
-  const ASCII_ONLY = /^[\x20-\x7E]+$/;
-  if (ASCII_ONLY.test(fileName)) {
-    return fileName;
-  }
-  return encodeURIComponent(fileName)
-    .replace(/'/g, "%27")
-    .replace(/\(/g, "%28")
-    .replace(/\)/g, "%29");
-}
 
 /**
  * Upload a file to Feishu and get a file_key for sending.
@@ -280,12 +263,10 @@ export async function uploadFileFeishu(params: {
   const fileStream =
     typeof file === "string" ? fs.createReadStream(file) : Readable.from(file);
 
-  const safeFileName = sanitizeFileNameForUpload(fileName);
-
   const response = await client.im.file.create({
     data: {
       file_type: fileType,
-      file_name: safeFileName,
+      file_name: fileName,
       file: fileStream as any,
       ...(duration !== undefined && { duration }),
     },
