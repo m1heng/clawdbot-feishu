@@ -563,40 +563,6 @@ function ensureBlocksInserted(args: {
   );
 }
 
-/**
- * Set document permissions for a user.
- * Auto-shares the document with the current user (if available in tool context).
- */
-async function setDocumentPermissions(
-  client: Lark.Client,
-  documentId: string,
-  memberType: string,
-  memberId: string,
-  perm: "view" | "edit" | "full_access",
-): Promise<void> {
-  try {
-    const res = await client.drive.permissionMember.create({
-      path: { token: documentId },
-      params: { type: "docx", need_notification: false },
-      data: {
-        member_type: memberType,
-        member_id: memberId,
-        perm,
-      },
-    });
-    if (res.code !== 0) {
-      console.warn(
-        `[feishu_doc] Failed to set permissions for ${memberType}:${memberId}: ${res.msg}`,
-      );
-    }
-  } catch (err) {
-    console.warn(
-      `[feishu_doc] Error setting permissions for ${memberType}:${memberId}:`,
-      err,
-    );
-  }
-}
-
 export async function createDoc(
   client: Lark.Client,
   title: string,
@@ -608,19 +574,21 @@ export async function createDoc(
   if (res.code !== 0) throw new Error(res.msg);
   const doc = res.data?.document;
 
-  // Auto-share with current user if available
-  const toolContext = getCurrentFeishuToolContext();
-  if (doc?.document_id && toolContext?.senderOpenId) {
-    await setDocumentPermissions(
-      client,
-      doc.document_id,
-      "openid",
-      toolContext.senderOpenId,
-      "edit",
-    );
-    console.log(
-      `[feishu_doc] Auto-shared document ${doc.document_id} with ${toolContext.senderOpenId}`,
-    );
+  // Auto-share with the requesting user so they can edit the document.
+  const senderOpenId = getCurrentFeishuToolContext()?.senderOpenId;
+  if (doc?.document_id && senderOpenId) {
+    try {
+      const permRes = await client.drive.permissionMember.create({
+        path: { token: doc.document_id },
+        params: { type: "docx", need_notification: false },
+        data: { member_type: "openid", member_id: senderOpenId, perm: "edit" },
+      });
+      if (permRes.code !== 0) {
+        console.warn(`[feishu_doc] Failed to auto-share doc ${doc.document_id}: ${permRes.msg}`);
+      }
+    } catch (err) {
+      console.warn(`[feishu_doc] Failed to auto-share doc ${doc.document_id}:`, err);
+    }
   }
 
   return {
