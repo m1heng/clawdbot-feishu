@@ -5,6 +5,13 @@ import type { FeishuDriveParams } from "./schemas.js";
 type DriveMoveType = "doc" | "docx" | "sheet" | "bitable" | "folder" | "file" | "mindnote" | "slides";
 type DriveDeleteType = DriveMoveType | "shortcut";
 
+function requireString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${field} is required`);
+  }
+  return value;
+}
+
 async function getFileType(client: DriveClient, fileToken: string): Promise<string> {
   let pageToken: string | undefined;
   
@@ -196,18 +203,23 @@ export async function runDriveAction(
     case "list":
       return listFolder(client, params.folder_token);
     case "info":
-      return getFileInfo(client, params.file_token);
+      return getFileInfo(client, requireString(params.file_token, "file_token"));
     case "create_folder":
-      return createFolder(client, params.name, params.folder_token);
+      return createFolder(client, requireString(params.name, "name"), params.folder_token);
     case "move":
-      return moveFile(client, params.file_token, params.type, params.folder_token);
+      return moveFile(
+        client,
+        requireString(params.file_token, "file_token"),
+        requireString(params.type, "type"),
+        requireString(params.folder_token, "folder_token"),
+      );
     case "delete":
-      return deleteFile(client, params.file_token, params.type);
+      return deleteFile(client, requireString(params.file_token, "file_token"), params.type);
     case "import_document":
       return importDocument(
         client,
-        params.title,
-        params.content,
+        requireString(params.title, "title"),
+        requireString(params.content, "content"),
         mediaMaxBytes,
         params.folder_token,
         params.doc_type || "docx",

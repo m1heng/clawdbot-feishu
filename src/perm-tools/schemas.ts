@@ -1,52 +1,46 @@
 import { Type, type Static } from "@sinclair/typebox";
 
-const TokenType = Type.Union([
-  Type.Literal("doc"),
-  Type.Literal("docx"),
-  Type.Literal("sheet"),
-  Type.Literal("bitable"),
-  Type.Literal("folder"),
-  Type.Literal("file"),
-  Type.Literal("wiki"),
-  Type.Literal("mindnote"),
-]);
+function stringEnum<T extends readonly string[]>(
+  values: T,
+  options: { description?: string; default?: T[number] } = {},
+) {
+  return Type.Unsafe<T[number]>({ type: "string", enum: [...values], ...options });
+}
 
-const MemberType = Type.Union([
-  Type.Literal("email"),
-  Type.Literal("openid"),
-  Type.Literal("userid"),
-  Type.Literal("unionid"),
-  Type.Literal("openchat"),
-  Type.Literal("opendepartmentid"),
-]);
+const TOKEN_TYPE_VALUES = [
+  "doc",
+  "docx",
+  "sheet",
+  "bitable",
+  "folder",
+  "file",
+  "wiki",
+  "mindnote",
+] as const;
 
-const Permission = Type.Union([
-  Type.Literal("view"),
-  Type.Literal("edit"),
-  Type.Literal("full_access"),
-]);
+const MEMBER_TYPE_VALUES = [
+  "email",
+  "openid",
+  "userid",
+  "unionid",
+  "openchat",
+  "opendepartmentid",
+] as const;
 
-export const FeishuPermSchema = Type.Union([
-  Type.Object({
-    action: Type.Literal("list"),
-    token: Type.String({ description: "File token" }),
-    type: TokenType,
-  }),
-  Type.Object({
-    action: Type.Literal("add"),
-    token: Type.String({ description: "File token" }),
-    type: TokenType,
-    member_type: MemberType,
-    member_id: Type.String({ description: "Member ID (email, open_id, user_id, etc.)" }),
-    perm: Permission,
-  }),
-  Type.Object({
-    action: Type.Literal("remove"),
-    token: Type.String({ description: "File token" }),
-    type: TokenType,
-    member_type: MemberType,
-    member_id: Type.String({ description: "Member ID to remove" }),
-  }),
-]);
+const PERMISSION_VALUES = ["view", "edit", "full_access"] as const;
+const PERM_ACTION_VALUES = ["list", "add", "remove"] as const;
+
+export const FeishuPermSchema = Type.Object({
+  action: stringEnum(PERM_ACTION_VALUES, { description: "Permission action" }),
+  token: Type.Optional(Type.String({ description: "File token" })),
+  type: Type.Optional(stringEnum(TOKEN_TYPE_VALUES, { description: "File token type" })),
+  member_type: Type.Optional(
+    stringEnum(MEMBER_TYPE_VALUES, {
+      description: "Member ID type (email/openid/userid/unionid/openchat/opendepartmentid)",
+    }),
+  ),
+  member_id: Type.Optional(Type.String({ description: "Member ID" })),
+  perm: Type.Optional(stringEnum(PERMISSION_VALUES, { description: "Permission level" })),
+});
 
 export type FeishuPermParams = Static<typeof FeishuPermSchema>;

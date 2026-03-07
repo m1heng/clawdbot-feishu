@@ -7,6 +7,13 @@ const WIKI_ACCESS_HINT =
   "To grant wiki access: Open wiki space -> Settings -> Members -> Add the bot. " +
   "See: https://open.feishu.cn/document/server-docs/docs/wiki-v2/wiki-qa#a40ad4ca";
 
+function requireString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${field} is required`);
+  }
+  return value;
+}
+
 async function listSpaces(client: WikiClient) {
   const res = await runWikiApiCall("wiki.space.list", () => client.wiki.space.list({}));
   const spaces =
@@ -140,26 +147,37 @@ export async function runWikiAction(client: WikiClient, params: FeishuWikiParams
     case "spaces":
       return listSpaces(client);
     case "nodes":
-      return listNodes(client, params.space_id, params.parent_node_token);
+      return listNodes(client, requireString(params.space_id, "space_id"), params.parent_node_token);
     case "get":
-      return getNode(client, params.token);
+      return getNode(client, requireString(params.token, "token"));
     case "search":
       return {
         error:
           "Search is not available. Use feishu_wiki with action: 'nodes' to browse or action: 'get' to lookup by token.",
       };
     case "create":
-      return createNode(client, params.space_id, params.title, params.obj_type, params.parent_node_token);
+      return createNode(
+        client,
+        requireString(params.space_id, "space_id"),
+        requireString(params.title, "title"),
+        params.obj_type,
+        params.parent_node_token,
+      );
     case "move":
       return moveNode(
         client,
-        params.space_id,
-        params.node_token,
+        requireString(params.space_id, "space_id"),
+        requireString(params.node_token, "node_token"),
         params.target_space_id,
         params.target_parent_token,
       );
     case "rename":
-      return renameNode(client, params.space_id, params.node_token, params.title);
+      return renameNode(
+        client,
+        requireString(params.space_id, "space_id"),
+        requireString(params.node_token, "node_token"),
+        requireString(params.title, "title"),
+      );
     default:
       return { error: `Unknown action: ${(params as any).action}` };
   }

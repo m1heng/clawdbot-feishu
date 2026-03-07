@@ -1,22 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { registerFeishuBitableTools } from "../bitable-tools/index.js";
+import { registerFeishuChatTools } from "../chat-tools/index.js";
 import { registerFeishuDocTools } from "../doc-tools/index.js";
 import { registerFeishuDriveTools } from "../drive-tools/index.js";
 import { registerFeishuPermTools } from "../perm-tools/index.js";
 import { registerFeishuTaskTools } from "../task-tools/index.js";
+import { registerFeishuUrgentTools } from "../urgent-tools/index.js";
 import { registerFeishuWikiTools } from "../wiki-tools/index.js";
 
 type RegisteredTool = {
   name: string;
   parameters: unknown;
 };
-
-const MULTI_ACTION_UNION_TOOLS = new Set([
-  "feishu_doc",
-  "feishu_wiki",
-  "feishu_drive",
-  "feishu_perm",
-]);
 
 function createToolCaptureApi() {
   const tools: RegisteredTool[] = [];
@@ -34,6 +29,8 @@ function createToolCaptureApi() {
             perm: true,
             scopes: true,
             task: true,
+            chat: true,
+            urgent: true,
           },
         },
       },
@@ -54,6 +51,8 @@ function createToolCaptureApi() {
   registerFeishuPermTools(api);
   registerFeishuBitableTools(api);
   registerFeishuTaskTools(api);
+  registerFeishuChatTools(api);
+  registerFeishuUrgentTools(api);
 
   return tools;
 }
@@ -70,7 +69,7 @@ function hasTopLevelKeyword(schema: unknown, keyword: "anyOf" | "oneOf" | "allOf
   return record ? Array.isArray(record[keyword]) : false;
 }
 
-function collectKeywordPaths(schema: unknown, keyword: "allOf"): string[] {
+function collectKeywordPaths(schema: unknown, keyword: "anyOf" | "oneOf" | "allOf"): string[] {
   const found: string[] = [];
 
   const walk = (value: unknown, path: string) => {
@@ -119,8 +118,8 @@ describe("tool schema compatibility guardrails", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("Given non-union tools, When checking root schema, Then root is object without top-level anyOf/oneOf/allOf", () => {
-    const tools = createToolCaptureApi().filter((tool) => !MULTI_ACTION_UNION_TOOLS.has(tool.name));
+  it("Given all registered tools, When checking root schema, Then root is object without top-level anyOf/oneOf/allOf", () => {
+    const tools = createToolCaptureApi();
     expect(tools.length).toBeGreaterThan(0);
 
     for (const tool of tools) {
@@ -133,14 +132,16 @@ describe("tool schema compatibility guardrails", () => {
     }
   });
 
-  it("Given task tools, When checking schema tree, Then allOf is absent at any depth", () => {
-    const taskTools = createToolCaptureApi().filter(
-      (tool) => tool.name.startsWith("feishu_task") || tool.name.startsWith("feishu_tasklist"),
-    );
-    expect(taskTools.length).toBeGreaterThan(0);
+  it("Given all registered tools, When checking schema tree, Then anyOf/oneOf/allOf are absent at any depth", () => {
+    const tools = createToolCaptureApi();
+    expect(tools.length).toBeGreaterThan(0);
 
-    for (const tool of taskTools) {
+    for (const tool of tools) {
+      const anyOfPaths = collectKeywordPaths(tool.parameters, "anyOf");
+      const oneOfPaths = collectKeywordPaths(tool.parameters, "oneOf");
       const allOfPaths = collectKeywordPaths(tool.parameters, "allOf");
+      expect(anyOfPaths, `${tool.name}: anyOf paths`).toEqual([]);
+      expect(oneOfPaths, `${tool.name}: oneOf paths`).toEqual([]);
       expect(allOfPaths, `${tool.name}: allOf paths`).toEqual([]);
     }
   });

@@ -33,6 +33,13 @@ type MemberType =
   | "wikispaceid";
 type PermType = "view" | "edit" | "full_access";
 
+function requireString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${field} is required`);
+  }
+  return value;
+}
+
 async function listMembers(client: PermClient, token: string, type: string) {
   const res = await runPermApiCall("drive.permissionMember.list", () =>
     client.drive.permissionMember.list({
@@ -100,11 +107,28 @@ async function removeMember(
 export async function runPermAction(client: PermClient, params: FeishuPermParams) {
   switch (params.action) {
     case "list":
-      return listMembers(client, params.token, params.type);
+      return listMembers(
+        client,
+        requireString(params.token, "token"),
+        requireString(params.type, "type"),
+      );
     case "add":
-      return addMember(client, params.token, params.type, params.member_type, params.member_id, params.perm);
+      return addMember(
+        client,
+        requireString(params.token, "token"),
+        requireString(params.type, "type"),
+        requireString(params.member_type, "member_type"),
+        requireString(params.member_id, "member_id"),
+        requireString(params.perm, "perm"),
+      );
     case "remove":
-      return removeMember(client, params.token, params.type, params.member_type, params.member_id);
+      return removeMember(
+        client,
+        requireString(params.token, "token"),
+        requireString(params.type, "type"),
+        requireString(params.member_type, "member_type"),
+        requireString(params.member_id, "member_id"),
+      );
     default:
       return { error: `Unknown action: ${(params as any).action}` };
   }

@@ -2,6 +2,23 @@ import type { ChatClient } from "./common.js";
 import type { FeishuChatParams } from "./schemas.js";
 import { runChatApiCall } from "./common.js";
 
+type UserIdType = "open_id" | "user_id" | "union_id";
+type MemberIdType = UserIdType | "app_id";
+
+function requireString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${field} is required`);
+  }
+  return value;
+}
+
+function requireStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.length === 0 || value.some((item) => typeof item !== "string")) {
+    throw new Error(`${field} must be a non-empty string array`);
+  }
+  return value;
+}
+
 const BLOCK_TYPE_NAMES: Record<number, string> = {
   1: "Page",
   2: "Text",
@@ -117,15 +134,35 @@ async function writeDocAnnouncement(client: ChatClient, chatId: string, content:
     }),
   );
 
-  const res = await runChatApiCall("im.chatAnnouncement.patch", () =>
-    (client as any).im.chatAnnouncement.patch({
-      path: { chat_id: chatId },
-      data: {
-        content,
-        revision: (current as any).data?.revision,
-      },
-    }),
-  );
+  const revision = (current as any).data?.revision;
+  if (!revision) {
+    throw new Error("Failed to load current announcement revision");
+  }
+
+  let res: unknown;
+  try {
+    // Prefer SDK current payload shape (revision + requests[]).
+    res = await runChatApiCall("im.chatAnnouncement.patch", () =>
+      (client as any).im.chatAnnouncement.patch({
+        path: { chat_id: chatId },
+        data: {
+          revision,
+          requests: [content],
+        },
+      }),
+    );
+  } catch {
+    // Backward compatibility for tenants still accepting legacy content payload.
+    res = await runChatApiCall("im.chatAnnouncement.patch", () =>
+      (client as any).im.chatAnnouncement.patch({
+        path: { chat_id: chatId },
+        data: {
+          content,
+          revision,
+        },
+      }),
+    );
+  }
 
   return {
     success: true,
@@ -210,7 +247,13 @@ async function batchUpdateAnnouncementBlocks(
 
 // ============== New Chat Management Functions ==============
 
-async function createChat(client: ChatClient, name: string, userIds?: string[], description?: string) {
+async function createChat(
+  client: ChatClient,
+  name: string,
+  userIds?: string[],
+  description?: string,
+  userIdType: UserIdType = "open_id",
+) {
   const data: any = { name };
   if (userIds && userIds.length > 0) {
     data.user_id_list = userIds;
@@ -222,7 +265,7 @@ async function createChat(client: ChatClient, name: string, userIds?: string[], 
   const res = await runChatApiCall("im.chat.create", () =>
     (client as any).im.chat.create({
       data,
-      params: { user_id_type: "open_id" },
+      params: { user_id_type: userIdType },
     }),
   );
 
@@ -233,11 +276,16 @@ async function createChat(client: ChatClient, name: string, userIds?: string[], 
   };
 }
 
-async function addMembers(client: ChatClient, chatId: string, userIds: string[]) {
+async function addMembers(
+  client: ChatClient,
+  chatId: string,
+  userIds: string[],
+  memberIdType: MemberIdType = "open_id",
+) {
   const res = await runChatApiCall("im.chatMembers.create", () =>
     (client as any).im.chatMembers.create({
       path: { chat_id: chatId },
-      params: { member_id_type: "open_id" },
+      params: { member_id_type: memberIdType },
       data: { id_list: userIds },
     }),
   );
@@ -300,9 +348,10 @@ async function createSessionChat(
   userIds: string[],
   greeting?: string,
   description?: string,
+  userIdType: UserIdType = "open_id",
 ) {
   // Step 1: Create the chat
-  const createResult = await createChat(client, name, userIds, description);
+  const createResult = await createChat(client, name, userIds, description, userIdType);
   const chatId = createResult.chat_id;
   
   if (!chatId) {
@@ -358,15 +407,21 @@ export async function runChatAction(client: ChatClient, params: FeishuChatParams
   switch (params.action) {
     case "get_announcement_info":
     case "get_announcement":
-      return getAnnouncement(client, params.chat_id);
+      return getAnnouncement(client, requireString(params.chat_id, "chat_id"));
     case "list_announcement_blocks":
-      return listAnnouncementBlocks(client, params.chat_id);
+      return listAnnouncementBlocks(client, requireString(params.chat_id, "chat_id"));
     case "get_announcement_block":
-      return getAnnouncementBlock(client, params.chat_id, params.block_id);
+      return getAnnouncementBlock(
+        client,
+        requireString(params.chat_id, "chat_id"),
+        requireString(params.block_id, "block_id"),
+      );
     case "write_announcement": {
-      const current = await getAnnouncement(client, params.chat_id);
+      const chatId = requireString(params.chat_id, "chat_id");
+      const content = requireString(params.content, "content");
+      const current = await getAnnouncement(client, chatId);
       if (current.announcement_type === "doc") {
-        return writeDocAnnouncement(client, params.chat_id, params.content);
+        return writeDocAnnouncement(client, chatId, content);
       } else {
         // For docx announcements, append a text block under the Page root block.
         // Full replacement is not supported via API; use update_announcement_block to edit existing blocks.
@@ -375,15 +430,17 @@ export async function runChatAction(client: ChatClient, params: FeishuChatParams
         if (!pageBlock?.block_id) {
           return { error: "Could not find the Page root block for docx announcement. Use list_announcement_blocks to inspect the structure." };
         }
-        return createTextBlock(client, params.chat_id, pageBlock.block_id, params.content);
+        return createTextBlock(client, chatId, pageBlock.block_id, content);
       }
     }
     case "append_announcement": {
-      const current = await getAnnouncement(client, params.chat_id);
+      const chatId = requireString(params.chat_id, "chat_id");
+      const content = requireString(params.content, "content");
+      const current = await getAnnouncement(client, chatId);
       if (current.announcement_type === "doc") {
         const existingContent = (current as any).content || "";
-        const newContent = existingContent + "\n" + params.content;
-        return writeDocAnnouncement(client, params.chat_id, newContent);
+        const newContent = existingContent + "\n" + content;
+        return writeDocAnnouncement(client, chatId, newContent);
       } else {
         // For docx format, the parent block must be the Page root block (block_type: 1)
         const blocks: any[] = (current as any).blocks ?? [];
@@ -391,40 +448,52 @@ export async function runChatAction(client: ChatClient, params: FeishuChatParams
         if (!pageBlock?.block_id) {
           return { error: "Could not find the Page root block for docx announcement. Use list_announcement_blocks to inspect the structure." };
         }
-        return createTextBlock(client, params.chat_id, pageBlock.block_id, params.content);
+        return createTextBlock(client, chatId, pageBlock.block_id, content);
       }
     }
     case "update_announcement_block": {
       const requests = [
         {
-          block_id: params.block_id,
+          block_id: requireString(params.block_id, "block_id"),
           update_text_elements: {
-            elements: [{ text_run: { content: params.content } }],
+            elements: [{ text_run: { content: requireString(params.content, "content") } }],
           },
         },
       ];
-      return batchUpdateAnnouncementBlocks(client, params.chat_id, requests);
+      return batchUpdateAnnouncementBlocks(client, requireString(params.chat_id, "chat_id"), requests);
     }
     // ============== New Chat Management Actions ==============
     case "create_chat": {
-      return createChat(client, params.name, params.user_ids, params.description);
+      return createChat(
+        client,
+        requireString(params.name, "name"),
+        params.user_ids,
+        params.description,
+        params.user_id_type,
+      );
     }
     case "add_members": {
-      return addMembers(client, params.chat_id, params.user_ids);
+      return addMembers(
+        client,
+        requireString(params.chat_id, "chat_id"),
+        requireStringArray(params.user_ids, "user_ids"),
+        params.member_id_type,
+      );
     }
     case "check_bot_in_chat": {
-      return checkBotInChat(client, params.chat_id);
+      return checkBotInChat(client, requireString(params.chat_id, "chat_id"));
     }
     case "delete_chat": {
-      return deleteChat(client, params.chat_id);
+      return deleteChat(client, requireString(params.chat_id, "chat_id"));
     }
     case "create_session_chat": {
       return createSessionChat(
         client,
-        params.name,
-        params.user_ids,
+        requireString(params.name, "name"),
+        requireStringArray(params.user_ids, "user_ids"),
         params.greeting,
         params.description,
+        params.user_id_type,
       );
     }
     default:
