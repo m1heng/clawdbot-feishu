@@ -30,7 +30,8 @@ export async function maybeCreateDynamicAgent(params: {
     (b) =>
       b.match?.channel === "feishu" &&
       (!accountId || b.match?.accountId === accountId) &&
-      b.match?.peer?.kind === "direct" &&
+      // NOTE: In OpenClaw routing, DM peer kind is "dm" (not "direct").
+      b.match?.peer?.kind === "dm" &&
       b.match?.peer?.id === senderOpenId,
   );
 
@@ -69,7 +70,7 @@ export async function maybeCreateDynamicAgent(params: {
           match: {
             channel: "feishu",
             ...(accountId ? { accountId } : {}),
-            peer: { kind: "direct", id: senderOpenId },
+            peer: { kind: "dm", id: senderOpenId },
           },
         },
       ],
@@ -112,7 +113,7 @@ export async function maybeCreateDynamicAgent(params: {
         match: {
           channel: "feishu",
           ...(accountId ? { accountId } : {}),
-          peer: { kind: "direct", id: senderOpenId },
+          peer: { kind: "dm", id: senderOpenId },
         },
       },
     ],
