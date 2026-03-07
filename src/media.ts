@@ -477,9 +477,10 @@ export async function sendMediaFeishu(params: {
   mediaBuffer?: Buffer;
   fileName?: string;
   replyToMessageId?: string;
+  mediaLocalRoots?: readonly string[];
   accountId?: string;
 }): Promise<SendMediaResult> {
-  const { cfg, to, mediaUrl, mediaBuffer, fileName, replyToMessageId, accountId } = params;
+  const { cfg, to, mediaUrl, mediaBuffer, fileName, replyToMessageId, mediaLocalRoots, accountId } = params;
   const account = resolveFeishuAccount({ cfg, accountId });
   if (!account.configured) {
     throw new Error(`Feishu account "${account.accountId}" not configured`);
@@ -494,30 +495,16 @@ export async function sendMediaFeishu(params: {
     buffer = mediaBuffer;
     name = fileName ?? "file";
   } else if (mediaUrl) {
-    const mediaLocalRoots = (account.config?.mediaLocalRoots ?? [])
+    const configLocalRoots = (account.config?.mediaLocalRoots ?? [])
       .map((root) => root.trim())
       .filter((root) => root.length > 0);
-    const loaded = await (async () => {
-      try {
-        return await getFeishuRuntime().media.loadWebMedia(mediaUrl, {
-          maxBytes: mediaMaxBytes,
-          optimizeImages: false,
-        });
-      } catch (err) {
-        const shouldRetryWithCustomRoots =
-          mediaLocalRoots.length > 0 &&
-          err instanceof Error &&
-          err.message.includes("Local media path is not under an allowed directory");
-        if (!shouldRetryWithCustomRoots) {
-          throw err;
-        }
-        return await getFeishuRuntime().media.loadWebMedia(mediaUrl, {
-          maxBytes: mediaMaxBytes,
-          optimizeImages: false,
-          localRoots: mediaLocalRoots,
-        });
-      }
-    })();
+    // Merge context-provided roots (includes agent workspace) with config roots.
+    const mergedLocalRoots = [...(mediaLocalRoots ?? []), ...configLocalRoots];
+    const loaded = await getFeishuRuntime().media.loadWebMedia(mediaUrl, {
+      maxBytes: mediaMaxBytes,
+      optimizeImages: false,
+      ...(mergedLocalRoots.length > 0 ? { localRoots: mergedLocalRoots } : {}),
+    });
     buffer = loaded.buffer;
     name = fileName ?? loaded.fileName ?? "file";
     contentType = loaded.contentType;
