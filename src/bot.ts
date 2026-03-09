@@ -911,9 +911,13 @@ export async function handleFeishuMessage(params: {
   const error = runtime?.error ?? console.error;
 
   // Dedup check: skip if this message was already processed
+  // But don't skip bot's own messages (they will be received via WebSocket after sending)
   const messageId = event.message.message_id;
+  const senderOpenId = event.sender?.sender_id?.open_id || "";
+  const isBotMessage = botOpenId && senderOpenId === botOpenId;
+
   const dedupAccountId = accountId || "default";
-  if (!tryRecordMessage(messageId, dedupAccountId)) {
+  if (!isBotMessage && !tryRecordMessage(messageId, dedupAccountId)) {
     log(`feishu: skipping duplicate message ${messageId}`);
     return;
   }
