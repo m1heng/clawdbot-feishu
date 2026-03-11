@@ -60,6 +60,8 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
     messageToolHints: () => [
       "- Feishu targeting: omit `target` to reply to the current conversation (auto-inferred). Explicit targets: `user:open_id` or `chat:chat_id`.",
       "- Feishu supports interactive cards for rich messages.",
+      "- To send a file from the OpenClaw agent's local filesystem workspace (or another allowed local path) as a Feishu attachment, reply with a standalone `MEDIA:<absolute-path-or-url>` line.",
+      "- `feishu_drive` is for Feishu cloud Drive content, not for the OpenClaw agent's local filesystem workspace.",
     ],
   },
   groups: {
