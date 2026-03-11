@@ -1,3 +1,5 @@
+import { parseBuffer } from "music-metadata";
+
 /**
  * Media duration parsers for Feishu file upload.
  *
@@ -9,10 +11,37 @@
  *   - MP4  (ISO base media) — MP4, MOV, QuickTime, M4A, M4V, 3GP share this format
  *   - WAV  (RIFF PCM)       — uncompressed audio
  *
- * Formats intentionally skipped (complex frame-level parsing, rare in practice):
- *   - MP3 (VBR makes byte-count estimation unreliable without scanning all frames)
- *   - Raw AAC / ADTS
+ * Raw AAC / ADTS is delegated to music-metadata on the audio path.
  */
+
+async function parseAudioDurationWithMusicMetadata(params: {
+  buffer: Buffer;
+  fileName?: string;
+  contentType?: string;
+}): Promise<number | undefined> {
+  const { buffer, fileName, contentType } = params;
+  try {
+    const metadata = await parseBuffer(
+      buffer,
+      {
+        mimeType: contentType,
+        path: fileName,
+        size: buffer.length,
+      },
+      {
+        duration: true,
+        skipCovers: true,
+      },
+    );
+    const seconds = metadata.format.duration;
+    if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) {
+      return undefined;
+    }
+    return Math.round(seconds * 1000);
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Parse duration from an OGG container (Opus or Vorbis).
@@ -174,17 +203,23 @@ export function parseWavDurationMs(buffer: Buffer): number | undefined {
  *
  * Routes to the appropriate parser based on Feishu's file type:
  *   - "mp4"  → MP4/MOV/QuickTime container parser
- *   - "opus" → OGG parser, then MP4 container (covers M4A), then WAV
+ *   - "opus" → music-metadata first, then OGG parser, then MP4 container, then WAV
  *
  * Returns duration in milliseconds, or undefined if not determinable.
  */
-export function parseFeishuMediaDurationMs(
+export async function parseFeishuMediaDurationMs(
   buffer: Buffer,
   fileType: "opus" | "mp4",
-): number | undefined {
+  options?: { fileName?: string; contentType?: string },
+): Promise<number | undefined> {
   if (fileType === "mp4") {
     return parseMp4DurationMs(buffer);
   }
-  // fileType === "opus": try each container format in likelihood order
-  return parseOggDurationMs(buffer) ?? parseMp4DurationMs(buffer) ?? parseWavDurationMs(buffer);
+  return (
+    await parseAudioDurationWithMusicMetadata({
+      buffer,
+      fileName: options?.fileName,
+      contentType: options?.contentType,
+    })
+  ) ?? parseOggDurationMs(buffer) ?? parseMp4DurationMs(buffer) ?? parseWavDurationMs(buffer);
 }

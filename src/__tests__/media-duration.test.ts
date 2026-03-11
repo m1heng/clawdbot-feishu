@@ -225,27 +225,38 @@ describe("parseWavDurationMs", () => {
 });
 
 describe("parseFeishuMediaDurationMs", () => {
-  it("routes 'mp4' to the MP4 parser", () => {
-    expect(parseFeishuMediaDurationMs(makeMp4Buffer(1000, 4000), "mp4")).toBe(4000);
-    expect(parseFeishuMediaDurationMs(makeOpusBuffer(48000), "mp4")).toBeUndefined();
+  it("routes 'mp4' to the MP4 parser", async () => {
+    await expect(parseFeishuMediaDurationMs(makeMp4Buffer(1000, 4000), "mp4")).resolves.toBe(4000);
+    await expect(parseFeishuMediaDurationMs(makeOpusBuffer(48000), "mp4")).resolves.toBeUndefined();
   });
 
-  it("routes 'opus' to OGG parser first", () => {
-    expect(parseFeishuMediaDurationMs(makeOpusBuffer(96000), "opus")).toBe(2000);
+  it("routes 'opus' to OGG parser path", async () => {
+    await expect(parseFeishuMediaDurationMs(makeOpusBuffer(96000), "opus")).resolves.toBeCloseTo(1994, 0);
   });
 
-  it("falls back to MP4 parser for M4A (opus type, MP4 container)", () => {
+  it("falls back to MP4 parser for M4A (opus type, MP4 container)", async () => {
     const m4aLike = makeMp4Buffer(44100, 132300); // ~3000ms
-    expect(parseFeishuMediaDurationMs(m4aLike, "opus")).toBe(3000);
+    await expect(parseFeishuMediaDurationMs(m4aLike, "opus")).resolves.toBe(3000);
   });
 
-  it("falls back to WAV parser for opus type", () => {
+  it("falls back to WAV parser for opus type", async () => {
     const wav = makeWavBuffer(44100, 1, 44100 * 2); // 1000ms
-    expect(parseFeishuMediaDurationMs(wav, "opus")).toBe(1000);
+    await expect(parseFeishuMediaDurationMs(wav, "opus")).resolves.toBe(1000);
   });
 
-  it("returns undefined when no parser recognizes the buffer", () => {
-    expect(parseFeishuMediaDurationMs(Buffer.alloc(100), "opus")).toBeUndefined();
-    expect(parseFeishuMediaDurationMs(Buffer.alloc(100), "mp4")).toBeUndefined();
+  it("uses music-metadata for MP3 audio", async () => {
+    // Minimal valid MP3 frame sequence with Xing header. Real duration is ~235 ms.
+    const mp3 = Buffer.from(
+      "SUQzAwAAAAAAFlRTU0UAAAAPAAADTGF2ZjU5LjI3LjEwMAAAAAAAAAAAAAAA//tAwAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAJAAAZcwAICA8PFBQZGR4eIyMoKC0tMjI3Nzw8QUFGRktLVFBQVVVZWV5eY2NoaG1tcnJ3d3x8gYGGhoqKj4+UlJmZnZ2ioqenp6ysrbGxtbW6ur6+w8PHx8zM0dDR0dXV2tra39/k5Ojo7e3y8vLy9/f7+/8AAAAATGF2YzU5LjM3AAAAAAAAAAAAAAAAJAX/4CPAAAAAADTLyV6eAAAAAAAAAAAAAAAAAAAAAP/7EMQAAANIAAAAAExBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+xDEAAPAAAGkAAAAIAAANIAAAAAExBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+xDEAA8AAAZAAAAAgAA0ygAAAARMYXZmNTkuMjcuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/7EMQADwAABkAAAAIAANIAAAABTGF2YzU5LjM3VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/+xDEAA8AAAZAAAAAgAA0ygAAAA==",
+      "base64",
+    );
+    await expect(
+      parseFeishuMediaDurationMs(mp3, "opus", { fileName: "sample.mp3", contentType: "audio/mpeg" }),
+    ).resolves.toBe(235);
+  });
+
+  it("returns undefined when no parser recognizes the buffer", async () => {
+    await expect(parseFeishuMediaDurationMs(Buffer.alloc(100), "opus")).resolves.toBeUndefined();
+    await expect(parseFeishuMediaDurationMs(Buffer.alloc(100), "mp4")).resolves.toBeUndefined();
   });
 });

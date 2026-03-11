@@ -540,7 +540,7 @@ export async function sendMediaFeishu(params: {
     const msgType = fileType === "opus" ? "audio" : fileType === "mp4" ? "media" : "file";
     const duration =
       fileType === "opus" || fileType === "mp4"
-        ? parseFeishuMediaDurationMs(buffer, fileType)
+        ? await parseFeishuMediaDurationMs(buffer, fileType, { fileName: name, contentType })
         : undefined;
     const { fileKey } = await uploadFileFeishu({
       cfg,
