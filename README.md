@@ -16,6 +16,22 @@ Feishu/Lark (飞书) channel plugin for [OpenClaw](https://github.com/openclaw/o
 
 ---
 
+## Sponsor
+
+![YouYun Zhisuan](./assets/sponsor-youyunzhisuan.png)
+
+Thanks to our sponsors for supporting the project.
+
+If you need an API key platform whose models can be used as an OpenClaw provider and work with Kimi, MiniMax, Claude Code, Codex, or direct API usage, YouYun Zhisuan is worth considering:
+
+> UCloud's YouYun Zhisuan is an AI cloud platform that provides stable and comprehensive domestic and international model APIs through a single API key. Its high-value Coding Plan offers both monthly and pay-as-you-go options, typically at 20% to 50% of official pricing. It supports Claude Code, Codex, and direct API integrations, as well as enterprise-grade high concurrency, 24/7 technical support, and self-service invoicing. Register through [this link](https://passport.compshare.cn/register?referral_code=5oWQU772rtSCeExpcLFxwy&ytag=GPU_YY_YX_git_clawdbot-feishu) to receive a free RMB 5 platform trial credit.
+
+感谢赞助方对本项目的支持。
+
+如果你需要一个可作为 OpenClaw 模型 provider，并适用于 Kimi、MiniMax、Claude Code、Codex 或直接 API 调用的稳定 API Key 平台，可以了解一下优云智算：
+
+> 优云智算是UCloud旗下AI云平台，提供稳定、全面的国内外模型API，仅一个key即可调用。主打包月、按量的高性价比 Coding Plan 套餐，基于官方2~5折优惠。支持接入 Claude Code、Codex 及 API 调用。支持企业高并发、7*24技术支持、自助开票。通过[此链接](https://passport.compshare.cn/register?referral_code=5oWQU772rtSCeExpcLFxwy&ytag=GPU_YY_YX_git_clawdbot-feishu)注册的用户，可得免费5元平台体验金！
+
 ## English
 
 ### Installation
