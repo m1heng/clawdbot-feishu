@@ -10,6 +10,7 @@ import { registerFeishuTaskTools } from "./src/task-tools/index.js";
 import { registerFeishuChatTools } from "./src/chat-tools/index.js";
 import { registerFeishuUrgentTools } from "./src/urgent-tools/index.js";
 import { registerFeishuWikiTools } from "./src/wiki-tools/index.js";
+import { registerFeishuSubagentTools } from "./src/subagent.js";
 
 export { monitorFeishuProvider } from "./src/monitor.js";
 export {
@@ -47,6 +48,7 @@ export {
   type MentionTarget,
 } from "./src/mention.js";
 export { feishuPlugin } from "./src/channel.js";
+export { handleSubagentSpawning, handleSubagentEnded } from "./src/subagent.js";
 
 const plugin = {
   id: "feishu",
@@ -64,6 +66,7 @@ const plugin = {
     registerFeishuTaskTools(api);
     registerFeishuChatTools(api);
     registerFeishuUrgentTools(api);
+    registerFeishuSubagentTools(api);
   },
 };
 
