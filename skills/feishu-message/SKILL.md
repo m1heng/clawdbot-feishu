@@ -107,5 +107,5 @@ channels:
 
 ## Permissions
 
-- `im:message:readonly` - Read messages
-- For group messages, the app also needs **"获取群组中所有消息"** permission
+- `im:message` or `im:message:readonly` — read single/DM messages
+- `im:message.group_at_msg:readonly` — read all messages in group chats (not just @bot messages)
