@@ -12,6 +12,7 @@ describe("tools-config", () => {
       task: true,
       chat: true,
       urgent: true,
+      message: true,
     });
   });
 
@@ -25,6 +26,7 @@ describe("tools-config", () => {
       task: false,
       chat: true,
       urgent: true,
+      message: true,
     });
   });
 });
