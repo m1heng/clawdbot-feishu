@@ -78,6 +78,8 @@ export type FeishuToolsConfig = {
   urgent?: boolean;
   /** Enable the feishu_message tool (get/list messages). Enabled by default. */
   message?: boolean;
+  /** Enable the feishu_reaction tool (add/remove/list emoji reactions). Enabled by default. */
+  reaction?: boolean;
 };
 
 export type DynamicAgentCreationConfig = {

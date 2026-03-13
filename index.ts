@@ -10,6 +10,7 @@ import { registerFeishuTaskTools } from "./src/task-tools/index.js";
 import { registerFeishuChatTools } from "./src/chat-tools/index.js";
 import { registerFeishuUrgentTools } from "./src/urgent-tools/index.js";
 import { registerFeishuMessageTools } from "./src/message-tools/index.js";
+import { registerFeishuReactionTools } from "./src/reaction-tools/index.js";
 import { registerFeishuWikiTools } from "./src/wiki-tools/index.js";
 
 export { monitorFeishuProvider } from "./src/monitor.js";
@@ -66,6 +67,7 @@ const plugin = {
     registerFeishuChatTools(api);
     registerFeishuUrgentTools(api);
     registerFeishuMessageTools(api);
+    registerFeishuReactionTools(api);
   },
 };
 

@@ -92,6 +92,7 @@ const FeishuToolsConfigSchema = z
     chat: z.boolean().optional(), // Chat management operations (default: true)
     urgent: z.boolean().optional(), // Buzz/urgent notifications (default: true)
     message: z.boolean().optional(), // Message reading (default: true)
+    reaction: z.boolean().optional(), // Emoji reactions (default: true)
   })
   .strict()
   .optional();
