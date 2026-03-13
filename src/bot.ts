@@ -94,6 +94,7 @@ const senderNameCache = new Map<string, { name: string; expireAt: number }>();
 // Key: appId or "default", Value: timestamp of last notification
 const permissionErrorNotifiedAt = new Map<string, number>();
 const PERMISSION_ERROR_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_MAX_MESSAGE_AGE_MS = 300_000; // 5 minutes
 
 type SenderNameResult = {
   name?: string;
@@ -918,12 +919,19 @@ export async function handleFeishuMessage(params: {
     return;
   }
 
-  let ctx = parseFeishuMessageEvent(event, botOpenId);
-
   // Parse message create_time (Feishu uses millisecond epoch string).
   const messageCreateTimeMs = event.message.create_time
     ? parseInt(event.message.create_time, 10)
     : undefined;
+
+  // Discard stale messages (e.g. replayed after gateway restart).
+  const maxAgeMs = feishuCfg.maxMessageAgeMs ?? DEFAULT_MAX_MESSAGE_AGE_MS;
+  if (messageCreateTimeMs && Date.now() - messageCreateTimeMs > maxAgeMs) {
+    log(`feishu[${account.accountId}]: discarding stale message ${messageId} (age: ${Math.round((Date.now() - messageCreateTimeMs) / 1000)}s, max: ${maxAgeMs / 1000}s)`);
+    return;
+  }
+
+  let ctx = parseFeishuMessageEvent(event, botOpenId);
 
   const messageType = event.message.message_type;
   const isForwardedInbound = isForwardedMessageType(messageType);
