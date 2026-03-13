@@ -70,7 +70,22 @@ const DynamicAgentCreationSchema = z
     maxAgents: z.number().int().positive().optional(),
   })
   .strict()
-  .optional();
+.optional();
+
+/**
+ * Thread binding configuration for ACP/sub-agent sessions.
+ * When enabled, allows binding ACP and sub-agent sessions to Feishu topic threads.
+ */
+const ThreadBindingsSchema = z
+
+  .object({
+    enabled: z.boolean().optional(), // Enable thread binding support
+    spawnAcpSessions: z.boolean().optional(), // Allow spawning ACP sessions in threads
+    spawnSubagentSessions: z.boolean().optional(), // Allow spawning sub-agent sessions in threads
+  })
+
+  .strict()
+.optional();
 
 /**
  * Feishu tools configuration.
@@ -116,6 +131,7 @@ export const FeishuGroupSchema = z
     allowFrom: z.array(z.union([z.string(), z.number()])).optional(),
     systemPrompt: z.string().optional(),
     topicSessionMode: TopicSessionModeSchema,
+    threadBindings: ThreadBindingsSchema,
   })
   .strict();
 
@@ -158,6 +174,7 @@ export const FeishuAccountConfigSchema = z
     renderMode: RenderModeSchema,
     streaming: StreamingModeSchema,
     tools: FeishuToolsConfigSchema,
+    threadBindings: ThreadBindingsSchema,
   })
   .strict();
 
@@ -199,6 +216,8 @@ export const FeishuConfigSchema = z
     tools: FeishuToolsConfigSchema,
     // Dynamic agent creation for DM users
     dynamicAgentCreation: DynamicAgentCreationSchema,
+    // Thread binding for ACP/sub-agent sessions
+    threadBindings: ThreadBindingsSchema,
     // Multi-account configuration
     accounts: z.record(z.string(), FeishuAccountConfigSchema.optional()).optional(),
   })

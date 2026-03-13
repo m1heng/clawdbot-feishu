@@ -84,3 +84,9 @@ export type DynamicAgentCreationConfig = {
   agentDirTemplate?: string;
   maxAgents?: number;
 };
+
+export type ThreadBindingsConfig = {
+  enabled?: boolean;
+  spawnAcpSessions?: boolean;
+  spawnSubagentSessions?: boolean;
+};
