@@ -40,12 +40,12 @@ Returns:
 
 ### List Recent Messages
 
-List recent messages in a chat (DM or group), newest first by default:
+List recent messages in a chat (DM or group), newest first by default.
+Omit `chat_id` to use the current conversation's chat:
 
 ```json
 {
-  "action": "list",
-  "chat_id": "oc_xxx"
+  "action": "list"
 }
 ```
 
@@ -88,7 +88,7 @@ Returns:
 |-----------|----------|-------------|
 | `action` | Yes | `get` or `list` |
 | `message_id` | get: Yes | Feishu message ID (e.g., `om_xxx`) |
-| `chat_id` | list: Yes | Chat ID (e.g., `oc_xxx`) |
+| `chat_id` | list: Optional | Chat ID (e.g., `oc_xxx`). Omit to use current chat. |
 | `page_size` | list: Optional | Number of messages (default: 10, max: 50) |
 | `sort_type` | list: Optional | `ByCreateTimeDesc` (default) or `ByCreateTimeAsc` |
 

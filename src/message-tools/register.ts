@@ -1,5 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { hasFeishuToolEnabledForAnyAccount, withFeishuToolClient } from "../tools-common/tool-exec.js";
+import { getCurrentFeishuToolContext } from "../tools-common/tool-context.js";
 import { errorResult, json } from "../tools-common/feishu-api.js";
 import { runMessageAction } from "./actions.js";
 import { FeishuMessageSchema, type FeishuMessageParams } from "./schemas.js";
@@ -30,6 +31,10 @@ export function registerFeishuMessageTools(api: OpenClawPluginApi) {
       parameters: FeishuMessageSchema,
       async execute(_toolCallId, params) {
         const p = params as FeishuMessageParams;
+        if (!p.chat_id && p.action === "list") {
+          const ctx = getCurrentFeishuToolContext();
+          if (ctx?.chatId) p.chat_id = ctx.chatId;
+        }
         try {
           return await withFeishuToolClient({
             api,

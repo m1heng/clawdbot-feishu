@@ -22,7 +22,7 @@ export const FeishuMessageSchema = Type.Object({
   ),
   chat_id: Type.Optional(
     Type.String({
-      description: "Chat ID (e.g. oc_xxx). Required for action=list.",
+      description: "Chat ID (e.g. oc_xxx). Required for action=list. Omit to use the current conversation's chat.",
     }),
   ),
   page_size: Type.Optional(

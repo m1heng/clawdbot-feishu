@@ -5,6 +5,7 @@ export type FeishuToolContext = {
   accountId: string;
   sessionKey?: string;
   senderOpenId?: string;
+  chatId?: string;
 };
 
 const toolContextStorage = new AsyncLocalStorage<FeishuToolContext>();
