@@ -60,7 +60,7 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
       name: "feishu_doc",
       label: "Feishu Doc",
       description:
-        'Feishu document operations. Actions: read, write, append, create, create_and_write, list_blocks, get_block, update_block, delete_block, list_comments, create_comment, get_comment, list_comment_replies. Use "create_and_write" for atomic create + content write.',
+        'Feishu document operations. Actions: read, write, append, create, create_and_write, list_blocks, get_block, update_block, delete_block, list_comments, create_comment, get_comment, list_comment_replies, create_diagram. Use "create_and_write" for atomic create + content write. Use "create_diagram" with Mermaid source code to insert rendered diagrams.',
       parameters: FeishuDocSchema,
       requiredTool: "doc",
       run: async ({ client, account }, params) => {
