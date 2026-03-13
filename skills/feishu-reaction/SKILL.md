@@ -116,5 +116,5 @@ channels:
 
 ## Permissions
 
-- `im:message.reactions:write` — add and remove reactions
+- `im:message.reactions:write_only` — add and remove reactions
 - `im:message.reactions:read` — list reactions on messages
