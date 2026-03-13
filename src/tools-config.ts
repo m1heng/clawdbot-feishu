@@ -14,6 +14,7 @@ export const DEFAULT_TOOLS_CONFIG: Required<FeishuToolsConfig> = {
   task: true,
   chat: true,
   urgent: true,
+  message: true,
 };
 
 /**

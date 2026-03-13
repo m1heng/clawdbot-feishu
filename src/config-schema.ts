@@ -91,6 +91,7 @@ const FeishuToolsConfigSchema = z
     task: z.boolean().optional(), // Task operations (default: true)
     chat: z.boolean().optional(), // Chat management operations (default: true)
     urgent: z.boolean().optional(), // Buzz/urgent notifications (default: true)
+    message: z.boolean().optional(), // Message reading (default: true)
   })
   .strict()
   .optional();
