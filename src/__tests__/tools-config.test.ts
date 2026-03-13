@@ -13,6 +13,7 @@ describe("tools-config", () => {
       chat: true,
       urgent: true,
       message: true,
+      reaction: true,
     });
   });
 
@@ -27,6 +28,7 @@ describe("tools-config", () => {
       chat: true,
       urgent: true,
       message: true,
+      reaction: true,
     });
   });
 });
