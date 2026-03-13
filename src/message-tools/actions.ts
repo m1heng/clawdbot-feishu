@@ -126,6 +126,8 @@ async function listMessages(client: Lark.Client, params: FeishuMessageParams) {
           container_id: params.chat_id!,
           sort_type: sortType,
           page_size: pageSize,
+          ...(params.start_time ? { start_time: params.start_time } : {}),
+          ...(params.end_time ? { end_time: params.end_time } : {}),
         },
       }) as Promise<MessageListResponse>,
   );

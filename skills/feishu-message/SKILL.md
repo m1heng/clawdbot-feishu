@@ -49,14 +49,16 @@ Omit `chat_id` to use the current conversation's chat:
 }
 ```
 
-With custom page size and sort order:
+With custom page size, sort order, and time range:
 
 ```json
 {
   "action": "list",
   "chat_id": "oc_xxx",
   "page_size": 20,
-  "sort_type": "ByCreateTimeAsc"
+  "sort_type": "ByCreateTimeAsc",
+  "start_time": "1710000000",
+  "end_time": "1710086400"
 }
 ```
 
@@ -91,6 +93,8 @@ Returns:
 | `chat_id` | list: Optional | Chat ID (e.g., `oc_xxx`). Omit to use current chat. |
 | `page_size` | list: Optional | Number of messages (default: 10, max: 50) |
 | `sort_type` | list: Optional | `ByCreateTimeDesc` (default) or `ByCreateTimeAsc` |
+| `start_time` | list: Optional | Unix timestamp in seconds (e.g., `"1710000000"`). No lower bound if omitted. |
+| `end_time` | list: Optional | Unix timestamp in seconds (e.g., `"1710086400"`). No upper bound if omitted. |
 
 ## Configuration
 

@@ -31,10 +31,14 @@ export function registerFeishuMessageTools(api: OpenClawPluginApi) {
       parameters: FeishuMessageSchema,
       async execute(_toolCallId, params) {
         const p = params as FeishuMessageParams;
-        if (!p.chat_id && p.action === "list") {
-          const ctx = getCurrentFeishuToolContext();
-          if (ctx?.chatId) p.chat_id = ctx.chatId;
+        if (p.action === "list") {
+          const isValidChatId = p.chat_id?.startsWith("oc_");
+          if (!isValidChatId) {
+            const ctx = getCurrentFeishuToolContext();
+            if (ctx?.chatId) p.chat_id = ctx.chatId;
+          }
         }
+
         try {
           return await withFeishuToolClient({
             api,

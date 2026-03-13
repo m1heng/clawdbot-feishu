@@ -39,6 +39,18 @@ export const FeishuMessageSchema = Type.Object({
       default: "ByCreateTimeDesc",
     }),
   ),
+  start_time: Type.Optional(
+    Type.String({
+      description:
+        "Start of time range for action=list, as Unix timestamp in seconds (e.g. \"1710000000\"). Omit for no lower bound.",
+    }),
+  ),
+  end_time: Type.Optional(
+    Type.String({
+      description:
+        "End of time range for action=list, as Unix timestamp in seconds (e.g. \"1710086400\"). Omit for no upper bound.",
+    }),
+  ),
 });
 
 export type FeishuMessageParams = Static<typeof FeishuMessageSchema>;
