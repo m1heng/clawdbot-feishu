@@ -2,6 +2,13 @@ import { appendDoc, createAndWriteDoc, createDoc, writeDoc } from "../doc-write-
 import { detectDocFormat, runDocApiCall, type DocClient } from "./common.js";
 import type { FeishuDocParams } from "./schemas.js";
 
+/**
+ * Feishu component_type_id for the Mermaid diagram add-on block.
+ * This is a stable constant used by the Feishu editor (block_type 40).
+ * Verified by reading existing Mermaid blocks via list_blocks.
+ */
+const MERMAID_COMPONENT_TYPE_ID = "blk_631fefbbae02400430b8f9f4";
+
 const BLOCK_TYPE_NAMES: Record<number, string> = {
   1: "Page",
   2: "Text",
@@ -304,6 +311,70 @@ export async function listAppScopes(client: DocClient) {
   };
 }
 
+/**
+ * Create a Mermaid diagram block in a Feishu document.
+ *
+ * Feishu renders diagrams as add-on component blocks (block_type 40).
+ * The Lark SDK's `documentBlockChildren.create` performs client-side
+ * validation that rejects block_type 40, so we use the raw HTTP API
+ * endpoint directly to bypass this limitation.
+ */
+async function createDiagram(
+  client: DocClient,
+  docToken: string,
+  content: string,
+) {
+  const record = JSON.stringify({
+    data: content,
+    theme: "default",
+    view: "chart",
+  });
+
+  // Use client.httpInstance (axios) instead of bare fetch to respect
+  // proxy settings configured via https_proxy / HTTP_PROXY env vars.
+  // This matches the pattern used by readLegacyDoc.
+  const domain = (client as any).domain ?? "https://open.feishu.cn";
+  const token = await client.tokenManager.getTenantAccessToken();
+  const url = `${domain}/open-apis/docx/v1/documents/${docToken}/blocks/${docToken}/children`;
+
+  const response = await runDocApiCall("docx.createDiagram", async () => {
+    const resp = await client.httpInstance.post<{
+      code?: number;
+      msg?: string;
+      log_id?: string;
+      data?: { children?: unknown[] };
+    }>(url, {
+      children: [
+        {
+          block_type: 40,
+          add_ons: {
+            component_type_id: MERMAID_COMPONENT_TYPE_ID,
+            record,
+          },
+        },
+      ],
+    }, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+    });
+
+    // axios wraps the body in resp.data
+    const body = (resp as any).data ?? resp;
+    return body as { code?: number; msg?: string; log_id?: string; data?: { children?: unknown[] } };
+  });
+
+  const children = (response as any).data?.children ?? [];
+  const diagramBlock = children.find((b: any) => b.block_type === 40);
+
+  return {
+    success: true,
+    block_id: diagramBlock?.block_id,
+    children_count: children.length,
+  };
+}
+
 export async function runDocAction(
   client: DocClient,
   params: FeishuDocParams,
@@ -383,6 +454,12 @@ export async function runDocAction(
         requireString(params.comment_id, "comment_id"),
         params.page_token,
         params.page_size,
+      );
+    case "create_diagram":
+      return createDiagram(
+        client,
+        requireString(params.doc_token, "doc_token"),
+        requireString(params.content, "content"),
       );
     default:
       return { error: `Unknown action: ${(params as any).action}` };
