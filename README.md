@@ -129,6 +129,9 @@ openclaw plugins list | rg -i feishu
 | `task:attachment:read` | `feishu_task_attachment_list`, `feishu_task_attachment_get` | List/get task attachments |
 | `im:chat.announcement:read` | `feishu_chat` | Read group announcement |
 | `im:chat:readonly` | `feishu_chat` | Get chat info, check bot membership |
+| `im:message` or `im:message:readonly` | `feishu_message` | Read single/DM messages |
+| `im:message.group_at_msg:readonly` | `feishu_message` | Read all messages in group chats |
+| `im:message.reactions:read` | `feishu_reaction` | List reactions on messages |
 
 **Read-write** (optional, for create/edit/delete operations):
 
@@ -147,6 +150,7 @@ openclaw plugins list | rg -i feishu
 | `im:chat.announcement` | `feishu_chat` | Write/update group announcement |
 | `im:chat` | `feishu_chat` | Create and delete group chats |
 | `im:chat.members` | `feishu_chat` | Add members to group chats |
+| `im:message.reactions:write_only` | `feishu_reaction` | Add and remove reactions |
 
 > Task scope names may vary slightly in Feishu console UI. If needed, search for Task / Tasklist / Comment / Attachment-related permissions and grant read/write accordingly.
 
@@ -495,6 +499,8 @@ session:
 - **Task tools**: Create, get details, update, and delete tasks via Feishu Task v2 API
 - **Chat tools**: Read and write group announcements, create group chats, add members, check bot membership, delete chats (`feishu_chat`)
 - **Urgent notification tools**: Send buzz/urgent notifications (app, SMS, voice call) via `feishu_urgent`
+- **Message tools**: Read single messages or list recent chat history with time range and pagination (`feishu_message`)
+- **Reaction tools**: Add, remove, and list emoji reactions on messages (`feishu_reaction`)
 - **@mention forwarding**: When you @mention someone in your message, the bot's reply will automatically @mention them too
 - **Permission error notification**: When the bot encounters a Feishu API permission error, it automatically notifies the user with the permission grant URL
 - **Dynamic agent creation**: Each DM user can have their own isolated agent instance with dedicated workspace (optional)
@@ -645,6 +651,9 @@ openclaw plugins list | rg -i feishu
 | `task:attachment:read` | `feishu_task_attachment_list`, `feishu_task_attachment_get` | 列出/获取任务附件 |
 | `im:chat.announcement:read` | `feishu_chat` | 读取群公告 |
 | `im:chat:readonly` | `feishu_chat` | 获取群信息、检查机器人是否在群内 |
+| `im:message` 或 `im:message:readonly` | `feishu_message` | 读取单条/私聊消息 |
+| `im:message.group_at_msg:readonly` | `feishu_message` | 读取群聊中所有消息 |
+| `im:message.reactions:read` | `feishu_reaction` | 查看消息表情回复 |
 
 **读写权限**（可选，用于创建/编辑/删除操作）：
 
@@ -663,6 +672,7 @@ openclaw plugins list | rg -i feishu
 | `im:chat.announcement` | `feishu_chat` | 写入/更新群公告 |
 | `im:chat` | `feishu_chat` | 创建和删除群聊 |
 | `im:chat.members` | `feishu_chat` | 向群聊添加成员 |
+| `im:message.reactions:write_only` | `feishu_reaction` | 发送、删除消息表情回复 |
 
 > 飞书控制台中任务权限的显示名称可能略有差异，必要时可按关键字 `task` / `tasklist` / `comment` / `attachment` 搜索并授予对应读写权限。
 
@@ -1010,6 +1020,8 @@ session:
 - **任务工具**：基于 Task v2 API 支持任务创建、获取详情、更新和删除
 - **群聊工具**：读写群公告、创建群聊、添加成员、检查机器人是否在群内、删除群聊（`feishu_chat`）
 - **加急通知工具**：发送应用内加急（buzz）、短信、语音电话加急通知（`feishu_urgent`）
+- **消息工具**：读取单条消息或列出聊天历史记录，支持时间范围和分页（`feishu_message`）
+- **表情工具**：添加、删除、列出消息上的表情回复（`feishu_reaction`）
 - **@ 转发功能**：在消息中 @ 某人，机器人的回复会自动 @ 该用户
 - **权限错误提示**：当机器人遇到飞书 API 权限错误时，会自动通知用户并提供权限授权链接
 - **动态 Agent 创建**：每个私聊用户可拥有独立的 agent 实例和专属 workspace（可选）
