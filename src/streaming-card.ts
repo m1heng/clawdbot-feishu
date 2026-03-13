@@ -44,6 +44,21 @@ async function getToken(creds: Credentials): Promise<string> {
   return data.tenant_access_token;
 }
 
+/**
+ * Find the length of the longest suffix of `a` that equals a prefix of `b`.
+ * Used to detect partial overlaps between consecutive streaming segments.
+ * Capped at 500 chars to keep cost bounded.
+ */
+function findOverlapLength(a: string, b: string): number {
+  const max = Math.min(a.length, b.length, 500);
+  for (let len = max; len > 0; len--) {
+    if (a.endsWith(b.slice(0, len))) {
+      return len;
+    }
+  }
+  return 0;
+}
+
 export function mergeStreamingText(
   previousText: string | undefined,
   nextText: string | undefined,
@@ -59,7 +74,14 @@ export function mergeStreamingText(
   if (previous.includes(next)) {
     return previous;
   }
-  // Fallback for fragmented partial chunks: append to avoid losing tokens.
+  // Detect partial overlap: the end of previous matches the start of next.
+  // This happens when partials are cumulative within a segment but don't
+  // include prior segments (e.g. after a tool call mid-stream).
+  const overlap = findOverlapLength(previous, next);
+  if (overlap > 0) {
+    return previous + next.slice(overlap);
+  }
+  // No overlap — truly incremental chunk, just append.
   return `${previous}${next}`;
 }
 
@@ -147,30 +169,30 @@ export class FeishuStreamingSession {
   }
 
   async update(text: string): Promise<void> {
-    if (!this.state || this.closed) {
+    if (!this.state || this.closed || !text) {
       return;
     }
-    const mergedInput = mergeStreamingText(this.pendingText ?? this.state.currentText, text);
-    if (!mergedInput || mergedInput === this.state.currentText) {
+    // Caller sends cumulative full text — no merge needed, just throttle.
+    if (text === this.state.currentText) {
       return;
     }
     const now = Date.now();
     if (now - this.lastUpdateTime < this.updateThrottleMs) {
-      this.pendingText = mergedInput;
+      this.pendingText = text;
       return;
     }
     this.pendingText = null;
     this.lastUpdateTime = now;
 
+    const toSend = text;
     this.queue = this.queue.then(async () => {
       if (!this.state || this.closed) {
         return;
       }
-      const mergedText = mergeStreamingText(this.state.currentText, mergedInput);
-      if (!mergedText || mergedText === this.state.currentText) {
+      if (toSend === this.state.currentText) {
         return;
       }
-      this.state.currentText = mergedText;
+      this.state.currentText = toSend;
       this.state.sequence += 1;
       const apiBase = resolveApiBase(this.creds.domain);
       await fetch(`${apiBase}/cardkit/v1/cards/${this.state.cardId}/elements/content/content`, {
@@ -180,7 +202,7 @@ export class FeishuStreamingSession {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          content: mergedText,
+          content: toSend,
           sequence: this.state.sequence,
           uuid: `s_${this.state.cardId}_${this.state.sequence}`,
         }),
@@ -196,8 +218,9 @@ export class FeishuStreamingSession {
     this.closed = true;
     await this.queue;
 
-    const pendingMerged = mergeStreamingText(this.state.currentText, this.pendingText ?? undefined);
-    const text = finalText ? mergeStreamingText(pendingMerged, finalText) : pendingMerged;
+    // finalText is authoritative when provided (from deliver kind=final).
+    // Fall back to pending or current text when closing via onIdle.
+    const text = finalText || this.pendingText || this.state.currentText;
     const apiBase = resolveApiBase(this.creds.domain);
 
     if (text && text !== this.state.currentText) {

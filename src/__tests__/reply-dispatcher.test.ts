@@ -52,16 +52,20 @@ vi.mock("../mention.js", () => ({
 vi.mock("../text/markdown-links.js", () => ({
   normalizeFeishuMarkdownLinks: normalizeFeishuMarkdownLinksMock,
 }));
-vi.mock("../streaming-card.js", () => ({
-  FeishuStreamingSession: class {
-    active = false;
-    start = vi.fn(async () => { this.active = true; });
-    update = vi.fn(async () => {});
-    close = vi.fn(async () => { this.active = false; });
-    isActive = vi.fn(() => this.active);
-    constructor() { streamingInstances.push(this as never); }
-  },
-}));
+vi.mock("../streaming-card.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../streaming-card.js")>();
+  return {
+    mergeStreamingText: actual.mergeStreamingText,
+    FeishuStreamingSession: class {
+      active = false;
+      start = vi.fn(async () => { this.active = true; });
+      update = vi.fn(async () => {});
+      close = vi.fn(async () => { this.active = false; });
+      isActive = vi.fn(() => this.active);
+      constructor() { streamingInstances.push(this as never); }
+    },
+  };
+});
 
 import { createFeishuReplyDispatcher } from "../reply-dispatcher.js";
 
@@ -184,6 +188,94 @@ describe("createFeishuReplyDispatcher — block payload handling", () => {
     await opts.onIdle();
 
     expect(streamingInstances[0]!.close).toHaveBeenCalledWith("```ts\nfinal text\n```");
+  });
+});
+
+describe("createFeishuReplyDispatcher — thinking block deduplication (#399)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    streamingInstances.length = 0;
+    resolveFeishuAccountMock.mockReturnValue({
+      ...defaultAccountConfig,
+      config: { renderMode: "card", streaming: true },
+    });
+    resolveReceiveIdTypeMock.mockReturnValue("chat_id");
+    createFeishuClientMock.mockReturnValue({});
+    normalizeFeishuMarkdownLinksMock.mockImplementation((t: string) => t);
+    createReplyDispatcherWithTypingMock.mockImplementation(() => ({
+      dispatcher: {},
+      replyOptions: {},
+      markDispatchIdle: vi.fn(),
+    }));
+    getFeishuRuntimeMock.mockReturnValue(defaultRuntime);
+  });
+
+  it("does not duplicate thinking text when partials arrive before block payload", async () => {
+    const result = createFeishuReplyDispatcher({
+      cfg: {} as never,
+      agentId: "agent",
+      runtime: { log: vi.fn(), error: vi.fn() } as never,
+      chatId: "oc_chat",
+    });
+    const opts = getLastOpts();
+    const { onPartialReply } = result.replyOptions;
+
+    // Start streaming session
+    opts.onReplyStart();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const instance = streamingInstances[0]!;
+
+    // Simulate thinking tokens arriving via onPartialReply (cumulative)
+    onPartialReply!({ text: "thinking step 1" });
+    onPartialReply!({ text: "thinking step 1\nthinking step 2" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Then response tokens start
+    onPartialReply!({ text: "thinking step 1\nthinking step 2\nresponse start" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Now the block payload arrives with the same thinking text
+    await opts.deliver(
+      { text: "thinking step 1\nthinking step 2" },
+      { kind: "block" },
+    );
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The last update should NOT contain duplicated thinking
+    const lastUpdateCall = instance.update.mock.calls[instance.update.mock.calls.length - 1];
+    const lastText = lastUpdateCall?.[0] as string | undefined;
+    if (lastText) {
+      const thinkingOccurrences = lastText.split("thinking step 1").length - 1;
+      expect(thinkingOccurrences).toBe(1);
+    }
+  });
+
+  it("still accepts block content when no partials have arrived", async () => {
+    makeDispatcher();
+    const opts = getLastOpts();
+
+    // Block arrives without any prior partials (regression #30663)
+    await opts.deliver({ text: "```ts\nreasoning block\n```" }, { kind: "block" });
+    await opts.onIdle();
+
+    expect(streamingInstances).toHaveLength(1);
+    expect(streamingInstances[0]!.close).toHaveBeenCalledWith("```ts\nreasoning block\n```");
+  });
+
+  it("does not send a second card after streaming closes (#399)", async () => {
+    makeDispatcher();
+    const opts = getLastOpts();
+
+    // First deliver closes the streaming card
+    await opts.deliver({ text: "```ts\nfinal\n```" }, { kind: "final" });
+
+    // Second deliver arrives after streaming is already closed
+    await opts.deliver({ text: "```ts\nfinal\n```" }, { kind: "final" });
+
+    // Should NOT fall through to sendMarkdownCardFeishu
+    expect(sendMarkdownCardFeishuMock).not.toHaveBeenCalled();
+    expect(sendMessageFeishuMock).not.toHaveBeenCalled();
   });
 });
 

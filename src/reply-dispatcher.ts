@@ -12,7 +12,7 @@ import { buildMentionedCardContent, type MentionTarget } from "./mention.js";
 import { normalizeFeishuMarkdownLinks } from "./text/markdown-links.js";
 import { getFeishuRuntime } from "./runtime.js";
 import { sendMarkdownCardFeishu, sendMessageFeishu } from "./send.js";
-import { FeishuStreamingSession } from "./streaming-card.js";
+import { FeishuStreamingSession, mergeStreamingText } from "./streaming-card.js";
 import { resolveReceiveIdType } from "./targets.js";
 import { addTypingIndicator, removeTypingIndicator, type TypingIndicatorState } from "./typing.js";
 
@@ -119,39 +119,15 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
   let streaming: FeishuStreamingSession | null = null;
   let streamText = "";
   let lastPartial = "";
+  let streamingCompleted = false;
   let partialUpdateQueue: Promise<void> = Promise.resolve();
   let streamingStartPromise: Promise<void> | null = null;
 
-  const mergeStreamingText = (nextText: string) => {
-    if (!streamText) {
-      streamText = nextText;
-      return;
-    }
-    if (nextText.startsWith(streamText)) {
-      // Handle cumulative partial payloads where nextText already includes prior text.
-      streamText = nextText;
-      return;
-    }
-    if (streamText.endsWith(nextText)) {
-      return;
-    }
-    streamText += nextText;
+  const mergeIntoStreamText = (nextText: string) => {
+    streamText = mergeStreamingText(streamText, nextText);
   };
 
-  const queueStreamingUpdate = (
-    nextText: string,
-    options?: { dedupeWithLastPartial?: boolean },
-  ) => {
-    if (!nextText) {
-      return;
-    }
-    if (options?.dedupeWithLastPartial && nextText === lastPartial) {
-      return;
-    }
-    if (options?.dedupeWithLastPartial) {
-      lastPartial = nextText;
-    }
-    mergeStreamingText(nextText);
+  const enqueueStreamingFlush = () => {
     partialUpdateQueue = partialUpdateQueue.then(async () => {
       if (streamingStartPromise) {
         await streamingStartPromise;
@@ -163,7 +139,7 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
   };
 
   const startStreaming = () => {
-    if (!streamingEnabled || streamingStartPromise || streaming) {
+    if (!streamingEnabled || streamingStartPromise || streaming || streamingCompleted) {
       return;
     }
     streamingStartPromise = (async () => {
@@ -198,6 +174,7 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
         text = buildMentionedCardContent(mentionTargets, text);
       }
       await streaming.close(normalizeFeishuMarkdownLinks(text));
+      streamingCompleted = true;
     }
     streaming = null;
     streamingStartPromise = null;
@@ -247,12 +224,20 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
           if (info?.kind === "block") {
             // Some runtimes emit block payloads without onPartial/final callbacks.
             // Mirror block text into streamText so onIdle close still sends content.
-            queueStreamingUpdate(text);
+            mergeIntoStreamText(text);
+            enqueueStreamingFlush();
           }
           if (info?.kind === "final") {
             streamText = text;
             await closeStreaming();
           }
+          return;
+        }
+
+        // Streaming card already delivered the content — skip regular send to
+        // avoid a duplicate card when the runtime delivers a second payload
+        // after the streaming session has closed (#399).
+        if (streamingCompleted) {
           return;
         }
 
@@ -312,10 +297,15 @@ export function createFeishuReplyDispatcher(params: CreateFeishuReplyDispatcherP
       onPartialReply: streamingEnabled
         ? (payload: ReplyPayload) => {
             const partialText = normalizeFeishuMarkdownLinks(payload.text ?? "");
-            if (!partialText) {
+            if (!partialText || partialText === lastPartial) {
               return;
             }
-            queueStreamingUpdate(partialText, { dedupeWithLastPartial: true });
+            lastPartial = partialText;
+            // Partials are cumulative — replace streamText directly instead of
+            // merging, which avoids duplication when segment boundaries shift
+            // (e.g. after a tool call mid-stream).
+            streamText = partialText;
+            enqueueStreamingFlush();
           }
         : undefined,
     },
