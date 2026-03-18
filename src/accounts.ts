@@ -39,6 +39,7 @@ export function resolveDefaultFeishuAccountId(cfg: ClawdbotConfig): string {
 
 /**
  * Get the raw account-specific config.
+ * Performs case-insensitive lookup to handle accountId normalization.
  */
 function resolveAccountConfig(
   cfg: ClawdbotConfig,
@@ -48,7 +49,16 @@ function resolveAccountConfig(
   if (!accounts || typeof accounts !== "object") {
     return undefined;
   }
-  return accounts[accountId];
+  // Direct lookup
+  if (accounts[accountId]) {
+    return accounts[accountId];
+  }
+  // Case-insensitive lookup: if exact match fails, try lowercase matching
+  const normalizedId = accountId.toLowerCase();
+  const matchedKey = Object.keys(accounts).find(
+    (key) => key.toLowerCase() === normalizedId
+  );
+  return matchedKey ? accounts[matchedKey] : undefined;
 }
 
 /**
