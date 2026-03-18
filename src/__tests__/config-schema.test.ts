@@ -87,4 +87,32 @@ describe("config-schema contract", () => {
     expect(parsed.mediaLocalRoots).toEqual(["/tmp/custom"]);
     expect(parsed.accounts?.teamA?.mediaLocalRoots).toEqual(["/data/media"]);
   });
+
+  it("Given normalized duplicate account ids, When parsing, Then rejects the ambiguous multi-account config", () => {
+    const result = FeishuConfigSchema.safeParse({
+      accounts: {
+        aaa: {
+          appId: "app-a",
+          appSecret: "secret-a",
+        },
+        aAA: {
+          appId: "app-b",
+          appSecret: "secret-b",
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      throw new Error("Expected parsing to fail");
+    }
+    expect(result.error.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: ["accounts", "aAA"],
+          message: expect.stringContaining('both normalize to "aaa"'),
+        }),
+      ]),
+    );
+  });
 });

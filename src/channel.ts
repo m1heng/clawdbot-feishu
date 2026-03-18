@@ -2,6 +2,7 @@ import type { ChannelPlugin, ClawdbotConfig } from "openclaw/plugin-sdk";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId, PAIRING_APPROVED_MESSAGE } from "openclaw/plugin-sdk";
 import type { ResolvedFeishuAccount, FeishuConfig } from "./types.js";
 import {
+  resolveConfiguredFeishuAccountKey,
   resolveFeishuAccount,
   resolveFeishuCredentials,
   listFeishuAccountIds,
@@ -129,7 +130,6 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
     resolveAccount: (cfg, accountId) => resolveFeishuAccount({ cfg, accountId }),
     defaultAccountId: (cfg) => resolveDefaultFeishuAccountId(cfg),
     setAccountEnabled: ({ cfg, accountId, enabled }) => {
-      const account = resolveFeishuAccount({ cfg, accountId });
       const isDefault = accountId === DEFAULT_ACCOUNT_ID;
       
       if (isDefault) {
@@ -148,6 +148,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
       
       // For named accounts, set enabled in accounts[accountId]
       const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+      const accountKey = resolveConfiguredFeishuAccountKey(cfg, accountId) ?? accountId;
       return {
         ...cfg,
         channels: {
@@ -156,8 +157,8 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
             ...feishuCfg,
             accounts: {
               ...feishuCfg?.accounts,
-              [accountId]: {
-                ...feishuCfg?.accounts?.[accountId],
+              [accountKey]: {
+                ...feishuCfg?.accounts?.[accountKey],
                 enabled,
               },
             },
@@ -184,7 +185,8 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
       // Delete specific account from accounts
       const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
       const accounts = { ...feishuCfg?.accounts };
-      delete accounts[accountId];
+      const accountKey = resolveConfiguredFeishuAccountKey(cfg, accountId) ?? accountId;
+      delete accounts[accountKey];
       
       return {
         ...cfg,
@@ -247,6 +249,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
       }
       
       const feishuCfg = cfg.channels?.feishu as FeishuConfig | undefined;
+      const accountKey = resolveConfiguredFeishuAccountKey(cfg, accountId) ?? accountId;
       return {
         ...cfg,
         channels: {
@@ -255,8 +258,8 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
             ...feishuCfg,
             accounts: {
               ...feishuCfg?.accounts,
-              [accountId]: {
-                ...feishuCfg?.accounts?.[accountId],
+              [accountKey]: {
+                ...feishuCfg?.accounts?.[accountKey],
                 enabled: true,
               },
             },

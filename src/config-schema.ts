@@ -1,3 +1,4 @@
+import { normalizeAccountId } from "openclaw/plugin-sdk";
 import { z } from "zod";
 export { z };
 
@@ -208,6 +209,23 @@ export const FeishuConfigSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    const normalizedAccountIds = new Map<string, string>();
+    for (const accountId of Object.keys(value.accounts ?? {})) {
+      const normalizedAccountId = normalizeAccountId(accountId);
+      const previousAccountId = normalizedAccountIds.get(normalizedAccountId);
+      if (previousAccountId && previousAccountId !== accountId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["accounts", accountId],
+          message:
+            `channels.feishu.accounts contains duplicate account ids after normalization: ` +
+            `"${previousAccountId}" and "${accountId}" both normalize to "${normalizedAccountId}"`,
+        });
+        continue;
+      }
+      normalizedAccountIds.set(normalizedAccountId, accountId);
+    }
+
     if (value.dmPolicy === "open") {
       const allowFrom = value.allowFrom ?? [];
       const hasWildcard = allowFrom.some((entry) => String(entry).trim() === "*");

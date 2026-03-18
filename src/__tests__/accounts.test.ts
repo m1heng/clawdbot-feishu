@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   listEnabledFeishuAccounts,
   listFeishuAccountIds,
+  resolveConfiguredFeishuAccountKey,
   resolveDefaultFeishuAccountId,
   resolveFeishuAccount,
   resolveFeishuCredentials,
@@ -27,6 +28,21 @@ describe("accounts contract", () => {
         },
       } as any;
       expect(listFeishuAccountIds(cfg)).toEqual(["alpha", "beta"]);
+    });
+
+    it("Given mixed-case duplicate keys, When listing ids, Then returns normalized unique account ids", () => {
+      const cfg = {
+        channels: {
+          feishu: {
+            accounts: {
+              aaa: {},
+              aAA: {},
+              "Router-D": {},
+            },
+          },
+        },
+      } as any;
+      expect(listFeishuAccountIds(cfg)).toEqual(["aaa", "router-d"]);
     });
   });
 
@@ -130,6 +146,28 @@ describe("accounts contract", () => {
       expect(resolved.appSecret).toBe("team-secret");
     });
 
+    it("Given mixed-case configured account key, When resolving, Then normalized account lookup still finds the config", () => {
+      const cfg = {
+        channels: {
+          feishu: {
+            appId: "base-app",
+            appSecret: "base-secret",
+            accounts: {
+              TeamA: {
+                appSecret: "team-secret",
+                renderMode: "card",
+              },
+            },
+          },
+        },
+      } as any;
+
+      const resolved = resolveFeishuAccount({ cfg, accountId: "teama" });
+      expect(resolved.accountId).toBe("teama");
+      expect(resolved.appSecret).toBe("team-secret");
+      expect(resolved.config.renderMode).toBe("card");
+    });
+
     it("Given top-level enabled=false, When resolving enabled account, Then final account is disabled", () => {
       const cfg = {
         channels: {
@@ -176,6 +214,48 @@ describe("accounts contract", () => {
 
       const accounts = listEnabledFeishuAccounts(cfg);
       expect(accounts.map((a) => a.accountId)).toEqual(["enabledaccount"]);
+    });
+
+    it("Given mixed-case duplicate keys, When listing enabled accounts, Then returns one normalized account entry", () => {
+      const cfg = {
+        channels: {
+          feishu: {
+            accounts: {
+              TeamA: {
+                appId: "id-a",
+                appSecret: "secret-a",
+              },
+              teama: {
+                appId: "id-b",
+                appSecret: "secret-b",
+              },
+            },
+          },
+        },
+      } as any;
+
+      const accounts = listEnabledFeishuAccounts(cfg);
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0]?.accountId).toBe("teama");
+    });
+  });
+
+  describe("resolveConfiguredFeishuAccountKey", () => {
+    it("Given mixed-case configured key, When resolving key for normalized account id, Then preserves the original config key", () => {
+      const cfg = {
+        channels: {
+          feishu: {
+            accounts: {
+              TeamA: {
+                appId: "id",
+                appSecret: "secret",
+              },
+            },
+          },
+        },
+      } as any;
+
+      expect(resolveConfiguredFeishuAccountKey(cfg, "teama")).toBe("TeamA");
     });
   });
 });

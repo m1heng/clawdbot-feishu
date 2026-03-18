@@ -15,6 +15,7 @@ import {
 
 import {
   listFeishuAccountIds,
+  resolveConfiguredFeishuAccountKey,
   resolveDefaultFeishuAccountId,
   resolveFeishuAccount,
   resolveFeishuCredentials,
@@ -58,7 +59,8 @@ function upsertFeishuAccountConfig(
     };
   }
 
-  const existingAccount = feishuCfg?.accounts?.[normalizedAccountId];
+  const accountKey = resolveConfiguredFeishuAccountKey(cfg, normalizedAccountId) ?? normalizedAccountId;
+  const existingAccount = feishuCfg?.accounts?.[accountKey];
   return {
     ...cfg,
     channels: {
@@ -68,7 +70,7 @@ function upsertFeishuAccountConfig(
         enabled: true,
         accounts: {
           ...feishuCfg?.accounts,
-          [normalizedAccountId]: {
+          [accountKey]: {
             ...existingAccount,
             enabled: existingAccount?.enabled ?? true,
             ...patch,
