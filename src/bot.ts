@@ -1312,9 +1312,12 @@ export async function handleFeishuMessage(params: {
       }
     }
 
-    // In group chats, the session is scoped to the group, but the *speaker* is the sender.
-    // Using a group-scoped From causes the agent to treat different users as the same person.
-    const feishuFrom = `feishu:${ctx.senderOpenId}`;
+    // In group chats, From must be group-scoped so the core's resolveGroupSessionKey can
+    // detect group context and route replies back to the group — not to a user's DM session.
+    // We include senderOpenId to preserve per-speaker identity within the group.
+    const feishuFrom = isGroup
+      ? `feishu:${ctx.chatId}:${ctx.senderOpenId}`
+      : `feishu:${ctx.senderOpenId}`;
     const feishuTo = isGroup ? `chat:${ctx.chatId}` : `user:${ctx.senderOpenId}`;
 
     // Resolve peer ID for session routing
