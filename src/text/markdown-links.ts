@@ -91,14 +91,31 @@ function normalizeNonCodeSegments(text: string): string {
     .join("");
 }
 
+function normalizeCodeBlockFences(block: string): string {
+  const lines = block.split("\n");
+  return lines
+    .map((line) => {
+      // Fix opening and closing fences: remove leading whitespace
+      if (line.match(/^\s*```/)) {
+        return line.replace(/^\s+/, "");
+      }
+      return line;
+    })
+    .join("\n");
+}
+
 export function normalizeFeishuMarkdownLinks(text: string): string {
   if (!text || (!text.includes("http://") && !text.includes("https://"))) {
-    return text;
+    return normalizeCodeBlockFences(text);
   }
 
   return text
     // Keep fenced code blocks untouched to avoid changing examples/snippets.
     .split(FENCED_CODE_BLOCK_RE)
-    .map((block, idx) => (idx % 2 === 1 && block.startsWith("```") ? block : normalizeNonCodeSegments(block)))
+    .map((block, idx) =>
+      idx % 2 === 1 && block.startsWith("```")
+        ? normalizeCodeBlockFences(block)
+        : normalizeNonCodeSegments(block),
+    )
     .join("");
 }

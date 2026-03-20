@@ -40,4 +40,24 @@ describe("markdown-links", () => {
     const out = normalizeFeishuMarkdownLinks("See https://example.com/path).");
     expect(out).toBe("See [https://example.com/path](https://example.com/path)).");
   });
+
+  it("strips leading whitespace from code block fences", () => {
+    const input = "  ```bash\necho hello\n  ```";
+    const out = normalizeFeishuMarkdownLinks(input);
+    expect(out).toBe("```bash\necho hello\n```");
+  });
+
+  it("handles code block with leading spaces and URL normalization", () => {
+    const input = "  ```bash\nhttps://example.com/a_b\n  ```\nhttps://example.com/a_b";
+    const out = normalizeFeishuMarkdownLinks(input);
+    expect(out).toBe(
+      "```bash\nhttps://example.com/a_b\n```\n[https://example.com/a%5Fb](https://example.com/a%5Fb)",
+    );
+  });
+
+  it("handles multiple code blocks with leading whitespace", () => {
+    const input = "  ```python\nprint('hello')\n  ```\n\n  ```js\nconsole.log('hi')\n  ```";
+    const out = normalizeFeishuMarkdownLinks(input);
+    expect(out).toBe("```python\nprint('hello')\n```\n\n```js\nconsole.log('hi')\n```");
+  });
 });
