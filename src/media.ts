@@ -514,7 +514,10 @@ export async function sendMediaFeishu(params: {
       ...(mergedLocalRoots.length > 0 ? { localRoots: mergedLocalRoots } : {}),
     });
     buffer = loaded.buffer;
-    name = fileName ?? loaded.fileName ?? "file";
+    const loadedFileName = loaded.fileName ?? "file";
+    let decoded: string;
+    try { decoded = decodeURIComponent(loadedFileName); } catch { decoded = loadedFileName; }
+    name = fileName ?? decoded;
     contentType = loaded.contentType;
   } else {
     throw new Error("Either mediaUrl or mediaBuffer must be provided");
