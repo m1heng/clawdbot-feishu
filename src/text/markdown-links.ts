@@ -105,17 +105,15 @@ function normalizeCodeBlockFences(block: string): string {
 }
 
 export function normalizeFeishuMarkdownLinks(text: string): string {
-  if (!text || (!text.includes("http://") && !text.includes("https://"))) {
-    return normalizeCodeBlockFences(text);
+  if (!text) return text;
+  text = normalizeCodeBlockFences(text);
+  if (!text.includes("http://") && !text.includes("https://")) {
+    return text;
   }
 
   return text
     // Keep fenced code blocks untouched to avoid changing examples/snippets.
     .split(FENCED_CODE_BLOCK_RE)
-    .map((block, idx) =>
-      idx % 2 === 1 && block.startsWith("```")
-        ? normalizeCodeBlockFences(block)
-        : normalizeNonCodeSegments(block),
-    )
+    .map((block, idx) => (idx % 2 === 1 && block.startsWith("```") ? block : normalizeNonCodeSegments(block)))
     .join("");
 }
