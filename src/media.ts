@@ -516,7 +516,11 @@ export async function sendMediaFeishu(params: {
     buffer = loaded.buffer;
     const loadedFileName = loaded.fileName ?? "file";
     let decoded: string;
-    try { decoded = decodeURIComponent(loadedFileName); } catch { decoded = loadedFileName; }
+    try {
+      decoded = decodeURIComponent(loadedFileName);
+    } catch {
+      decoded = loadedFileName;
+    }
     name = fileName ?? decoded;
     contentType = loaded.contentType;
   } else {
