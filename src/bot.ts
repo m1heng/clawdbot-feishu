@@ -928,11 +928,6 @@ export async function handleFeishuMessage(params: {
       log(`feishu[${account.accountId}]: discarding stale message ${messageId} (watermark check failed)`);
       return;
     }
-  } else {
-    if (!tryRecordMessage(messageId, account.accountId)) {
-      log(`feishu[${account.accountId}]: duplicate message ${messageId}`);
-      return;
-    }
   }
 
   let ctx = parseFeishuMessageEvent(event, botOpenId);
