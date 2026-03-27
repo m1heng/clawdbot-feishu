@@ -1,4 +1,4 @@
-import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
+import { DEFAULT_ACCOUNT_ID } from "../../sdk-compat.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFeishuClient } from "../../client.js";
 import { runWithFeishuToolContext } from "../tool-context.js";

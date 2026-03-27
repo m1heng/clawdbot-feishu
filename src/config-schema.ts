@@ -1,4 +1,4 @@
-import { normalizeAccountId } from "openclaw/plugin-sdk";
+import { normalizeAccountId } from "./sdk-compat.js";
 import { z } from "zod";
 export { z };
 

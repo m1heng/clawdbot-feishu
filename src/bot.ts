@@ -1,12 +1,12 @@
 import type { ClawdbotConfig, RuntimeEnv } from "openclaw/plugin-sdk";
+import type { HistoryEntry } from "openclaw/plugin-sdk/feishu";
 import {
   buildPendingHistoryContextFromMap,
   recordPendingHistoryEntryIfEnabled,
   clearHistoryEntriesIfEnabled,
   DEFAULT_GROUP_HISTORY_LIMIT,
   resolveMentionGatingWithBypass,
-  type HistoryEntry,
-} from "openclaw/plugin-sdk";
+} from "./sdk-compat.js";
 import type { FeishuConfig, FeishuMessageContext, FeishuMediaInfo, ResolvedFeishuAccount } from "./types.js";
 import { getFeishuRuntime } from "./runtime.js";
 import { createFeishuClient } from "./client.js";

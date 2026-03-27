@@ -1,4 +1,4 @@
-import { DEFAULT_ACCOUNT_ID } from "openclaw/plugin-sdk";
+import { DEFAULT_ACCOUNT_ID } from "../sdk-compat.js";
 import { describe, expect, it } from "vitest";
 import {
   listEnabledFeishuAccounts,

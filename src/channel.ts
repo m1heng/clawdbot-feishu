@@ -1,5 +1,5 @@
 import type { ChannelPlugin, ClawdbotConfig } from "openclaw/plugin-sdk";
-import { DEFAULT_ACCOUNT_ID, normalizeAccountId, PAIRING_APPROVED_MESSAGE } from "openclaw/plugin-sdk";
+import { DEFAULT_ACCOUNT_ID, normalizeAccountId, PAIRING_APPROVED_MESSAGE } from "./sdk-compat.js";
 import type { ResolvedFeishuAccount, FeishuConfig } from "./types.js";
 import {
   resolveConfiguredFeishuAccountKey,
@@ -269,7 +269,7 @@ export const feishuPlugin: ChannelPlugin<ResolvedFeishuAccount> = {
       };
     },
   },
-  onboarding: feishuOnboardingAdapter,
+  setupWizard: feishuOnboardingAdapter as unknown as NonNullable<ChannelPlugin<ResolvedFeishuAccount>["setupWizard"]>,
   messaging: {
     normalizeTarget: normalizeFeishuTarget,
     targetResolver: {

@@ -21,7 +21,7 @@ const streamingInstances = vi.hoisted(() => [] as Array<{
   isActive: ReturnType<typeof vi.fn>;
 }>);
 
-vi.mock("openclaw/plugin-sdk", () => ({
+vi.mock("../sdk-compat.js", () => ({
   createReplyPrefixContext: vi.fn(() => ({
     responsePrefix: undefined,
     responsePrefixContextProvider: undefined,
