@@ -1,12 +1,10 @@
 export { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/account-id";
 export {
   PAIRING_APPROVED_MESSAGE,
-  addWildcardAllowFrom,
   buildPendingHistoryContextFromMap,
   clearHistoryEntriesIfEnabled,
   createReplyPrefixContext,
   DEFAULT_GROUP_HISTORY_LIMIT,
-  formatDocsLink,
   installRequestBodyLimitGuard,
   logTypingFailure,
   recordPendingHistoryEntryIfEnabled,
