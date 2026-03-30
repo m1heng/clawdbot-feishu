@@ -281,6 +281,15 @@ channels:
     mediaMaxMb: 30
     # Render mode for bot replies: "auto" | "raw" | "card"
     renderMode: "auto"
+    # Render mode for bot replies: "auto" | "raw" | "card"
+    renderMode: "auto"
+    # Topic session isolation for group chats
+    topicSessionMode: "disabled"  # or "enabled" for per-topic sessions
+    # Thread binding for ACP/sub-agent sessions
+    threadBindings:
+      enabled: true
+      spawnAcpSessions: true
+      spawnSubagentSessions: true
 ```
 
 #### DM Policy & Access Control
@@ -481,6 +490,58 @@ session:
 - `dmScope: "per-peer"` only isolates conversation history
 - `dynamicAgentCreation` provides full isolation (workspace, memory, identity, tools)
 
+
+#### Topic Session Isolation (群聊话题线程隔离)
+
+When `topicSessionMode` is enabled, messages in different topic threads within the same group chat get isolated sessions. This allows separate conversations for different topics.
+
+```yaml
+channels:
+  feishu:
+    topicSessionMode: "enabled"  # Default: "disabled"
+    # Per-group override:
+    groups:
+      "chat_id_here":
+        topicSessionMode: "enabled"
+```
+
+
+
+#### Thread Binding for ACP/Sub-agent Sessions
+
+Thread binding allows ACP (Agent Client Protocol) and sub-agent sessions to be bound to Feishu topic threads. When enabled, spawning an ACP session in a thread will keep the conversation context within that thread.
+
+```yaml
+channels:
+  feishu:
+    threadBindings:
+      enabled: true              # Enable thread binding support
+      spawnAcpSessions: true     # Allow spawning ACP sessions in threads (for /acp spawn)
+      spawnSubagentSessions: true # Allow spawning sub-agent sessions in threads
+
+    # Per-account override:
+    accounts:
+      my-account:
+        threadBindings:
+          enabled: true
+          spawnAcpSessions: true
+```
+
+
+
+**How it works:**
+
+1. When a user sends a message in a topic thread, the session key includes the thread ID (`chat:{chatId}:topic:{rootId}`)
+2. ACP/sub-agent sessions spawned in that thread are bound to the thread context
+3. Follow-up messages in the same thread route to the bound session
+4. Thread binding respects `topicSessionMode` - threads get isolated sessions when enabled
+
+
+
+> **Note:** Full ACP thread binding support also requires OpenClaw core configuration (`acp.enabled=true`, `acp.dispatch.enabled=true`). The Feishu plugin provides the channel-level thread binding capability.
+
+
+
 ### Features
 
 - WebSocket and Webhook connection modes
@@ -504,6 +565,8 @@ session:
 - **@mention forwarding**: When you @mention someone in your message, the bot's reply will automatically @mention them too
 - **Permission error notification**: When the bot encounters a Feishu API permission error, it automatically notifies the user with the permission grant URL
 - **Dynamic agent creation**: Each DM user can have their own isolated agent instance with dedicated workspace (optional)
+- **Thread binding support**: ACP and sub-agent sessions can be bound to Feishu topic threads for persistent conversations
+- **Topic session isolation**: Different topic threads in group chats can have isolated sessions
 
 #### @Mention Forwarding
 
