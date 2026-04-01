@@ -21,6 +21,7 @@ const DOC_ACTION_VALUES = [
   "create_comment",
   "get_comment",
   "list_comment_replies",
+  "create_diagram",
 ] as const;
 
 export const FeishuDocSchema = Type.Object({

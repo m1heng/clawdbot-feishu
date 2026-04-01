@@ -135,6 +135,18 @@ Returns all comments for the document. Use `page_token` for pagination. Comments
 Current tool provides documented comment write action `create_comment` (global comment creation).
 For replies, use `list_comment_replies` for retrieval; the reply creation endpoint is not exposed in current SDK surface.
 
+### Create Diagram (Mermaid)
+
+```json
+{
+  "action": "create_diagram",
+  "doc_token": "ABC123def",
+  "content": "sequenceDiagram\n    A->>B: Hello\n    B-->>A: Hi"
+}
+```
+
+Inserts a rendered Mermaid diagram block into the document. The diagram is rendered natively by Feishu's built-in Mermaid add-on component. Pass the Mermaid source code as `content` (without the `` ```mermaid `` fence).
+
 ## Reading Workflow
 
 1. Start with `action: "read"` - get plain text + statistics
