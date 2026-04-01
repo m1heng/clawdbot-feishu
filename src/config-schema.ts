@@ -158,7 +158,7 @@ export const FeishuAccountConfigSchema = z
     mediaMaxMb: z.number().positive().optional(),
     mediaLocalRoots: z.array(z.string()).optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
-    maxMessageAgeMs: z.number().positive().optional(),
+    maxMessageAgeMs: z.number().positive().optional(), // Deprecated: no longer used, kept for backward compatibility
     renderMode: RenderModeSchema,
     streaming: StreamingModeSchema,
     tools: FeishuToolsConfigSchema,
@@ -198,7 +198,7 @@ export const FeishuConfigSchema = z
     mediaMaxMb: z.number().positive().optional(),
     mediaLocalRoots: z.array(z.string()).optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
-    maxMessageAgeMs: z.number().positive().optional(),
+    maxMessageAgeMs: z.number().positive().optional(), // Deprecated: no longer used, kept for backward compatibility
     renderMode: RenderModeSchema, // raw = plain text (default), card = interactive card with markdown
     streaming: StreamingModeSchema,
     tools: FeishuToolsConfigSchema,

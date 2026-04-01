@@ -29,3 +29,17 @@ export function tryRecordMessage(messageId: string, scope = "default"): boolean 
   processedMessageIds.set(dedupKey, now);
   return true;
 }
+
+const chatWatermarks = new Map<string, number>();
+
+export function tryCheckWatermark(accountId: string, chatId: string, createTime: number): boolean {
+  const key = `${accountId}:${chatId}`;
+  const lastTime = chatWatermarks.get(key) ?? 0;
+
+  if (createTime <= lastTime) {
+    return false;
+  }
+
+  chatWatermarks.set(key, createTime);
+  return true;
+}
