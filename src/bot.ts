@@ -1388,7 +1388,7 @@ export async function handleFeishuMessage(params: {
 
     // Resolve media from message
     const mediaMaxBytes = (feishuCfg?.mediaMaxMb ?? 30) * 1024 * 1024; // 30MB default
-    const mediaList = await resolveFeishuMediaList({
+    let mediaList = await resolveFeishuMediaList({
       cfg,
       messageId: ctx.messageId,
       messageType: event.message.message_type,
@@ -1397,8 +1397,6 @@ export async function handleFeishuMessage(params: {
       log,
       accountId: account.accountId,
     });
-    const mediaPayload = buildFeishuMediaPayload(mediaList);
-
     // Fetch quoted/replied message content if parentId exists
     let quotedContent: string | undefined;
     if (ctx.parentId) {
@@ -1407,11 +1405,34 @@ export async function handleFeishuMessage(params: {
         if (quotedMsg) {
           quotedContent = quotedMsg.content;
           log(`feishu[${account.accountId}]: fetched quoted message ${ctx.parentId}`);
+
+          // Download media from quoted message if it contains images/files
+          if (quotedMsg.rawContent && mediaList.length === 0) {
+            try {
+              const quotedMedia = await resolveFeishuMediaList({
+                cfg,
+                messageId: quotedMsg.messageId,
+                messageType: quotedMsg.contentType,
+                content: quotedMsg.rawContent,
+                maxBytes: mediaMaxBytes,
+                log,
+                accountId: account.accountId,
+              });
+              if (quotedMedia.length > 0) {
+                mediaList.push(...quotedMedia);
+                log(`feishu[${account.accountId}]: resolved ${quotedMedia.length} media from quoted message`);
+              }
+            } catch (mediaErr) {
+              log(`feishu[${account.accountId}]: failed to resolve quoted media: ${String(mediaErr)}`);
+            }
+          }
         }
       } catch (err) {
         log(`feishu[${account.accountId}]: failed to fetch quoted message: ${String(err)}`);
       }
     }
+
+    const mediaPayload = buildFeishuMediaPayload(mediaList);
 
     const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
 

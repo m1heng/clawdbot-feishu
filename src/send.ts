@@ -16,6 +16,7 @@ export type FeishuMessageInfo = {
   content: string;
   contentType: string;
   createTime?: number;
+  rawContent?: string;
 };
 
 const MERGE_FORWARD_NAME_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -428,6 +429,7 @@ export async function getMessageFeishu(params: {
       content: combinedContent,
       contentType: firstItem?.msg_type ?? "text",
       createTime: firstItem?.create_time ? parseInt(firstItem.create_time, 10) : undefined,
+      rawContent: firstItem?.body?.content ?? "",
     };
   } catch {
     return null;
