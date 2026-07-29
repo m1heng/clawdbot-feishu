@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-async function setupHarness() {
+async function setupHarness(params?: {
+  getMessageFeishuImpl?: (args: { messageId: string }) => Promise<any>;
+}) {
   vi.resetModules();
   vi.clearAllMocks();
 
   const sendMessageFeishu = vi.fn(async () => undefined);
-  const getMessageFeishu = vi.fn(async () => null);
+  const getMessageFeishu = vi.fn<(args: { messageId: string }) => Promise<any>>(async () => null);
+  if (params?.getMessageFeishuImpl) {
+    getMessageFeishu.mockImplementation(params.getMessageFeishuImpl);
+  }
   vi.doMock("../send.js", () => ({ sendMessageFeishu, getMessageFeishu }));
 
   const createFeishuReplyDispatcher = vi.fn(() => ({
@@ -190,5 +195,42 @@ describe("From field routing", () => {
 
     // Different speakers are distinguishable
     expect(from1).not.toBe(from2);
+  });
+
+  it("preserves replied message sender metadata for agent attribution", async () => {
+    const harness = await setupHarness({
+      getMessageFeishuImpl: async ({ messageId }) => ({
+        messageId,
+        chatId: "oc_shared",
+        senderId: "ou_alice",
+        senderOpenId: "ou_alice",
+        senderName: "Alice",
+        content: "original statement",
+        contentType: "text",
+      }),
+    });
+
+    await harness.handleFeishuMessage({
+      cfg: buildCfg(),
+      event: {
+        sender: { sender_id: { open_id: "ou_bob", user_id: "u_bob" } },
+        message: {
+          message_id: "om_reply",
+          parent_id: "om_original",
+          chat_id: "oc_shared",
+          chat_type: "group",
+          message_type: "text",
+          content: JSON.stringify({ text: "follow-up" }),
+        },
+      },
+      accountId: "default",
+      runtime,
+    });
+
+    expect(harness.finalizeInboundContext).toHaveBeenCalledTimes(1);
+    const ctx = harness.finalizeInboundContext.mock.calls[0]?.[0];
+    expect(ctx.ReplyToBody).toBe("original statement");
+    expect(ctx.ReplyToSender).toBe("Alice (ou_alice)");
+    expect(ctx.RawBody).toContain('[Replying to Alice (ou_alice): "original statement"]');
   });
 });
