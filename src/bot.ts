@@ -101,6 +101,19 @@ type SenderNameResult = {
   permissionError?: PermissionError;
 };
 
+function formatReplySender(params: {
+  senderId?: string;
+  senderName?: string;
+}): string | undefined {
+  const senderId = params.senderId?.trim();
+  const senderName = params.senderName?.trim();
+  if (!senderName) return senderId;
+  if (!senderId || senderName === senderId || senderName.endsWith(`:${senderId}`)) {
+    return senderName;
+  }
+  return `${senderName} (${senderId})`;
+}
+
 type FeishuPairingApiMode = "legacy" | "scoped";
 let detectedFeishuPairingApiMode: FeishuPairingApiMode | null = null;
 
@@ -1401,11 +1414,13 @@ export async function handleFeishuMessage(params: {
 
     // Fetch quoted/replied message content if parentId exists
     let quotedContent: string | undefined;
+    let quotedSender: string | undefined;
     if (ctx.parentId) {
       try {
         const quotedMsg = await getMessageFeishu({ cfg, messageId: ctx.parentId, accountId: account.accountId });
         if (quotedMsg) {
           quotedContent = quotedMsg.content;
+          quotedSender = formatReplySender(quotedMsg);
           log(`feishu[${account.accountId}]: fetched quoted message ${ctx.parentId}`);
         }
       } catch (err) {
@@ -1426,7 +1441,8 @@ export async function handleFeishuMessage(params: {
       if (quoteAlreadyInBody) {
         log(`feishu[${account.accountId}]: skip duplicate quote merge for message ${ctx.messageId}`);
       } else {
-        rawBody = `[Replying to: "${quotedContent}"]\n\n${ctx.content}`;
+        const replyLabel = quotedSender ? ` ${quotedSender}` : "";
+        rawBody = `[Replying to${replyLabel}: "${quotedContent}"]\n\n${ctx.content}`;
       }
     }
 
@@ -1566,6 +1582,7 @@ export async function handleFeishuMessage(params: {
       OriginatingTo: feishuTo,
       GroupSystemPrompt: isGroup ? groupConfig?.systemPrompt?.trim() || undefined : undefined,
       ReplyToBody: quotedContent,
+      ReplyToSender: quotedSender,
       ...mediaPayload,
     });
 

@@ -84,6 +84,33 @@ Check installed version:
 openclaw plugins list | rg -i feishu
 ```
 
+### Use TweetClaw From Feishu
+
+This plugin connects Feishu/Lark to OpenClaw. Install [TweetClaw](https://github.com/Xquik-dev/tweetclaw) to run X/Twitter workflows from Feishu. ClawHub verifies the `@xquik` publisher scope.
+
+Check TweetClaw's current OpenClaw peer requirement before installation:
+
+```bash
+npm view @xquik/tweetclaw peerDependencies --json
+```
+
+Upgrade OpenClaw first if the installed version does not satisfy that range.
+
+```bash
+openclaw plugins install clawhub:@xquik/tweetclaw
+openclaw config set tools.alsoAllow '["explore", "tweetclaw"]'
+openclaw plugins inspect tweetclaw --runtime --json
+openclaw skills info tweetclaw
+```
+
+From Feishu, ask the agent to search public X posts and cite the returned post URLs. The bundled TweetClaw Skill directs the agent to run `explore` before each live call and use `tweetclaw` for the supported route. Replies to earlier research requests retain the original Feishu sender for clear attribution.
+
+Private, paid, recurring, extraction, media, and write calls require approval. Keep credentials in plugin configuration. Never put them in chats or repository files.
+
+See the [Xquik OpenClaw setup guide](https://docs.xquik.com/guides/tweetclaw) for authentication, updates, and compatibility details.
+
+Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.
+
 ### Configuration
 
 1. Create a self-built app on [Feishu Open Platform](https://open.feishu.cn)
@@ -605,6 +632,33 @@ openclaw plugins update feishu
 ```bash
 openclaw plugins list | rg -i feishu
 ```
+
+### 在飞书中使用 TweetClaw
+
+本插件将飞书/Lark 接入 OpenClaw。安装 [TweetClaw](https://github.com/Xquik-dev/tweetclaw) 后，可直接在飞书中执行 X/Twitter 工作流。ClawHub 会验证 `@xquik` 发布者范围。
+
+安装前，请先查看 TweetClaw 当前要求的 OpenClaw 版本：
+
+```bash
+npm view @xquik/tweetclaw peerDependencies --json
+```
+
+如果当前安装版本不满足该范围，请先升级 OpenClaw。
+
+```bash
+openclaw plugins install clawhub:@xquik/tweetclaw
+openclaw config set tools.alsoAllow '["explore", "tweetclaw"]'
+openclaw plugins inspect tweetclaw --runtime --json
+openclaw skills info tweetclaw
+```
+
+在飞书中，可以让 Agent 搜索公开 X 帖子并附上原帖链接。TweetClaw 自带的 Skill 会要求 Agent 在每次实时调用前先运行 `explore`，再通过 `tweetclaw` 调用受支持的接口。回复之前的调研请求时，本插件会保留原始飞书发送者，避免归属混淆。
+
+私有、付费、周期性、提取、媒体和写入操作都需要审批。凭证应保存在插件配置中。不要将凭证放入聊天或仓库文件。
+
+认证、升级和兼容性说明请查看 [Xquik OpenClaw 配置指南](https://docs.xquik.com/guides/tweetclaw)。
+
+Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.
 
 ### 配置
 

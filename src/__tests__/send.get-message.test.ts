@@ -50,6 +50,47 @@ describe("getMessageFeishu", () => {
     expect(message?.contentType).toBe("text");
     expect(message?.content).toBe("hello world");
     expect(message?.senderOpenId).toBe("ou_sender");
+    expect(message?.senderName).toBe("open_id:ou_sender");
+  });
+
+  it("returns sender identity for quoted-message attribution", async () => {
+    const get = vi.fn(async () => ({
+      code: 0,
+      data: {
+        items: [
+          {
+            message_id: "om_quoted_1",
+            chat_id: "oc_chat_1",
+            msg_type: "text",
+            body: { content: JSON.stringify({ text: "original statement" }) },
+            sender: { id: "ou_alice", id_type: "open_id", sender_type: "user" },
+            create_time: "1700000000000",
+          },
+        ],
+      },
+    }));
+    const userGet = vi.fn(async () => ({
+      data: { user: { name: "Alice" } },
+    }));
+
+    vi.mocked(createFeishuClient).mockReturnValue({
+      im: {
+        message: { get },
+      },
+      contact: {
+        user: { get: userGet },
+      },
+    } as any);
+
+    const message = await getMessageFeishu({ cfg, messageId: "om_quoted_1" });
+
+    expect(userGet).toHaveBeenCalledWith({
+      path: { user_id: "ou_alice" },
+      params: { user_id_type: "open_id" },
+    });
+    expect(message?.senderId).toBe("ou_alice");
+    expect(message?.senderOpenId).toBe("ou_alice");
+    expect(message?.senderName).toBe("Alice");
   });
 
   it("resolves configured app display name for app sender in merge_forward", async () => {

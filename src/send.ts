@@ -13,6 +13,7 @@ export type FeishuMessageInfo = {
   chatId: string;
   senderId?: string;
   senderOpenId?: string;
+  senderName?: string;
   content: string;
   contentType: string;
   createTime?: number;
@@ -230,7 +231,7 @@ function extractSenderLabelFromMessageBody(rawContent: string): string | undefin
   }
 }
 
-function buildMergeForwardSenderLabel(params: {
+function buildMessageSenderLabel(params: {
   cfg: ClawdbotConfig;
   rawContent: string;
   client: any;
@@ -400,7 +401,7 @@ export async function getMessageFeishu(params: {
         // Add sender label only for merge_forward expanded child messages.
         let prefix = "";
         if (hasExpandedMergeForwardChildren) {
-          const senderLabel = await buildMergeForwardSenderLabel({
+          const senderLabel = await buildMessageSenderLabel({
             cfg,
             rawContent,
             client,
@@ -419,12 +420,22 @@ export async function getMessageFeishu(params: {
       ? parsedContents.join("\n\n---\n\n")
       : (parsedContents[0] ?? "");
     const firstItem = items[0];
+    const senderName = firstItem
+      ? await buildMessageSenderLabel({
+          cfg,
+          rawContent: firstItem.body?.content ?? "",
+          client,
+          accountId: account.accountId,
+          sender: firstItem.sender,
+        })
+      : undefined;
 
     return {
       messageId: firstItem?.message_id ?? messageId,
       chatId: firstItem?.chat_id ?? "",
       senderId: firstItem?.sender?.id,
       senderOpenId: firstItem?.sender?.id_type === "open_id" ? firstItem?.sender?.id : undefined,
+      senderName,
       content: combinedContent,
       contentType: firstItem?.msg_type ?? "text",
       createTime: firstItem?.create_time ? parseInt(firstItem.create_time, 10) : undefined,
